@@ -1,0 +1,720 @@
+"""Main window: chrome, layout, actions and data refresh."""
+
+from __future__ import annotations
+
+from datetime import date, timedelta
+
+from PySide6.QtCore import QTimer, Qt, QUrl
+from PySide6.QtGui import QAction, QDesktopServices, QKeySequence
+from PySide6.QtWidgets import (
+    QDialog,
+    QFileDialog,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
+
+from .db import DataStore
+from .models import ScheduledItem
+from .money import money
+from .theme import C, font
+from .widgets.accounts import AccountsPanel
+from .widgets.charts import ChartCard, DonutChart, SpendingRevenueChart
+from .widgets.import_dialog import CsvImportDialog
+from .widgets.ledger import LedgerWindow
+from .widgets.dialogs import (
+    AccountDialog,
+    ListDialog,
+    PreferencesDialog,
+    TransactionDialog,
+    about_text,
+    shortcuts_text,
+)
+from .widgets.scheduled import ScheduledPanel
+from .widgets.toolbar import AppToolbar
+
+
+class MainWindow(QMainWindow):
+    def __init__(self, store: DataStore, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.store = store
+        self.ledgers: dict[int, LedgerWindow] = {}
+        self._initial_focus_done = False
+        self._closing = False
+        self.setWindowTitle("ContaPy")
+        self.setMinimumSize(1400, 760)
+        self.resize(1500, 870)
+        self.setStyleSheet(f"QMainWindow {{ background: {C.BG}; }}")
+
+        self._build_menus()
+        self._build_ui()
+        self._wire()
+        self.refresh_all()
+
+        self._toast_timer = QTimer(self)
+        self._toast_timer.setSingleShot(True)
+        self._toast_timer.timeout.connect(self._hide_toast)
+
+    # ------------------------------------------------------------------ chrome
+    def _build_menus(self) -> None:
+        bar = self.menuBar()
+        bar.setNativeMenuBar(False)
+        bar.setFont(font(14, 400))
+
+        self.act_new = self._action("New Transaction…", self.new_transaction, "Ctrl+N")
+        self.act_new_scheduled = self._action(
+            "New Scheduled Transaction…", self.new_scheduled_transaction
+        )
+        self.act_new_account = self._action("New Account…", self.new_account, "Ctrl+Shift+N")
+        self.act_import = self._action("Import CSV…", self.import_csv, "Ctrl+I")
+        self.act_export = self._action("Export CSV…", self.export_csv, "Ctrl+E")
+        self.act_quit = self._action("Quit", self.close, "Ctrl+Q")
+
+        file_menu = bar.addMenu("File")
+        file_menu.addAction(self.act_new)
+        file_menu.addAction(self.act_new_account)
+        file_menu.addSeparator()
+        file_menu.addAction(self.act_import)
+        file_menu.addAction(self.act_export)
+        file_menu.addSeparator()
+        file_menu.addAction(self.act_quit)
+
+        self.act_preferences = self._action("Preferences…", self.open_preferences, "Ctrl+,")
+        edit_menu = bar.addMenu("Edit")
+        edit_menu.addAction(self.act_preferences)
+
+        self.act_toggle_accounts = QAction("Accounts Panel", self)
+        self.act_toggle_accounts.setCheckable(True)
+        self.act_toggle_accounts.setChecked(True)
+        self.act_toggle_scheduled = QAction("Scheduled Transactions", self)
+        self.act_toggle_scheduled.setCheckable(True)
+        self.act_toggle_scheduled.setChecked(True)
+        self.act_refresh = self._action("Refresh Dashboard", self.refresh_all, "F5")
+        view_menu = bar.addMenu("View")
+        view_menu.addAction(self.act_toggle_accounts)
+        view_menu.addAction(self.act_toggle_scheduled)
+        view_menu.addSeparator()
+        view_menu.addAction(self.act_refresh)
+
+        self.act_edit_account = self._action("Edit Account…", self.edit_selected_account)
+        self.act_delete_account = self._action("Delete Account…", self.delete_selected_account)
+        self.act_categories = self._action("Categories…", self.show_categories)
+        self.act_payees = self._action("Payees…", self.show_payees)
+        manage_menu = bar.addMenu("Manage")
+        manage_menu.addAction(self.act_new_account)
+        manage_menu.addAction(self.act_edit_account)
+        manage_menu.addAction(self.act_delete_account)
+        manage_menu.addSeparator()
+        manage_menu.addAction(self.act_categories)
+        manage_menu.addAction(self.act_payees)
+
+        self.act_open_ledger = self._action(
+            "Open Account Ledger", self.open_selected_ledger, "Ctrl+L"
+        )
+        self.act_post = self._action("Post Selected Schedule", self.post_selected_schedule)
+        transactions_menu = bar.addMenu("Transactions")
+        transactions_menu.addAction(self.act_new)
+        transactions_menu.addAction(self.act_new_scheduled)
+        transactions_menu.addSeparator()
+        transactions_menu.addAction(self.act_open_ledger)
+        transactions_menu.addAction(self.act_post)
+
+        self.act_focus_spending = self._action("Spending by Category", self.focus_spending)
+        self.act_focus_cashflow = self._action("Spending & Revenue", self.focus_cashflow)
+        reports_menu = bar.addMenu("Reports")
+        reports_menu.addAction(self.act_focus_spending)
+        reports_menu.addAction(self.act_focus_cashflow)
+        reports_menu.addSeparator()
+        reports_menu.addAction(self.act_refresh)
+
+        tools_menu = bar.addMenu("Tools")
+        tools_menu.addAction(self.act_preferences)
+        tools_menu.addAction(self._action("Open Data Folder", self.open_data_folder))
+        tools_menu.addSeparator()
+        tools_menu.addAction(self.act_import)
+        tools_menu.addAction(self.act_export)
+
+        help_menu = bar.addMenu("Help")
+        help_menu.addAction(self._action("Keyboard Shortcuts", self.show_shortcuts))
+        help_menu.addAction(self._action("About ContaPy", self.show_about))
+
+    def _action(self, text: str, slot, shortcut: str | None = None) -> QAction:
+        action = QAction(text, self)
+        if shortcut:
+            action.setShortcut(QKeySequence(shortcut))
+        action.triggered.connect(lambda _checked=False: slot())
+        self.addAction(action)
+        return action
+
+    def _build_ui(self) -> None:
+        central = QWidget()
+        central.setObjectName("central")
+        central.setStyleSheet(f"#central {{ background: {C.BG}; }}")
+        root = QVBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        self.toolbar = AppToolbar()
+        root.addWidget(self.toolbar)
+
+        self.donut = DonutChart()
+        self.donut_card = ChartCard(
+            "Top 10 Spending / Category",
+            money(0),
+            "Total chart",
+            ["Last 30 Days", "This Month", "Last Month", "Last 3 Months", "This Year"],
+            "Last 30 Days",
+            self.donut,
+        )
+        self.bars = SpendingRevenueChart()
+        self.bar_card = ChartCard(
+            "Spending & Revenue",
+            "",
+            "Time chart",
+            ["Last 12 Months", "Last 6 Months", "This Year"],
+            "Last 12 Months",
+            self.bars,
+        )
+
+        self.accounts_panel = AccountsPanel()
+        self.accounts_panel.setMinimumHeight(412)
+        self.scheduled_panel = ScheduledPanel()
+
+        self.charts_split = QSplitter(Qt.Orientation.Horizontal)
+        self.charts_split.setHandleWidth(10)
+        self.charts_split.setChildrenCollapsible(False)
+        self.charts_split.setStyleSheet("QSplitter::handle { background: #333333; }")
+        self.charts_split.addWidget(self.donut_card)
+        self.charts_split.addWidget(self.bar_card)
+        self.charts_split.setStretchFactor(0, 1)
+        self.charts_split.setStretchFactor(1, 1)
+
+        self.hsplit = QSplitter(Qt.Orientation.Horizontal)
+        self.hsplit.setHandleWidth(8)
+        self.hsplit.setChildrenCollapsible(False)
+        self.hsplit.setStyleSheet("QSplitter::handle { background: #333333; }")
+        self.hsplit.addWidget(self.accounts_panel)
+        self.hsplit.addWidget(self.charts_split)
+        self.hsplit.setStretchFactor(0, 0)
+        self.hsplit.setStretchFactor(1, 1)
+
+        self.vsplit = QSplitter(Qt.Orientation.Vertical)
+        self.vsplit.setHandleWidth(1)
+        self.vsplit.setChildrenCollapsible(False)
+        self.vsplit.setStyleSheet("QSplitter::handle { background: #1b1b1b; }")
+        self.vsplit.addWidget(self.hsplit)
+        self.vsplit.addWidget(self.scheduled_panel)
+        self.vsplit.setStretchFactor(0, 54)
+        self.vsplit.setStretchFactor(1, 46)
+
+        root.addWidget(self.vsplit, 1)
+        self.setCentralWidget(central)
+
+        self.hsplit.setSizes([615, 1225])
+        self.charts_split.setSizes([610, 610])
+        self.vsplit.setSizes([412, 349])
+
+        self.toast = QLabel(self)
+        self.toast.setObjectName("toast")
+        self.toast.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.toast.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.toast.setFont(font(13, 400))
+        self.toast.setStyleSheet(
+            "QLabel#toast { background:#1f1f1f; color:#ededed; border:1px solid #4a4a4a;"
+            "border-radius:6px; padding:8px 16px; }"
+        )
+        self.toast.hide()
+
+    def _wire(self) -> None:
+        self.toolbar.newTransaction.connect(self.new_transaction)
+        self.toolbar.newAccount.connect(self.new_account)
+        self.toolbar.importRequested.connect(self.import_csv)
+        self.toolbar.exportRequested.connect(self.export_csv)
+        self.toolbar.manageAccounts.connect(self.focus_accounts)
+        self.toolbar.payeesRequested.connect(self.show_payees)
+        self.toolbar.categoriesRequested.connect(self.show_categories)
+        self.toolbar.preferencesRequested.connect(self.open_preferences)
+        self.toolbar.aboutRequested.connect(self.show_about)
+        self.toolbar.helpRequested.connect(self.show_shortcuts)
+        self.toolbar.refreshRequested.connect(self.refresh_all)
+        self.toolbar.spendingFocus.connect(self.focus_spending)
+        self.toolbar.cashflowFocus.connect(self.focus_cashflow)
+
+        self.accounts_panel.accountSelected.connect(lambda _id: self._update_actions())
+        self.accounts_panel.openRequested.connect(self.open_ledger)
+        self.accounts_panel.addRequested.connect(self.new_account)
+        self.accounts_panel.importRequested.connect(self.import_csv)
+        self.accounts_panel.settingsRequested.connect(self.open_preferences)
+        self.accounts_panel.editRequested.connect(self.edit_account)
+        self.accounts_panel.deleteRequested.connect(self.delete_account)
+        self.accounts_panel.reorderRequested.connect(self._reorder_account)
+        self.accounts_panel.addTransactionRequested.connect(self._new_transaction_for_account)
+
+        self.scheduled_panel.postRequested.connect(self.post_scheduled)
+        self.scheduled_panel.skipRequested.connect(self.skip_scheduled)
+        self.scheduled_panel.editPostRequested.connect(self.edit_and_post)
+        self.scheduled_panel.openLedgerRequested.connect(self.open_ledger)
+        self.scheduled_panel.settingsRequested.connect(self.open_preferences)
+        self.scheduled_panel.selectionChanged.connect(lambda _id: self._update_actions())
+
+        self.donut_card.footer.periodChanged.connect(self._refresh_donut)
+        self.donut_card.footer.refreshRequested.connect(self.refresh_all)
+        self.bar_card.footer.periodChanged.connect(self._refresh_bars)
+        self.bar_card.footer.refreshRequested.connect(self.refresh_all)
+
+        self.act_toggle_accounts.toggled.connect(self.accounts_panel.setVisible)
+        self.act_toggle_scheduled.toggled.connect(self.scheduled_panel.setVisible)
+
+    # ------------------------------------------------------------------- data
+    def refresh_all(self) -> None:
+        accounts = self.store.accounts()
+        balances = self.store.balances()
+        self.accounts_panel.set_data(accounts, balances)
+        self._refresh_donut()
+        self._refresh_bars()
+        future_rows, remind_rows = self.store.strip_transactions()
+        future_items = [self._strip_item(row, "future") for row in future_rows]
+        remind_items = [self._strip_item(row, "remind") for row in remind_rows]
+        self.scheduled_panel.set_data(
+            self.store.scheduled_items(), accounts, future_items, remind_items
+        )
+        for ledger in list(self.ledgers.values()):
+            try:
+                ledger.reload()
+            except RuntimeError:
+                continue
+        self._update_actions()
+
+    @staticmethod
+    def _strip_item(row, status: str) -> ScheduledItem:
+        return ScheduledItem(
+            id=row.id,
+            account_id=row.account_id,
+            account_name=row.account_name,
+            next_date=row.date,
+            payee=row.payee,
+            category_id=row.category_id,
+            category_name=row.category_name,
+            category_color=row.category_color,
+            amount=row.amount,
+            memo=row.memo,
+            status=status,
+            kind=row.category_kind,
+            source="ledger",
+        )
+
+    def open_selected_ledger(self) -> None:
+        if self.accounts_panel.selected_id is not None:
+            self.open_ledger(self.accounts_panel.selected_id)
+
+    def open_ledger(self, account_id: int) -> None:
+        existing = self.ledgers.get(account_id)
+        if existing is not None and existing.isVisible():
+            existing.show()
+            existing.raise_()
+            existing.activateWindow()
+            existing.focus_table()
+            return
+        if self.store.account(account_id) is None:
+            return
+        ledger = LedgerWindow(self.store, account_id, self)
+        self.ledgers[account_id] = ledger
+        ledger.changed.connect(self.refresh_all)
+        ledger.destroyed.connect(
+            lambda _obj=None, aid=account_id: self._ledger_closed(aid)
+        )
+        ledger.show()
+        ledger.raise_()
+        ledger.activateWindow()
+
+    def _donut_range(self, period: str) -> tuple[date, date]:
+        today = date.today()
+        if period == "This Month":
+            return today.replace(day=1), today
+        if period == "Last Month":
+            first = today.replace(day=1)
+            end = first - timedelta(days=1)
+            return end.replace(day=1), end
+        if period == "Last 3 Months":
+            year, month = today.year, today.month - 2
+            while month <= 0:
+                month += 12
+                year -= 1
+            return date(year, month, 1), today
+        if period == "This Year":
+            return date(today.year, 1, 1), today
+        return today - timedelta(days=29), today
+
+    def _refresh_donut(self, _period: str | None = None) -> None:
+        period = self.donut_card.period()
+        start, end = self._donut_range(period)
+        slices, total = self.store.spend_by_category(start, end)
+        self.donut.set_data(slices, total)
+        self.donut_card.set_subtitle(money(-total) if total else money(0))
+
+    def _refresh_bars(self, _period: str | None = None) -> None:
+        period = self.bar_card.period()
+        months = {"Last 12 Months": 12, "Last 6 Months": 6, "This Year": date.today().month}.get(
+            period, 12
+        )
+        self.bars.set_data(self.store.monthly_cashflow(months))
+
+    # ---------------------------------------------------------------- actions
+    def new_transaction(self) -> None:
+        self._open_transaction()
+
+    def new_scheduled_transaction(self) -> None:
+        self._open_transaction(scheduled=True)
+
+    def _new_transaction_for_account(self, account_id: int) -> None:
+        self._open_transaction(account_id=account_id)
+
+    def _open_transaction(
+        self,
+        account_id: int | None = None,
+        scheduled: bool = False,
+    ) -> None:
+        accounts = self.store.accounts()
+        if not accounts:
+            QMessageBox.information(
+                self, "No accounts yet", "Create an account before adding a transaction."
+            )
+            return
+        dialog = TransactionDialog(
+            self.store,
+            accounts,
+            self.store.categories(),
+            scheduled=scheduled,
+            parent=self,
+        )
+        if account_id is not None:
+            index = dialog.account_combo.findData(account_id)
+            if index >= 0:
+                dialog.account_combo.setCurrentIndex(index)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        draft = dialog.draft()
+        if draft is None:
+            return
+        if scheduled:
+            self.store.add_scheduled(draft)
+            self.show_toast(f"Scheduled {draft.payee} for {draft.date}")
+            self.refresh_all()
+            self.scheduled_panel.show_tab("Scheduled")
+        else:
+            if draft.transfer_account_id is not None:
+                self.store.add_transfer(draft, draft.transfer_account_id)
+                self.show_toast("Added transfer")
+            else:
+                self.store.add_transaction(draft)
+                self.show_toast(f"Added {draft.payee} · {money(draft.amount)}")
+            self.refresh_all()
+            when = date.fromisoformat(draft.date)
+            if draft.remind:
+                self.scheduled_panel.show_tab("Remind")
+            elif when > date.today():
+                self.scheduled_panel.show_tab("Future")
+            else:
+                self.scheduled_panel.show_tab("Scheduled")
+
+    def new_account(self) -> None:
+        dialog = AccountDialog(parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        name, kind, opening = dialog.values()
+        self.store.add_account(name, kind, opening)
+        self.refresh_all()
+        self.show_toast(f"Added account {name}")
+
+    def edit_selected_account(self) -> None:
+        if self.accounts_panel.selected_id is not None:
+            self.edit_account(self.accounts_panel.selected_id)
+
+    def edit_account(self, account_id: int) -> None:
+        account = self.store.account(account_id)
+        if account is None:
+            return
+        dialog = AccountDialog(account, parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        name, kind, opening = dialog.values()
+        self.store.update_account(account_id, name, kind, opening)
+        self.refresh_all()
+        self.show_toast(f"Saved {name}")
+
+    def delete_selected_account(self) -> None:
+        if self.accounts_panel.selected_id is not None:
+            self.delete_account(self.accounts_panel.selected_id)
+
+    def delete_account(self, account_id: int) -> None:
+        account = self.store.account(account_id)
+        if account is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            "Delete account?",
+            f"Delete “{account.name}” and all of its transactions and schedules?\n\n"
+            "This cannot be undone.",
+            QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self.store.delete_account(account_id)
+        self.refresh_all()
+        self.show_toast(f"Deleted {account.name}")
+
+    def _reorder_account(self, account_id: int, direction: int) -> None:
+        self.store.move_account(account_id, direction)
+        self.refresh_all()
+
+    def post_selected_schedule(self) -> None:
+        if (
+            self.scheduled_panel.selected_id is not None
+            and self.scheduled_panel.selected_source == "scheduled"
+        ):
+            self.post_scheduled(self.scheduled_panel.selected_id)
+
+    def post_scheduled(self, item_id: int) -> None:
+        item = self.store.scheduled_item(item_id)
+        if item is None:
+            return
+        self.store.post_scheduled(item_id)
+        self.refresh_all()
+        self.show_toast(f"Posted {item.payee} · {money(item.amount)}")
+
+    def skip_scheduled(self, item_id: int) -> None:
+        item = self.store.scheduled_item(item_id)
+        if item is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            "Skip this transaction?",
+            f"Remove “{item.payee}” from the schedule without posting it?",
+            QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self.store.skip_scheduled(item_id)
+        self.refresh_all()
+        self.show_toast(f"Skipped {item.payee}")
+
+    def edit_and_post(self, item_id: int) -> None:
+        item = self.store.scheduled_item(item_id)
+        if item is None:
+            return
+        accounts = self.store.accounts()
+        draft = TransactionDialogDraft.from_item(item)
+        dialog = TransactionDialog(
+            self.store,
+            accounts,
+            self.store.categories(),
+            draft=draft,
+            scheduled=False,
+            title="Edit & Post",
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        new_draft = dialog.draft()
+        if new_draft is None:
+            return
+        self.store.add_transaction(new_draft)
+        self.store.skip_scheduled(item_id)
+        self.refresh_all()
+        self.show_toast(f"Posted {new_draft.payee} · {money(new_draft.amount)}")
+
+    def focus_accounts(self) -> None:
+        if not self.accounts_panel.isVisible():
+            self.act_toggle_accounts.setChecked(True)
+            self.accounts_panel.setVisible(True)
+        self.accounts_panel.focus_list()
+        self.accounts_panel.flash()
+
+    def _ledger_closed(self, account_id: int) -> None:
+        self.ledgers.pop(account_id, None)
+        if self._closing or not self.isVisible() or not self.accounts_panel.isVisible():
+            return
+        self.raise_()
+        self.activateWindow()
+        QTimer.singleShot(0, self.accounts_panel.focus_list)
+
+    def focus_spending(self) -> None:
+        self.donut_card.flash()
+        self.donut_card.footer.combo.setFocus()
+
+    def focus_cashflow(self) -> None:
+        self.bar_card.flash()
+        self.bar_card.footer.combo.setFocus()
+
+    # ------------------------------------------------------------------ tools
+    def open_preferences(self) -> None:
+        dialog = PreferencesDialog(self.store, self)
+        dialog.exec()
+        if dialog.was_reset:
+            self.refresh_all()
+            self.show_toast("Demo data restored")
+
+    def show_categories(self) -> None:
+        categories = self.store.categories()
+        rows = [
+            (
+                category.name,
+                "Income category" if category.kind == "income" else "Spending category",
+            )
+            for category in sorted(categories, key=lambda c: (c.kind != "expense", c.sort_order))
+        ]
+        ListDialog(
+            "Categories",
+            "Categories group transactions for the spending report and the ledger.",
+            rows,
+            self,
+        ).exec()
+
+    def show_payees(self) -> None:
+        payees = self.store.payees()
+        rows = [(payee, "") for payee in payees]
+        ListDialog(
+            "Payees",
+            f"{len(payees)} payees across posted and scheduled transactions.",
+            rows,
+            self,
+        ).exec()
+
+    def open_data_folder(self) -> None:
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.store.path.parent)))
+
+    def import_csv(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import transactions", "", "CSV files (*.csv);;All files (*)"
+        )
+        if not path:
+            return
+        try:
+            dialog = CsvImportDialog(
+                self.store,
+                self.store.accounts(),
+                path,
+                self.accounts_panel.selected_id,
+                self,
+            )
+        except Exception as exc:  # pragma: no cover - surfaced to the user
+            QMessageBox.warning(self, "Import failed", str(exc))
+            return
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            added, skipped = self.store.import_csv(
+                path,
+                account_id=dialog.account_id(),
+                memo_as_payee=dialog.memo_as_payee(),
+                mapping=dialog.current_mapping(),
+            )
+        except Exception as exc:  # pragma: no cover - surfaced to the user
+            QMessageBox.warning(self, "Import failed", str(exc))
+            return
+        self.refresh_all()
+        self.show_toast(f"Imported {added} transactions" + (f", skipped {skipped}" if skipped else ""))
+        if skipped:
+            QMessageBox.information(
+                self,
+                "Import finished",
+                f"Imported {added} transactions.\nSkipped {skipped} rows that could not be parsed.",
+            )
+
+    def export_csv(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export transactions", "contapy-export.csv", "CSV files (*.csv)"
+        )
+        if not path:
+            return
+        count = self.store.export_csv(path)
+        self.show_toast(f"Exported {count} transactions")
+
+    def show_shortcuts(self) -> None:
+        box = QMessageBox(self)
+        box.setWindowTitle("Keyboard Shortcuts")
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setText(shortcuts_text())
+        box.exec()
+
+    def show_about(self) -> None:
+        box = QMessageBox(self)
+        box.setWindowTitle("About ContaPy")
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setText(about_text())
+        box.exec()
+
+    # ------------------------------------------------------------------ state
+    def _update_actions(self) -> None:
+        has_account = self.accounts_panel.selected_id is not None
+        has_schedule = (
+            self.scheduled_panel.selected_id is not None
+            and self.scheduled_panel.selected_source == "scheduled"
+        )
+        for action in (self.act_edit_account, self.act_delete_account):
+            action.setEnabled(has_account)
+        self.act_open_ledger.setEnabled(has_account)
+        self.act_post.setEnabled(has_schedule)
+
+    def show_toast(self, text: str) -> None:
+        self.toast.setText(text)
+        self.toast.adjustSize()
+        self._position_toast()
+        self.toast.show()
+        self.toast.raise_()
+        self._toast_timer.start(2600)
+
+    def _hide_toast(self) -> None:
+        self.toast.hide()
+
+    def _position_toast(self) -> None:
+        if not hasattr(self, "toast"):
+            return
+        x = max(12, (self.width() - self.toast.width()) // 2)
+        y = max(12, self.height() - self.toast.height() - 66)
+        self.toast.move(x, y)
+
+    def showEvent(self, event):  # noqa: N802
+        super().showEvent(event)
+        if not self._initial_focus_done:
+            self._initial_focus_done = True
+            QTimer.singleShot(0, self.accounts_panel.focus_list)
+
+    def resizeEvent(self, event):  # noqa: N802
+        super().resizeEvent(event)
+        self._position_toast()
+
+    def closeEvent(self, event):  # noqa: N802
+        self._closing = True
+        for ledger in list(self.ledgers.values()):
+            try:
+                ledger.close()
+            except RuntimeError:
+                pass
+        self.ledgers.clear()
+        self.store.close()
+        super().closeEvent(event)
+
+
+class TransactionDialogDraft:
+    """Adapter that turns a scheduled row into a dialog draft."""
+
+    @staticmethod
+    def from_item(item: ScheduledItem):
+        from .models import TransactionDraft
+
+        return TransactionDraft(
+            date=item.next_date,
+            account_id=item.account_id,
+            payee=item.payee,
+            category_id=item.category_id,
+            amount=item.amount,
+            memo=item.memo,
+            cleared=True,
+            scheduled=False,
+        )
