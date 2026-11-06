@@ -2,6 +2,8 @@
 
 A HomeBank-inspired, local-first personal finance dashboard built with **Python, PySide6 and SQLite**. The welcome screen, account ledger and transaction editor are from-scratch PySide6 interpretations of [HomeBank](https://www.gethomebank.org/) — fully interactive, not mockups.
 
+This is totally vibe coding, using first DeepSeek-Harness and then (while on Omarchy) OpenCode. Im not quite sure what I'm doing honestly; I just love Homebank, but a few things I didn't like, so I kind of made this
+
 ![ContaPy welcome screen](screenshots/welcome.png)
 
 *(Compact layout at 1500×870: [screenshots/welcome-compact.png](screenshots/welcome-compact.png))*
