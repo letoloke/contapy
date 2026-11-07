@@ -186,7 +186,10 @@ class _AccountCanvas(QWidget):
                 if row.kind == "account":
                     tip = ""
                     if row.warning:
-                        tip = "This account has activity that needs attention."
+                        tip = (
+                            "This account has unreconciled transactions.\n"
+                            "Open the ledger to review them."
+                        )
                     elif row.values:
                         tip = (
                             f"{row.name}\n"

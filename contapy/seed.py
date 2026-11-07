@@ -30,15 +30,15 @@ CATEGORY_SEED = [
     ("Other", 0.054, "MercadoRM", "Varios"),
 ]
 
-# name, kind, reconciled, today, warning
+# name, kind, reconciled, today
 ACCOUNT_SEED = [
-    ("Banamex", "Bank", 97_611.82, 126_658.10, True),
-    ("MercadoRM", "Bank", 27.46, 22_295.46, False),
-    ("MercadoAI", "Bank", -48_720.48, -81_254.22, False),
-    ("eCash", "Cash", -122_900.00, 54_098.54, False),
-    ("NuRicardo", "Credit card", 267.96, 5_307.96, False),
-    ("mercado credito", "Credit card", 0.00, 26_617.95, False),
-    ("inversion", "Savings", 94_002.54, -250_987.41, True),
+    ("Banamex", "Bank", 97_611.82, 126_658.10),
+    ("MercadoRM", "Bank", 27.46, 22_295.46),
+    ("MercadoAI", "Bank", -48_720.48, -81_254.22),
+    ("eCash", "Cash", -122_900.00, 54_098.54),
+    ("NuRicardo", "Credit card", 267.96, 5_307.96),
+    ("mercado credito", "Credit card", 0.00, 26_617.95),
+    ("inversion", "Savings", 94_002.54, -250_987.41),
 ]
 
 # month offset -> (income, expense). Offset 1 is the previous month.
@@ -94,10 +94,10 @@ def seed_if_empty(conn: sqlite3.Connection, force: bool = False) -> bool:
     category_ids["Ingresos"] = int(cur.lastrowid)
 
     account_ids: dict[str, int] = {}
-    for order, (name, kind, _reconciled, _today, warning) in enumerate(ACCOUNT_SEED):
+    for order, (name, kind, _reconciled, _today) in enumerate(ACCOUNT_SEED):
         cur.execute(
-            "INSERT INTO accounts(name, kind, opening, warning, sort_order) VALUES (?,?,?,?,?)",
-            (name, kind, 0.0, 1 if warning else 0, order),
+            "INSERT INTO accounts(name, kind, opening, sort_order) VALUES (?,?,?,?)",
+            (name, kind, 0.0, order),
         )
         account_ids[name] = int(cur.lastrowid)
 
@@ -232,7 +232,7 @@ def seed_if_empty(conn: sqlite3.Connection, force: bool = False) -> bool:
     add_tx("eCash", today - timedelta(days=4), "Consultoría", "Ingresos", 90_000.00, "Invoice")
 
     # ---- solve opening balances and add uncleared activity -----------------
-    for name, _kind, reconciled, current, _warning in ACCOUNT_SEED:
+    for name, _kind, reconciled, current in ACCOUNT_SEED:
         account_id = account_ids[name]
         cleared_sum = cur.execute(
             "SELECT COALESCE(SUM(amount), 0) FROM transactions "

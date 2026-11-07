@@ -142,6 +142,43 @@ class StoreTests(unittest.TestCase):
         self.assertAlmostEqual(balances.reconciled, 1000.0, places=2)
         self.assertAlmostEqual(balances.cleared, 900.0, places=2)
 
+    def test_account_warning_tracks_unreconciled_transactions(self) -> None:
+        account_id = self.store.add_account("Test account", "Bank")
+
+        def account():
+            return next(a for a in self.store.accounts() if a.id == account_id)
+
+        self.assertFalse(account().warning)
+        self.assertEqual(account().unreconciled, 0)
+
+        # Future-dated entries have not happened yet, so they do not warn.
+        self.store.add_transaction(
+            TransactionDraft(
+                date=(date.today() + timedelta(days=5)).isoformat(),
+                account_id=account_id,
+                payee="Future",
+                category_id=None,
+                amount=-10,
+            )
+        )
+        self.assertFalse(account().warning)
+
+        tx_id = self.store.add_transaction(
+            TransactionDraft(
+                date=date.today().isoformat(),
+                account_id=account_id,
+                payee="Needs review",
+                category_id=None,
+                amount=-25,
+            )
+        )
+        self.assertTrue(account().warning)
+        self.assertEqual(account().unreconciled, 1)
+
+        self.store.update_transaction_flags([tx_id], cleared=True, reconciled=True)
+        self.assertFalse(account().warning)
+        self.assertEqual(account().unreconciled, 0)
+
     def test_csv_round_trip(self) -> None:
         csv_path = Path(self.tmp.name) / "export.csv"
         exported = self.store.export_csv(csv_path)

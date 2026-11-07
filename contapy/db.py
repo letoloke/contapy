@@ -202,9 +202,24 @@ class DataStore:
 
     # -------------------------------------------------------------- accounts
     def accounts(self) -> list[Account]:
+        # The warning marker is derived, not stored: an account needs
+        # attention while it has posted transactions that are not reconciled.
+        # Future-dated entries are excluded because they have not happened yet.
+        today = date.today().isoformat()
         rows = self._rows(
-            "SELECT id, name, kind, opening, warning, sort_order "
-            "FROM accounts ORDER BY sort_order, id"
+            """
+            SELECT a.id, a.name, a.kind, a.opening, a.sort_order,
+                   (
+                       SELECT COUNT(*)
+                       FROM transactions t
+                       WHERE t.account_id = a.id
+                         AND t.reconciled = 0
+                         AND t.date <= ?
+                   ) AS unreconciled
+            FROM accounts a
+            ORDER BY a.sort_order, a.id
+            """,
+            (today,),
         )
         return [
             Account(
@@ -212,7 +227,7 @@ class DataStore:
                 name=r["name"],
                 kind=r["kind"],
                 opening=float(r["opening"]),
-                warning=bool(r["warning"]),
+                unreconciled=int(r["unreconciled"] or 0),
                 sort_order=r["sort_order"],
             )
             for r in rows
@@ -227,7 +242,7 @@ class DataStore:
     def add_account(self, name: str, kind: str, opening: float = 0.0) -> int:
         row = self.conn.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM accounts").fetchone()
         cur = self.conn.execute(
-            "INSERT INTO accounts(name, kind, opening, warning, sort_order) VALUES (?,?,?,0,?)",
+            "INSERT INTO accounts(name, kind, opening, sort_order) VALUES (?,?,?,?)",
             (name.strip(), kind, float(opening), row[0]),
         )
         self.conn.commit()

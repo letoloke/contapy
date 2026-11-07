@@ -67,7 +67,7 @@ The ledger opens focused on the newest transaction:
 
 ## What the welcome page includes
 
-- **Account tree** — Bank, Cash, Credit card and Savings groups with collapsible rows, warning markers, and the four reference columns: **Reconciled, Cleared, Today, Future**. Group totals and the grand total update from the ledger. The list opens focused: **↑/↓** walk the accounts, **Home/End** jump, and **Enter** opens the selected account's ledger.
+- **Account tree** — Bank, Cash, Credit card and Savings groups with collapsible rows, alert markers for accounts with unreconciled transactions, and the four reference columns: **Reconciled, Cleared, Today, Future**. Group totals and the grand total update from the ledger. The list opens focused: **↑/↓** walk the accounts, **Home/End** jump, and **Enter** opens the selected account's ledger.
 - **Spending donut** — top ten expense categories plus *Other*, drawn with `QPainter`. Hover a slice for the category, amount and share. Switch periods from the footer.
 - **Spending & Revenue bars** — twelve months of income above zero and spending below, with the exact plotting style of the reference (green up, red down, 100k grid, year tag). Hover a month for income, spending and net.
 - **Scheduled strip** — Scheduled lists upcoming bills; Future and Remind are filtered views of the ledger (posted future-dated transactions and reminder-flagged transactions), just like HomeBank. Scheduled rows have working **Skip**, **Edit & Post** and **Post** actions; ledger rows open the account ledger.
@@ -197,6 +197,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 
 - **All charts are custom-painted** with `QPainter`; there is no matplotlib or QtCharts dependency.
 - **Balances are derived from posted transactions**, never stored as display-only snapshots. *Reconciled* and *Cleared* use the transaction statuses; *Future* adds already-posted future-dated transactions. Unposted schedule rows live in the scheduled strip until you post them.
+- **Alert triangles are derived too**: an account shows one while it has posted, past-dated transactions that are not reconciled. Reconcile them in the ledger (or clear future entries when they arrive) to make the marker disappear.
 - **Charts are portfolio-wide**; selecting an account highlights it for editing / opening its ledger without filtering the reports, matching the reference’s state.
 - The demo data uses a deterministic generator relative to “today”; a fresh seed lands on the reference totals, including the $167,248.99 rolling donut.
 
@@ -206,7 +207,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-Twenty-eight tests cover the reference balances, the rolling donut total, posting schedules, running ledger balances, reconciled/cleared transitions, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, remind flags, demo reset, and Omarchy palette parsing (dark, light, fallbacks and contrast).
+Twenty-nine tests cover the reference balances, the rolling donut total, posting schedules, running ledger balances, reconciled/cleared transitions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, remind flags, demo reset, and Omarchy palette parsing (dark, light, fallbacks and contrast).
 
 ## Notes / limitations
 

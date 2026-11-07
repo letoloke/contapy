@@ -11,8 +11,13 @@ class Account:
     name: str
     kind: str
     opening: float = 0.0
-    warning: bool = False
+    unreconciled: int = 0
     sort_order: int = 0
+
+    @property
+    def warning(self) -> bool:
+        """True when any posted transaction still needs reconciliation."""
+        return self.unreconciled > 0
 
 
 @dataclass(slots=True)
