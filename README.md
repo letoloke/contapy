@@ -51,6 +51,12 @@ Pick the target account in the dialog. When `Beneficiario` is blank, the **Use M
 
 Mappings are remembered automatically. After an import, the current field mapping is saved under a signature of the file's headers (column order, case and accents are ignored). The next file with the same header set opens with **Saved mapping loaded for these columns** and the dropdowns already set. Changing any dropdown and importing updates the saved profile.
 
+### Duplicate rows
+
+The preview checks every valid row against the transactions already in the target account and marks matches with **Duplicate** in the Status column. The check uses the **memo as the primary field**, together with the date and amount to avoid flagging recurring payments that share a description. Memo matching ignores case, accents and punctuation. Rows with no memo fall back to payee + date + amount.
+
+**Skip duplicates** is on by default, so importing the same statement twice only adds the new rows. Uncheck it to import the marked rows as well. The check is per account and only compares against transactions already in the database; identical rows inside one CSV are not removed from each other. The import summary reports both duplicates skipped and unreadable rows.
+
 ## Account ledger
 
 ![ContaPy account ledger](screenshots/ledger.png)
@@ -79,7 +85,7 @@ The demo figures are aligned to the reference: last 30 days **$167,248.99**, rec
 
 - **Account ledger** — a HomeBank-style transaction window per account, with date/payee/type/status filters, a search box, running balance, reconciliation/remind/flag icons, account balance summary, and add/edit/inherit/delete actions.
 - **Transaction editor** — Expense/Income/Transfer tabs, payment mode, number, tags, status icons, type-to-search combos, and Enter-to-save.
-- **CSV import** — automatic English/Spanish header detection, editable field mapping, remembered header profiles, mapped-row preview, target-account selection and memo-to-payee fallback.
+- **CSV import** — automatic English/Spanish header detection, editable field mapping, remembered header profiles, mapped-row preview, duplicate detection by memo, target-account selection and memo-to-payee fallback.
 - Schedule one-off bills; post or skip them from the home strip.
 - Mark posted transactions as cleared, reconciled, remind or flagged; these drive the home balance columns and Future/Remind lists.
 - SQLite persistence (no server, no account, no telemetry).

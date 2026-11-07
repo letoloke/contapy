@@ -1029,11 +1029,12 @@ class LedgerWindow(QMainWindow):
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         try:
-            added, skipped = self.store.import_csv(
+            added, skipped, duplicates = self.store.import_csv(
                 path,
                 account_id=dialog.account_id(),
                 memo_as_payee=dialog.memo_as_payee(),
                 mapping=dialog.current_mapping(),
+                skip_rows=dialog.skip_row_indexes(),
             )
         except Exception as exc:
             QMessageBox.warning(self, "Import failed", str(exc))
@@ -1043,7 +1044,12 @@ class LedgerWindow(QMainWindow):
         self._show_message(
             "Import finished",
             f"Imported {added} transactions."
-            + (f"\nSkipped {skipped} rows that could not be parsed." if skipped else ""),
+            + (f"\nSkipped {duplicates} duplicate(s)." if duplicates else "")
+            + (
+                f"\nSkipped {skipped} rows that could not be parsed."
+                if skipped
+                else ""
+            ),
         )
 
     def export_csv(self) -> None:

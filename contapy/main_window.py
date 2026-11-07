@@ -724,22 +724,34 @@ class MainWindow(QMainWindow):
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         try:
-            added, skipped = self.store.import_csv(
+            added, skipped, duplicates = self.store.import_csv(
                 path,
                 account_id=dialog.account_id(),
                 memo_as_payee=dialog.memo_as_payee(),
                 mapping=dialog.current_mapping(),
+                skip_rows=dialog.skip_row_indexes(),
             )
         except Exception as exc:  # pragma: no cover - surfaced to the user
             QMessageBox.warning(self, "Import failed", str(exc))
             return
         self.refresh_all()
-        self.show_toast(f"Imported {added} transactions" + (f", skipped {skipped}" if skipped else ""))
+        detail = f"{added} imported"
+        if duplicates:
+            detail += f", {duplicates} duplicate(s) skipped"
         if skipped:
+            detail += f", {skipped} unreadable"
+        self.show_toast(f"Import: {detail}")
+        if skipped or duplicates:
             QMessageBox.information(
                 self,
                 "Import finished",
-                f"Imported {added} transactions.\nSkipped {skipped} rows that could not be parsed.",
+                f"Imported {added} transactions."
+                + (f"\nSkipped {duplicates} duplicate(s)." if duplicates else "")
+                + (
+                    f"\nSkipped {skipped} row(s) that could not be parsed."
+                    if skipped
+                    else ""
+                ),
             )
 
     def export_csv(self) -> None:

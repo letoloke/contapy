@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -21,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..csv_io import CsvPlan, parse_amount, parse_date, read_csv_plan
-from ..db import DataStore
+from ..db import DataStore, import_fingerprint
 from ..models import Account
 from ..money import money
 from ..theme import C, font
@@ -64,6 +65,8 @@ class CsvImportDialog(QDialog):
         self._mapping_dirty = False
         self._valid_count = 0
         self._skipped_count = 0
+        self._duplicate_count = 0
+        self._duplicate_rows: set[int] = set()
         self.field_combos: dict[str, QComboBox] = {}
 
         self.setWindowTitle("Import transactions")
@@ -145,12 +148,22 @@ class CsvImportDialog(QDialog):
             index = self.account_combo.findData(default_account_id)
             if index >= 0:
                 self.account_combo.setCurrentIndex(index)
+        self.account_combo.currentIndexChanged.connect(self._refresh_preview)
         options.addWidget(self.account_combo)
         options.addSpacing(12)
         self.memo_payee = QCheckBox("Use Memo as payee when Beneficiario/Payee is empty")
         self.memo_payee.setChecked(True)
         self.memo_payee.toggled.connect(self._refresh_preview)
         options.addWidget(self.memo_payee)
+        options.addSpacing(12)
+        self.skip_duplicates = QCheckBox("Skip duplicates")
+        self.skip_duplicates.setChecked(True)
+        self.skip_duplicates.setToolTip(
+            "Leave out rows whose memo, date and amount match an existing "
+            "transaction in the same account."
+        )
+        self.skip_duplicates.toggled.connect(self._refresh_preview)
+        options.addWidget(self.skip_duplicates)
         options.addStretch(1)
         root.addLayout(options)
 
@@ -160,8 +173,10 @@ class CsvImportDialog(QDialog):
         self.account_help.setStyleSheet(f"color:{C.MUTED_DARK};")
         root.addWidget(self.account_help)
 
-        self.preview = QTableWidget(0, 5)
-        self.preview.setHorizontalHeaderLabels(["Date", "Payee", "Memo", "Amount", "Category"])
+        self.preview = QTableWidget(0, 6)
+        self.preview.setHorizontalHeaderLabels(
+            ["Date", "Payee", "Memo", "Amount", "Category", "Status"]
+        )
         self.preview.verticalHeader().setVisible(False)
         self.preview.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.preview.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -180,6 +195,8 @@ class CsvImportDialog(QDialog):
         header.resizeSection(3, 120)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
         header.resizeSection(4, 140)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(5, 90)
         self.preview.setStyleSheet(
             f"QTableWidget {{ background:{C.PANEL}; alternate-background-color:{C.ALT_ROW};"
             f" border:none; }}"
@@ -258,6 +275,16 @@ class CsvImportDialog(QDialog):
                 "imported into the selected account."
             )
 
+    def _row_account_id(self, row: dict[str, str]) -> int | None:
+        """Mirror the account selection the importer will use for this row."""
+        file_account = self.plan.value(row, "account").strip()
+        if file_account:
+            for account in self.accounts:
+                if account.name.strip() == file_account:
+                    return account.id
+            return None
+        return self.account_combo.currentData()
+
     def _preview_row(self, row: dict[str, str]) -> tuple[str, str, str, float, str] | None:
         parsed_date = parse_date(self.plan.value(row, "date"))
         amount = parse_amount(self.plan.value(row, "amount"))
@@ -271,33 +298,63 @@ class CsvImportDialog(QDialog):
         return parsed_date.isoformat(), payee, memo, amount, category
 
     def _refresh_preview(self, *_args) -> None:
-        preview_rows = []
+        existing = self.store.import_fingerprints([account.id for account in self.accounts])
+        preview_rows: list[tuple[str, str, str, float, str, bool]] = []
+        duplicate_rows: set[int] = set()
         skipped = 0
-        for row in self.plan.rows:
+        for index, row in enumerate(self.plan.rows):
             parsed = self._preview_row(row)
             if parsed is None:
                 skipped += 1
                 continue
-            if len(preview_rows) < 6:
-                preview_rows.append(parsed)
-        self._valid_count = self.plan.row_count - skipped
+            date_text, payee, memo, amount, category = parsed
+            account_id = self._row_account_id(row)
+            is_duplicate = False
+            if account_id is not None:
+                key = import_fingerprint(account_id, date_text, amount, memo, payee)
+                is_duplicate = key in existing
+            if is_duplicate:
+                duplicate_rows.add(index)
+            preview_rows.append((date_text, payee, memo, amount, category, is_duplicate))
+
+        self._valid_count = len(preview_rows)
         self._skipped_count = skipped
+        self._duplicate_count = len(duplicate_rows)
+        self._duplicate_rows = duplicate_rows
+        skip_duplicates = self.skip_duplicates.isChecked()
+        self._import_count = self._valid_count - (
+            self._duplicate_count if skip_duplicates else 0
+        )
+
+        tint = QColor(C.ORANGE)
+        tint.setAlpha(32)
+        duplicate_background = QBrush(tint)
+        duplicate_foreground = QBrush(QColor(C.ORANGE))
 
         self.preview.setRowCount(0)
-        for date_text, payee, memo, amount, category in preview_rows:
+        for date_text, payee, memo, amount, category, is_duplicate in preview_rows:
             row_index = self.preview.rowCount()
             self.preview.insertRow(row_index)
-            values = (date_text, payee, memo, money(amount), category)
+            status = "Duplicate" if is_duplicate else ""
+            values = (date_text, payee, memo, money(amount), category, status)
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 if column == 3:
                     item.setTextAlignment(
                         Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
                     )
+                if is_duplicate:
+                    item.setBackground(duplicate_background)
+                    if column == 5:
+                        item.setForeground(duplicate_foreground)
+                        item.setToolTip(
+                            "Same memo, date and amount as an existing "
+                            "transaction in this account."
+                        )
                 self.preview.setItem(row_index, column, item)
 
         has_required = not self.plan.missing_required
-        can_import = has_required and self._valid_count > 0 and bool(self.accounts)
+        can_import = has_required and self._import_count > 0 and bool(self.accounts)
         self.import_button.setEnabled(can_import)
         if not self.accounts:
             self.status_label.setText("Create an account before importing.")
@@ -305,12 +362,34 @@ class CsvImportDialog(QDialog):
         elif self.plan.missing_required:
             self.status_label.setText("Map both Date and Amount to continue.")
             self.status_label.setStyleSheet(f"color:{C.ORANGE};")
+        elif skip_duplicates and self._import_count == 0:
+            self.status_label.setText(
+                "Every valid row is already in this account as a duplicate."
+            )
+            self.status_label.setStyleSheet(f"color:{C.ORANGE};")
         else:
             suffix = f" · {self._skipped_count} unreadable row(s)" if self._skipped_count else ""
-            self.status_label.setText(
-                f"{self._valid_count} transactions ready to import{suffix}"
-            )
-            self.status_label.setStyleSheet(f"color:{C.MUTED};")
+            if self._duplicate_count:
+                if skip_duplicates:
+                    text = (
+                        f"{self._import_count} to import · "
+                        f"{self._duplicate_count} duplicate(s) skipped{suffix}"
+                    )
+                else:
+                    text = (
+                        f"{self._valid_count} to import · "
+                        f"{self._duplicate_count} duplicate(s) included{suffix}"
+                    )
+                self.status_label.setText(text)
+                self.status_label.setStyleSheet(f"color:{C.ORANGE};")
+            else:
+                self.status_label.setText(
+                    f"{self._valid_count} transactions ready to import{suffix}"
+                )
+                self.status_label.setStyleSheet(f"color:{C.MUTED};")
+
+    def skip_row_indexes(self) -> set[int]:
+        return set(self._duplicate_rows) if self.skip_duplicates.isChecked() else set()
 
     def accept(self) -> None:
         if not self.import_button.isEnabled():

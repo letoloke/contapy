@@ -147,11 +147,33 @@ def default_db_path() -> Path:
 
 
 BACKUP_DIR_NAME = "dailylbaka"
+ImportFingerprint = tuple[int, str, str, str, float]
 
 
 def daily_backup_dir(db_path: str | Path) -> Path:
     """Folder for the automatic daily copies, beside the active database."""
     return Path(db_path).expanduser().parent / BACKUP_DIR_NAME
+
+
+def import_fingerprint(
+    account_id: int, date_text: str, amount: float, memo: str, payee: str
+) -> ImportFingerprint:
+    """Identity used to spot CSV rows already present in a ledger.
+
+    The memo is the primary field. Date and amount disambiguate recurring
+    payments that happen to share a memo. When the memo is empty the payee is
+    used instead, so rows without a description still get a useful check.
+    """
+    memo_key = normalize(memo)
+    if memo_key:
+        kind, text = "memo", memo_key
+    else:
+        payee_key = normalize(payee)
+        if payee_key:
+            kind, text = "payee", payee_key
+        else:
+            kind, text = "blank", ""
+    return (int(account_id), kind, text, date_text, round(float(amount), 2))
 
 
 class DataStore:
@@ -913,18 +935,41 @@ class DataStore:
         )
         self.conn.commit()
 
+    def import_fingerprints(self, account_ids: list[int] | None = None) -> set[ImportFingerprint]:
+        """Fingerprints for duplicate detection during CSV import."""
+        sql = "SELECT account_id, date, memo, payee, amount FROM transactions"
+        params: tuple = ()
+        if account_ids is not None:
+            ids = list(dict.fromkeys(int(account_id) for account_id in account_ids))
+            if not ids:
+                return set()
+            sql += f" WHERE account_id IN ({','.join('?' * len(ids))})"
+            params = tuple(ids)
+        return {
+            import_fingerprint(
+                int(row["account_id"]),
+                str(row["date"]),
+                float(row["amount"]),
+                str(row["memo"] or ""),
+                str(row["payee"] or ""),
+            )
+            for row in self.conn.execute(sql, params)
+        }
+
     def import_csv(
         self,
         path: str | Path,
         account_id: int | None = None,
         memo_as_payee: bool = False,
         mapping: dict[str, str] | None = None,
-    ) -> tuple[int, int]:
+        skip_rows: set[int] | None = None,
+    ) -> tuple[int, int, int]:
         """Import a CSV, auto-detecting English/Spanish bank header names.
 
         Files with an account column use the account names in the file. Files
         without one (such as HomeBank bank exports) use ``account_id`` as the
-        target account.
+        target account. ``skip_rows`` lets the import dialog leave out rows it
+        already marked as duplicates; returns added, unreadable, duplicates.
         """
         plan = read_csv_plan(path)
         if mapping is not None:
@@ -937,7 +982,11 @@ class DataStore:
             )
         added = 0
         skipped = 0
-        for row in plan.rows:
+        duplicates = 0
+        for index, row in enumerate(plan.rows):
+            if skip_rows is not None and index in skip_rows:
+                duplicates += 1
+                continue
             try:
                 parsed = parse_date(plan.value(row, "date"))
                 if parsed is None:
@@ -987,7 +1036,7 @@ class DataStore:
             except Exception:
                 skipped += 1
         self.conn.commit()
-        return added, skipped
+        return added, skipped, duplicates
 
     def _ensure_account(self, name: str) -> int:
         row = self.conn.execute("SELECT id FROM accounts WHERE name=?", (name.strip(),)).fetchone()

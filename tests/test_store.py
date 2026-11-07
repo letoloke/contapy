@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 from contapy.csv_io import parse_amount, read_csv_plan
-from contapy.db import DataStore, daily_backup_dir, default_db_path
+from contapy.db import DataStore, daily_backup_dir, default_db_path, import_fingerprint
 from contapy.models import TransactionDraft
 
 
@@ -187,9 +187,10 @@ class StoreTests(unittest.TestCase):
         second_path = Path(self.tmp.name) / "imported.db"
         second = DataStore(second_path, seed=False)
         try:
-            added, skipped = second.import_csv(csv_path)
+            added, skipped, duplicates = second.import_csv(csv_path)
             self.assertEqual(added, exported)
             self.assertEqual(skipped, 0)
+            self.assertEqual(duplicates, 0)
             self.assertEqual(len(second.accounts()), 7)
         finally:
             second.close()
@@ -249,10 +250,10 @@ class StoreTests(unittest.TestCase):
         self.assertFalse(plan.missing_required)
 
         target = self.store.add_account("Imported bank", "Bank", 0)
-        added, skipped = self.store.import_csv(
+        added, skipped, duplicates = self.store.import_csv(
             fixture, account_id=target, memo_as_payee=True
         )
-        self.assertEqual((added, skipped), (70, 0))
+        self.assertEqual((added, skipped, duplicates), (70, 0, 0))
         rows = self.store.ledger_rows(target)
         self.assertEqual(len(rows), 70)
         self.assertAlmostEqual(sum(row.amount for row in rows), 35_038.47, places=2)
@@ -302,14 +303,49 @@ class StoreTests(unittest.TestCase):
             "payee": "Memo",
             "memo": "Memo",
         }
-        added, skipped = self.store.import_csv(
+        added, skipped, duplicates = self.store.import_csv(
             fixture, account_id=target, mapping=custom
         )
-        self.assertEqual((added, skipped), (70, 0))
+        self.assertEqual((added, skipped, duplicates), (70, 0, 0))
         rows = self.store.ledger_rows(target)
         self.assertEqual(len(rows), 70)
         self.assertTrue(all(row.payee == row.memo for row in rows))
         self.assertTrue(all(row.category_id is None for row in rows))
+
+    def test_import_duplicate_detection_prefers_memo(self) -> None:
+        target = self.store.add_account("Duplicate bank", "Bank", 0)
+        csv_path = Path(self.tmp.name) / "duplicates.csv"
+        csv_path.write_text(
+            "date,amount,payee,memo\n"
+            "2026-11-06,-85.50,Cafe,Morning coffee\n"
+            "2026-11-06,-20.00,Taxi,Airport ride\n",
+            encoding="utf-8",
+        )
+        added, skipped, duplicates = self.store.import_csv(csv_path, account_id=target)
+        self.assertEqual((added, skipped, duplicates), (2, 0, 0))
+
+        fingerprints = self.store.import_fingerprints([target])
+        memo_key = import_fingerprint(
+            target, "2026-11-06", -85.5, "  MORNING COFFEE ", "Different payee"
+        )
+        self.assertIn(memo_key, fingerprints)
+        # Date and amount disambiguate recurring payments with the same memo.
+        self.assertNotIn(
+            import_fingerprint(target, "2026-12-06", -85.5, "Morning coffee", "Cafe"),
+            fingerprints,
+        )
+        # A different memo with the same date and amount is not a duplicate.
+        self.assertNotIn(
+            import_fingerprint(target, "2026-11-06", -85.5, "Evening tea", "Cafe"),
+            fingerprints,
+        )
+
+        # The dialog passes the rows it marked as duplicate, and they are skipped.
+        added, skipped, duplicates = self.store.import_csv(
+            csv_path, account_id=target, skip_rows={0, 1}
+        )
+        self.assertEqual((added, skipped, duplicates), (0, 0, 2))
+        self.assertEqual(len(self.store.ledger_rows(target)), 2)
 
     def test_metadata_and_transfer_pair(self) -> None:
         account = self.account("Banamex")
