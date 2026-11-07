@@ -72,7 +72,7 @@ class ChartFooter(QWidget):
     def paintEvent(self, event):  # noqa: N802
         p = QPainter(self)
         p.fillRect(self.rect(), QColor(C.PANEL))
-        p.setPen(QPen(QColor("#242424"), 1))
+        p.setPen(QPen(QColor(C.BORDER), 1))
         p.drawLine(0, 0, self.width(), 0)
         p.end()
 
@@ -142,7 +142,7 @@ class ChartCard(QWidget):
         p.setPen(QPen(QColor(C.ACCENT if self._flash else C.BORDER), 2 if self._flash else 1))
         p.drawRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5))
 
-        p.setPen(QColor("#dedede"))
+        p.setPen(QColor(C.TITLE))
         p.setFont(font(20, 400))
         p.drawText(
             QRectF(15, 12, self.width() - 30, 28),
@@ -247,7 +247,7 @@ class DonutChart(QWidget):
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QColor(item.color))
             p.drawEllipse(QPointF(legend_x + 6, y + row_h / 2), 6.2, 6.2)
-            p.setPen(QColor("#f0f0f0" if index == self._hover else "#cccccc"))
+            p.setPen(QColor(C.TEXT if index == self._hover else C.TEXT_SOFT))
             p.setFont(font(14, 400))
             p.drawText(
                 QRectF(legend_x + 19, y, max(40, width - legend_x - 24), row_h),

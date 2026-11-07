@@ -161,7 +161,7 @@ class LedgerDelegate(QStyledItemDelegate):
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
 
         bg = QColor(C.ROW_SELECTED) if selected else QColor(
-            C.PANEL if index.row() % 2 == 0 else "#2e2e2e"
+            C.PANEL if index.row() % 2 == 0 else C.ALT_ROW
         )
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -169,12 +169,14 @@ class LedgerDelegate(QStyledItemDelegate):
         painter.setClipRect(rect)
 
         pad = 8
-        text_color = QColor("#ffffff") if selected else QColor(C.TEXT)
-        muted = QColor("#ffffff") if selected else QColor(C.MUTED)
+        text_color = QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.TEXT)
+        muted = QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.MUTED)
         category_color = (
-            QColor("#7f7f7f")
+            QColor(C.CATEGORY_MUTED)
             if row.category_name == "Uncategorized"
-            else (QColor("#ffffff") if selected else QColor("#b8b8b8"))
+            else (
+                QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.CATEGORY_TEXT)
+            )
         )
 
         if col == FLAG:
@@ -194,7 +196,7 @@ class LedgerDelegate(QStyledItemDelegate):
         elif col == STATUS:
             x = rect.left() + 7
             if row.reconciled:
-                draw_reconciled(painter, QRectF(x, rect.top() + 7, 14, 14), QColor("#3f8f7a"))
+                draw_reconciled(painter, QRectF(x, rect.top() + 7, 14, 14), QColor(C.RECONCILED))
                 x += 18
             elif row.cleared:
                 draw_check_circle(painter, QRectF(x, rect.top() + 7, 14, 14), QColor(C.GREEN))
@@ -203,7 +205,7 @@ class LedgerDelegate(QStyledItemDelegate):
                 draw_bell(painter, QRectF(x, rect.top() + 7, 14, 14), QColor(C.WARNING))
         elif col == EXPENSE:
             if row.amount < 0:
-                color = QColor("#ffffff") if selected else QColor(C.ORANGE)
+                color = QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.ORANGE)
                 self._text(
                     painter,
                     rect,
@@ -215,7 +217,7 @@ class LedgerDelegate(QStyledItemDelegate):
                 )
         elif col == INCOME:
             if row.amount > 0:
-                color = QColor("#ffffff") if selected else QColor(C.GREEN)
+                color = QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.GREEN)
                 self._text(
                     painter,
                     rect,
@@ -226,7 +228,7 @@ class LedgerDelegate(QStyledItemDelegate):
                     Qt.AlignmentFlag.AlignRight,
                 )
         elif col == BALANCE:
-            color = QColor("#ffffff") if selected else QColor("#c9c9c9")
+            color = QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.AMOUNT)
             self._text(
                 painter,
                 rect,
@@ -629,7 +631,7 @@ class LedgerWindow(QMainWindow):
         line = QFrame()
         line.setFrameShape(QFrame.Shape.VLine)
         line.setFixedHeight(24)
-        line.setStyleSheet("color:#454545; background:#454545; max-width:1px;")
+        line.setStyleSheet(f"color:{C.SEPARATOR}; background:{C.SEPARATOR}; max-width:1px;")
         return line
 
     # --------------------------------------------------------------- keyboard

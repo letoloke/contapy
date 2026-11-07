@@ -110,6 +110,22 @@ The first launch seeds a demo dataset. Data lives at `~/.local/share/contapy/con
 
 > **Upgrading from Budget:** if the old `~/.local/share/budget/budget.db` exists, the first ContaPy launch copies it to the new location automatically. The original file is left untouched. `CONTAPY_DB` overrides the path; the older `BUDGET_DB` variable is still honoured.
 
+### Theme
+
+ContaPy follows the active **Omarchy** theme. At startup it reads
+`~/.local/state/omarchy/current/theme/colors.toml` (honouring `XDG_STATE_HOME`)
+and derives the whole interface from it — panels, menus, inputs, selection,
+status colours and the category donut. Both dark and light Omarchy themes work.
+Switch themes in Omarchy, then restart ContaPy to pick up the new palette.
+
+Without Omarchy, or if the palette file is missing, the built-in graphite
+palette is used. Two environment variables override the lookup:
+
+```bash
+CONTAPY_THEME=builtin python3 main.py                    # ignore Omarchy
+CONTAPY_THEME_FILE=/path/to/colors.toml python3 main.py  # force a palette
+```
+
 ### Screenshot mode
 
 The welcome image above was rendered without a compositor:
@@ -164,7 +180,8 @@ contapy/
   main_window.py            chrome, menus, actions, refresh
   db.py                     SQLite schema, balances, reports, CSV
   seed.py                   deterministic reference-shaped demo data
-  theme.py                  palette, Qt stylesheet, emoji rendering
+  omarchy.py                reads Omarchy colors.toml, derives semantic tokens
+  theme.py                  Qt tokens, stylesheet, palette, emoji rendering
   models.py                 small dataclasses
   widgets/
     accounts.py             custom-painted account tree and footer
@@ -175,6 +192,7 @@ contapy/
     toolbar.py              emoji toolbar
     icons.py                painter-drawn mini icons
 tests/test_store.py         headless ledger tests
+tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 ```
 
 - **All charts are custom-painted** with `QPainter`; there is no matplotlib or QtCharts dependency.
@@ -188,7 +206,7 @@ tests/test_store.py         headless ledger tests
 python3 -m unittest discover -s tests -v
 ```
 
-Fourteen tests cover the reference balances, the rolling donut total, posting schedules, running ledger balances, reconciled/cleared transitions, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, remind flags and demo reset.
+Twenty-eight tests cover the reference balances, the rolling donut total, posting schedules, running ledger balances, reconciled/cleared transitions, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, remind flags, demo reset, and Omarchy palette parsing (dark, light, fallbacks and contrast).
 
 ## Notes / limitations
 

@@ -13,7 +13,7 @@ import random
 import sqlite3
 from datetime import date, timedelta
 
-from .theme import CATEGORY_COLORS
+from .omarchy import theme_category_color
 
 # name, share of monthly spending, account, payee
 CATEGORY_SEED = [
@@ -81,7 +81,7 @@ def seed_if_empty(conn: sqlite3.Connection, force: bool = False) -> bool:
     category_ids: dict[str, int] = {}
     for order, (name, _share, _account, _payee) in enumerate(CATEGORY_SEED):
         kind = "expense"
-        color = CATEGORY_COLORS.get(name, "#8a8a8a")
+        color = theme_category_color(name, "#8a8a8a")
         cur.execute(
             "INSERT INTO categories(name, kind, color, sort_order) VALUES (?,?,?,?)",
             (name, kind, color, order),
@@ -89,7 +89,7 @@ def seed_if_empty(conn: sqlite3.Connection, force: bool = False) -> bool:
         category_ids[name] = int(cur.lastrowid)
     cur.execute(
         "INSERT INTO categories(name, kind, color, sort_order) VALUES (?,?,?,?)",
-        ("Ingresos", "income", "#5c9736", 99),
+        ("Ingresos", "income", theme_category_color("Ingresos", "#5c9736"), 99),
     )
     category_ids["Ingresos"] = int(cur.lastrowid)
 

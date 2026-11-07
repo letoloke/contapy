@@ -35,6 +35,7 @@ from .models import (
     TransactionDraft,
     TransactionRow,
 )
+from .omarchy import theme_category_color
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -359,10 +360,17 @@ class DataStore:
             other += sum(v for _, v, _ in named[10:])
             named = named[:10]
         slices = [
-            Slice(name=n, amount=v, color=color or "#888888") for n, v, color in named
+            Slice(name=n, amount=v, color=theme_category_color(n, color))
+            for n, v, color in named
         ]
         if other > 0:
-            slices.append(Slice(name="Other", amount=other, color="#77544d"))
+            slices.append(
+                Slice(
+                    name="Other",
+                    amount=other,
+                    color=theme_category_color("Other", "#77544d"),
+                )
+            )
         for item in slices:
             item.percent = item.amount / total if total else 0.0
         return slices, total
@@ -443,7 +451,7 @@ class DataStore:
                 payee=r["payee"],
                 category_id=r["category_id"],
                 category_name=r["category_name"] or "Uncategorized",
-                category_color=r["category_color"] or "#888888",
+                category_color=theme_category_color(r["category_name"], r["category_color"]),
                 amount=float(r["amount"]),
                 memo=r["memo"],
                 status=r["status"],
@@ -671,7 +679,7 @@ class DataStore:
             payee=r["payee"],
             category_id=r["category_id"],
             category_name=r["category_name"] or "Uncategorized",
-            category_color=r["category_color"] or "#888888",
+            category_color=theme_category_color(r["category_name"], r["category_color"]),
             category_kind=r["category_kind"] or "expense",
             amount=float(r["amount"]),
             memo=r["memo"],
@@ -921,9 +929,7 @@ class DataStore:
         row = self.conn.execute("SELECT id FROM categories WHERE name=?", (name.strip(),)).fetchone()
         if row:
             return int(row[0])
-        from .theme import CATEGORY_COLORS
-
-        color = CATEGORY_COLORS.get(name, "#8a8a8a")
+        color = theme_category_color(name, "#8a8a8a")
         cur = self.conn.execute(
             "INSERT INTO categories(name, kind, color, sort_order) VALUES (?,?,?, "
             "(SELECT COALESCE(MAX(sort_order), -1) + 1 FROM categories))",

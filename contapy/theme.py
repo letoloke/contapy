@@ -1,8 +1,8 @@
 """Visual language for the ContaPy app.
 
-The palette mirrors the dark, low-chrome dashboard in the design reference:
-warm graphite panels, hairline borders, a single blue selection accent and
-green/orange figures for positive/negative money.
+The palette follows the active Omarchy theme when one is available and falls
+back to the original graphite dashboard palette otherwise.  Colours are
+resolved once at startup into the semantic tokens on :class:`C`.
 """
 
 from __future__ import annotations
@@ -13,71 +13,32 @@ from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette, QPixmap
 from PySide6.QtWidgets import QApplication
 
+from .omarchy import load_palette
+
 ASSETS = Path(__file__).resolve().parent / "assets"
+
+_PALETTE = load_palette()
 
 
 class C:
-    """Colour tokens."""
-
-    BG = "#333333"
-    PANEL = "#2b2b2b"
-    PANEL_RAISED = "#303030"
-    HEADER = "#2b2b2b"
-    BORDER = "#1b1b1b"
-    BORDER_SOFT = "#3b3b3b"
-    GRID = "#3a3a3a"
-    GRID_ZERO = "#4d4d4d"
-
-    TEXT = "#efefef"
-    TEXT_SOFT = "#d8d8d8"
-    MUTED = "#9c9c9c"
-    MUTED_DARK = "#7c7c7c"
-
-    ACCENT = "#24518d"
-    ACCENT_LIGHT = "#2e5f9e"
-    ACCENT_HOVER = "#2c5f9f"
-
-    GREEN = "#4e9f3f"
-    GREEN_BAR = "#5c9736"
-    ORANGE = "#d9822b"
-    RED_BAR = "#b0292b"
-    WARNING = "#e5a93f"
-    INFO = "#3f7fbf"
-
-    ROW_HOVER = "#363636"
-    ROW_SELECTED = "#24518d"
-    TOTAL_ROW = "#2e2e2e"
+    """Colour tokens resolved from the active Omarchy palette."""
 
 
-# Category colours sampled from the reference donut.
-CATEGORY_COLORS = {
-    "renta": "#4571a6",
-    "nomina": "#acbdce",
-    "Retiro de efectivo": "#d87921",
-    "Impuestos": "#e4b276",
-    "suscripciones": "#5c9736",
-    "alimentos": "#aecf96",
-    "manto": "#b0292b",
-    "comision": "#dc9193",
-    "servicios": "#7d64ac",
-    "bebes": "#b5a6cb",
-    "Other": "#77544d",
-    "Ingresos": "#5c9736",
-}
+for _token, _value in _PALETTE.tokens.items():
+    setattr(C, _token, _value)
+del _token, _value
 
-DONUT_COLORS = [
-    "#4571a6",
-    "#acbdce",
-    "#d87921",
-    "#e4b276",
-    "#5c9736",
-    "#aecf96",
-    "#b0292b",
-    "#dc9193",
-    "#7d64ac",
-    "#b5a6cb",
-    "#77544d",
-]
+CATEGORY_COLORS = dict(_PALETTE.category_colors)
+DONUT_COLORS = list(_PALETTE.donut_colors)
+
+
+def palette_source() -> str:
+    """Human-readable description of where the colours came from."""
+    return _PALETTE.source
+
+
+def palette_mode() -> str:
+    return _PALETTE.mode
 
 _FONT_FAMILY: str | None = None
 _EMOJI_FAMILY: str | None = None
@@ -155,7 +116,7 @@ def emoji_pixmap(char: str, logical: int = 22, dpr: float = 2.0) -> QPixmap:
     f = QFont(emoji_family() or "Noto Color Emoji")
     f.setPixelSize(int(px * 0.9))
     painter.setFont(f)
-    painter.setPen(QColor("#ffffff"))
+    painter.setPen(QColor(C.TEXT))
     painter.drawText(QRectF(0, 0, px, px), Qt.AlignmentFlag.AlignCenter, char)
     painter.end()
     pm.setDevicePixelRatio(dpr)
@@ -182,16 +143,16 @@ def stylesheet() -> str:
         background: {C.BG};
     }}
     QToolTip {{
-        background: #1f1f1f;
-        color: #f0f0f0;
-        border: 1px solid #454545;
+        background: {C.TOOLTIP_BG};
+        color: {C.TOOLTIP_TEXT};
+        border: 1px solid {C.TOOLTIP_BORDER};
         padding: 6px 9px;
         border-radius: 4px;
         font-size: 13px;
     }}
     QMenuBar {{
         background: {C.BG};
-        color: #ededed;
+        color: {C.TEXT};
         padding: 0px 2px;
         border: none;
     }}
@@ -201,32 +162,32 @@ def stylesheet() -> str:
         border-radius: 3px;
     }}
     QMenuBar::item:selected {{
-        background: #414141;
+        background: {C.MENUBAR_HOVER};
     }}
     QMenuBar::item:pressed {{
         background: {C.ACCENT};
     }}
     QMenu {{
-        background: #2b2b2b;
-        border: 1px solid #474747;
+        background: {C.MENU_BG};
+        border: 1px solid {C.MENU_BORDER};
         padding: 6px;
     }}
     QMenu::item {{
         background: transparent;
         padding: 6px 28px 6px 14px;
         border-radius: 4px;
-        color: #e6e6e6;
+        color: {C.MENU_TEXT};
     }}
     QMenu::item:selected {{
-        background: {C.ACCENT};
-        color: #ffffff;
+        background: {C.MENU_SELECTED};
+        color: {C.MENU_SELECTED_TEXT};
     }}
     QMenu::item:disabled {{
-        color: #6f6f6f;
+        color: {C.DISABLED};
     }}
     QMenu::separator {{
         height: 1px;
-        background: #3d3d3d;
+        background: {C.MENU_SEPARATOR};
         margin: 5px 8px;
     }}
     QToolButton {{
@@ -236,66 +197,67 @@ def stylesheet() -> str:
         padding: 2px;
     }}
     QToolButton:hover {{
-        background: #414141;
+        background: {C.MENUBAR_HOVER};
     }}
     QToolButton:pressed {{
-        background: #4a4a4a;
+        background: {C.BUTTON_BG_PRESSED};
     }}
     QPushButton {{
-        background: #363636;
-        color: #e7e7e7;
-        border: 1px solid #4b4b4b;
+        background: {C.BUTTON_BG};
+        color: {C.BUTTON_TEXT};
+        border: 1px solid {C.BUTTON_BORDER};
         border-radius: 4px;
         padding: 5px 14px;
         font-size: 13px;
     }}
     QPushButton:hover {{
-        background: #3f3f3f;
+        background: {C.BUTTON_BG_HOVER};
     }}
     QPushButton:pressed {{
-        background: #474747;
+        background: {C.BUTTON_BG_PRESSED};
     }}
     QPushButton[role="primary"] {{
         background: {C.ACCENT};
-        border-color: #3a6cae;
-        color: #ffffff;
+        border-color: {C.BUTTON_PRIMARY_BORDER};
+        color: {C.ON_ACCENT};
     }}
     QPushButton[role="primary"]:hover {{
         background: {C.ACCENT_LIGHT};
     }}
     QPushButton:disabled {{
-        color: #6d6d6d;
-        background: #303030;
-        border-color: #3e3e3e;
+        color: {C.DISABLED};
+        background: {C.DISABLED_BG};
+        border-color: {C.DISABLED_BORDER};
     }}
     QPushButton[role="action"] {{
-        background: #343434;
-        color: #d6d6d6;
-        border: 1px solid #505050;
+        background: {C.ACTION_BG};
+        color: {C.ACTION_TEXT};
+        border: 1px solid {C.ACTION_BORDER};
         border-radius: 4px;
         padding: 4px 7px;
         font-size: 13px;
     }}
     QPushButton[role="action"]:hover {{
-        background: #3e3e3e;
-        border-color: #5c5c5c;
+        background: {C.ACTION_BG_HOVER};
+        border-color: {C.BORDER_SOFT};
     }}
     QPushButton[role="action"]:disabled {{
-        color: #6f6f6f;
-        background: #303030;
-        border-color: #3f3f3f;
+        color: {C.DISABLED};
+        background: {C.DISABLED_BG};
+        border-color: {C.DISABLED_BORDER};
     }}
     QLineEdit, QDateEdit, QDoubleSpinBox, QSpinBox, QComboBox {{
-        background: #242424;
-        color: #ededed;
-        border: 1px solid #4a4a4a;
+        background: {C.INPUT_BG};
+        color: {C.INPUT_TEXT};
+        border: 1px solid {C.INPUT_BORDER};
         border-radius: 4px;
         padding: 5px 8px;
-        selection-background-color: {C.ACCENT};
+        selection-background-color: {C.SELECTION};
+        selection-color: {C.SELECTION_TEXT};
         font-size: 13px;
     }}
     QLineEdit:focus, QDateEdit:focus, QDoubleSpinBox:focus, QComboBox:focus {{
-        border-color: #4a7fc4;
+        border-color: {C.FOCUS_BORDER};
     }}
     QComboBox {{
         padding-right: 24px;
@@ -310,11 +272,11 @@ def stylesheet() -> str:
         height: 6px;
     }}
     QComboBox QAbstractItemView {{
-        background: #2b2b2b;
-        color: #e8e8e8;
-        border: 1px solid #4a4a4a;
-        selection-background-color: {C.ACCENT};
-        selection-color: #ffffff;
+        background: {C.POPUP_BG};
+        color: {C.POPUP_TEXT};
+        border: 1px solid {C.POPUP_BORDER};
+        selection-background-color: {C.SELECTION};
+        selection-color: {C.SELECTION_TEXT};
         outline: 0;
         padding: 4px;
     }}
@@ -324,7 +286,7 @@ def stylesheet() -> str:
         border: none;
     }}
     QCheckBox {{
-        color: #dcdcdc;
+        color: {C.TEXT};
         spacing: 7px;
         font-size: 13px;
     }}
@@ -344,12 +306,12 @@ def stylesheet() -> str:
         margin: 2px 1px;
     }}
     QScrollBar::handle:vertical {{
-        background: #4a4a4a;
+        background: {C.SCROLL_HANDLE};
         min-height: 26px;
         border-radius: 4px;
     }}
     QScrollBar::handle:vertical:hover {{
-        background: #575757;
+        background: {C.SCROLL_HANDLE_HOVER};
     }}
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
         height: 0px;
@@ -362,7 +324,7 @@ def stylesheet() -> str:
         background: transparent;
     }}
     QScrollBar::handle:horizontal {{
-        background: #4a4a4a;
+        background: {C.SCROLL_HANDLE};
         min-width: 26px;
         border-radius: 4px;
     }}
@@ -372,16 +334,16 @@ def stylesheet() -> str:
     QCheckBox::indicator {{
         width: 14px;
         height: 14px;
-        border: 1px solid #555555;
+        border: 1px solid {C.CHECK_BORDER};
         border-radius: 3px;
-        background: #242424;
+        background: {C.CHECK_BG};
     }}
     QCheckBox::indicator:hover {{
-        border-color: #6d6d6d;
+        border-color: {C.CHECK_HOVER};
     }}
     QCheckBox::indicator:checked {{
         background: {C.ACCENT};
-        border-color: #4a7fc4;
+        border-color: {C.FOCUS_BORDER};
         image: url("{check}");
     }}
     QTableView {{
@@ -389,7 +351,7 @@ def stylesheet() -> str:
         color: {C.TEXT};
         border: none;
         selection-background-color: transparent;
-        gridline-color: #363636;
+        gridline-color: {C.GRID};
     }}
     QHeaderView::section {{
         background: {C.PANEL};
@@ -404,24 +366,24 @@ def stylesheet() -> str:
         border: none;
     }}
     QListWidget {{
-        background: #242424;
-        border: 1px solid #444444;
+        background: {C.LIST_BG};
+        border: 1px solid {C.LIST_BORDER};
         border-radius: 4px;
-        color: #e6e6e6;
+        color: {C.TEXT};
         outline: 0;
     }}
     QListWidget::item {{
         padding: 6px 8px;
     }}
     QListWidget::item:selected {{
-        background: {C.ACCENT};
-        color: white;
+        background: {C.SELECTION};
+        color: {C.SELECTION_TEXT};
     }}
     QMessageBox {{
         background: {C.PANEL};
     }}
     QMessageBox QLabel {{
-        color: #e9e9e9;
+        color: {C.TEXT};
     }}
     """
 
@@ -433,18 +395,18 @@ def apply_theme(app: QApplication) -> None:
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window, QColor(C.BG))
     palette.setColor(QPalette.ColorRole.WindowText, QColor(C.TEXT))
-    palette.setColor(QPalette.ColorRole.Base, QColor("#242424"))
+    palette.setColor(QPalette.ColorRole.Base, QColor(C.INPUT_BG))
     palette.setColor(QPalette.ColorRole.AlternateBase, QColor(C.PANEL))
-    palette.setColor(QPalette.ColorRole.ToolTipBase, QColor("#1f1f1f"))
-    palette.setColor(QPalette.ColorRole.ToolTipText, QColor(C.TEXT))
+    palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(C.TOOLTIP_BG))
+    palette.setColor(QPalette.ColorRole.ToolTipText, QColor(C.TOOLTIP_TEXT))
     palette.setColor(QPalette.ColorRole.Text, QColor(C.TEXT))
-    palette.setColor(QPalette.ColorRole.Button, QColor("#343434"))
-    palette.setColor(QPalette.ColorRole.ButtonText, QColor(C.TEXT))
-    palette.setColor(QPalette.ColorRole.BrightText, QColor("#ffffff"))
-    palette.setColor(QPalette.ColorRole.Highlight, QColor(C.ACCENT))
-    palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
+    palette.setColor(QPalette.ColorRole.Button, QColor(C.BUTTON_BG))
+    palette.setColor(QPalette.ColorRole.ButtonText, QColor(C.BUTTON_TEXT))
+    palette.setColor(QPalette.ColorRole.BrightText, QColor(C.TITLE))
+    palette.setColor(QPalette.ColorRole.Highlight, QColor(C.SELECTION))
+    palette.setColor(QPalette.ColorRole.HighlightedText, QColor(C.SELECTION_TEXT))
     palette.setColor(QPalette.ColorRole.PlaceholderText, QColor(C.MUTED_DARK))
-    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, QColor("#6f6f6f"))
-    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor("#6f6f6f"))
+    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, QColor(C.DISABLED))
+    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor(C.DISABLED))
     app.setPalette(palette)
     app.setStyleSheet(stylesheet())

@@ -354,7 +354,7 @@ class _AccountCanvas(QWidget):
                 draw_chevron(
                     p,
                     chevron_rect,
-                    QColor("#b9b9b9"),
+                    QColor(C.TEXT_SOFT),
                     "right" if row.collapsed else "down",
                     1.5,
                 )
@@ -369,18 +369,18 @@ class _AccountCanvas(QWidget):
                     draw_warning(
                         p,
                         QRectF(warn_x, y + 5.5, 14, 14),
-                        QColor("#e5a93f"),
+                        QColor(C.WARNING),
                         1.2,
                     )
                 if row.kind == "account":
                     base_font = name_font
-                    name_color = QColor("#ffffff" if selected else C.TEXT)
+                    name_color = QColor(C.ROW_SELECTED_TEXT if selected else C.TEXT)
                 elif row.kind == "grand":
                     base_font = grand_font
-                    name_color = QColor("#ffffff" if selected else C.TEXT)
+                    name_color = QColor(C.ROW_SELECTED_TEXT if selected else C.TEXT)
                 else:
                     base_font = bold_name_font
-                    name_color = QColor("#ffffff" if selected else C.TEXT_SOFT)
+                    name_color = QColor(C.ROW_SELECTED_TEXT if selected else C.TEXT_SOFT)
                 p.setFont(base_font)
                 p.setPen(name_color)
                 if row.kind == "grand":
@@ -404,7 +404,7 @@ class _AccountCanvas(QWidget):
                 for position, value in zip(COLUMNS, row.values):
                     edge = width * position
                     if selected:
-                        color = QColor("#ffffff")
+                        color = QColor(C.ROW_SELECTED_TEXT)
                     elif value > 0.004:
                         color = QColor(C.GREEN)
                     elif value < -0.004:
@@ -418,7 +418,7 @@ class _AccountCanvas(QWidget):
                         money(value),
                     )
             if row.kind == "total":
-                p.setPen(QPen(QColor("#262626"), 1))
+                p.setPen(QPen(QColor(C.SEPARATOR), 1))
                 p.drawLine(0, int(rect.bottom()), width, int(rect.bottom()))
         if self.hasFocus():
             p.setPen(QPen(QColor(C.ACCENT), 1))

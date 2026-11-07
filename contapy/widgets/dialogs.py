@@ -73,7 +73,7 @@ class SearchCombo(QComboBox):
         self.setMaxVisibleItems(12)
         self.lineEdit().setPlaceholderText(placeholder)
         self.lineEdit().setStyleSheet(
-            "background: transparent; border: none; padding: 0px; color: #ededed;"
+            f"background: transparent; border: none; padding: 0px; color: {C.TEXT};"
         )
         self._completion_model = QStringListModel(self)
         self._completer = QCompleter(self._completion_model, self)
@@ -84,8 +84,10 @@ class SearchCombo(QComboBox):
         self.setCompleter(self._completer)
         popup = self._completer.popup()
         popup.setStyleSheet(
-            f"QListView {{ background:{C.PANEL}; color:{C.TEXT}; border:1px solid #4a4a4a;"
-            f" selection-background-color:{C.ACCENT}; selection-color:#ffffff; outline:0; padding:3px; }}"
+            f"QListView {{ background:{C.POPUP_BG}; color:{C.POPUP_TEXT};"
+            f" border:1px solid {C.POPUP_BORDER};"
+            f" selection-background-color:{C.SELECTION};"
+            f" selection-color:{C.SELECTION_TEXT}; outline:0; padding:3px; }}"
         )
         self.lineEdit().textEdited.connect(self._update_completion)
         self.lineEdit().installEventFilter(self)
@@ -457,21 +459,21 @@ class TransactionDialog(QDialog):
             f"""
             QWidget#typeTabs {{
                 background: {C.PANEL};
-                border: 1px solid #4a4a4a;
+                border: 1px solid {C.INPUT_BORDER};
                 border-radius: 4px;
             }}
             QPushButton[typeTab="true"] {{
                 background: transparent;
                 border: none;
-                border-right: 1px solid #4a4a4a;
+                border-right: 1px solid {C.INPUT_BORDER};
                 border-radius: 0px;
                 padding: 5px 20px;
-                color: #d8d8d8;
+                color: {C.TEXT_SOFT};
                 font-size: 14px;
             }}
             QPushButton[typeTab="true"]:checked {{
-                background: #1e1e1e;
-                color: #ffffff;
+                background: {C.TAB_ACTIVE_BG};
+                color: {C.TEXT};
             }}
             """
         )
@@ -523,18 +525,18 @@ class TransactionDialog(QDialog):
 
         box = QWidget()
         box.setStyleSheet(
-            """
-            QToolButton {
-                background: #242424;
-                border: 1px solid #4c4c4c;
+            f"""
+            QToolButton {{
+                background: {C.INPUT_BG};
+                border: 1px solid {C.INPUT_BORDER};
                 border-radius: 3px;
                 padding: 2px;
-            }
-            QToolButton:hover { background: #333333; }
-            QToolButton:checked {
-                background: #1e1e1e;
-                border-color: #4a7fc4;
-            }
+            }}
+            QToolButton:hover {{ background: {C.ROW_HOVER}; }}
+            QToolButton:checked {{
+                background: {C.TAB_ACTIVE_BG};
+                border-color: {C.FOCUS_BORDER};
+            }}
             """
         )
         box_layout = QHBoxLayout(box)
@@ -545,7 +547,7 @@ class TransactionDialog(QDialog):
             ("none", QIcon(), "No status (Ctrl+0)"),
             ("flagged", _drawer_icon(draw_flag, C.WARNING), "Flagged (Ctrl+1)"),
             ("cleared", _drawer_icon(draw_check_circle, C.GREEN), "Cleared (Ctrl+2)"),
-            ("reconciled", _drawer_icon(draw_reconciled, "#3f8f7a"), "Reconciled (Ctrl+3)"),
+            ("reconciled", _drawer_icon(draw_reconciled, C.RECONCILED), "Reconciled (Ctrl+3)"),
             ("remind", _drawer_icon(draw_bell, C.WARNING), "Remind (Ctrl+4)"),
         ]
         self.status_buttons: dict[str, QToolButton] = {}
@@ -971,7 +973,7 @@ class PreferencesDialog(QDialog):
         path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         path_label.setFont(font(12, 400))
         path_label.setStyleSheet(
-            f"color:{C.TEXT_SOFT}; background:#242424; border:1px solid #444;"
+            f"color:{C.TEXT_SOFT}; background:{C.INPUT_BG}; border:1px solid {C.INPUT_BORDER};"
             f"border-radius:4px; padding:8px;"
         )
         root.addWidget(path_label)
@@ -1071,11 +1073,11 @@ class ListDialog(QDialog):
 
 def about_text() -> str:
     return (
-        "<h3 style='color:#f0f0f0;'>ContaPy</h3>"
-        "<p style='color:#c8c8c8;'>A local-first personal finance dashboard.<br>"
+        f"<h3 style='color:{C.TITLE};'>ContaPy</h3>"
+        f"<p style='color:{C.TEXT_SOFT};'>A local-first personal finance dashboard.<br>"
         "Accounts, a transaction ledger, scheduled transactions, category spending and cash flow — "
         "built with Python, PySide6 and SQLite.</p>"
-        f"<p style='color:#8f8f8f;'>Version {__version__} · no cloud, no account, no telemetry.</p>"
+        f"<p style='color:{C.MUTED_DARK};'>Version {__version__} · no cloud, no account, no telemetry.</p>"
     )
 
 
@@ -1097,6 +1099,6 @@ def shortcuts_text() -> str:
         "<b>In the transaction window</b><br>"
         "<b>Enter</b> saves · <b>Tab</b> moves · <b>Alt+E/I/T</b> type · "
         "<b>Ctrl+0–4</b> status<br><br>"
-        "<span style='color:#9c9c9c;'>Double-click an account to open its ledger, or a "
+        f"<span style='color:{C.MUTED};'>Double-click an account to open its ledger, or a "
         "scheduled transaction to edit and post it.</span>"
     )

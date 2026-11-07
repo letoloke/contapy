@@ -112,7 +112,7 @@ class CsvImportDialog(QDialog):
             label_widget = QLabel(f"{label} *" if required else label)
             label_widget.setFont(font(11, 400))
             label_widget.setStyleSheet(
-                f"color:{'#d8d8d8' if required else C.MUTED};"
+                f"color:{C.TEXT_SOFT if required else C.MUTED};"
             )
             label_widget.setFixedWidth(72)
             label_widget.setAlignment(
@@ -181,7 +181,7 @@ class CsvImportDialog(QDialog):
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
         header.resizeSection(4, 140)
         self.preview.setStyleSheet(
-            f"QTableWidget {{ background:{C.PANEL}; alternate-background-color:#303030;"
+            f"QTableWidget {{ background:{C.PANEL}; alternate-background-color:{C.ALT_ROW};"
             f" border:none; }}"
         )
         root.addWidget(self.preview, 1)

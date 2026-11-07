@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QApplication
 from . import __version__
 from .db import DataStore
 from .main_window import MainWindow
-from .theme import C, apply_theme
+from .theme import C, DONUT_COLORS, apply_theme
 
 
 def build_app_icon() -> QIcon:
@@ -24,21 +24,9 @@ def build_app_icon() -> QIcon:
     p = QPainter(pixmap)
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(QColor("#2b2b2b"))
+    p.setBrush(QColor(C.PANEL))
     p.drawRoundedRect(QRectF(2, 2, size - 4, size - 4), 26, 26)
-    colors = [
-        "#4571a6",
-        "#acbdce",
-        "#d87921",
-        "#e4b276",
-        "#5c9736",
-        "#aecf96",
-        "#b0292b",
-        "#dc9193",
-        "#7d64ac",
-        "#b5a6cb",
-        "#77544d",
-    ]
+    colors = DONUT_COLORS or [C.ACCENT, C.GREEN, C.ORANGE, C.INFO]
     rect = QRectF(18, 18, size - 36, size - 36)
     angle = 90.0
     span = 360.0 / len(colors)
@@ -46,7 +34,7 @@ def build_app_icon() -> QIcon:
         p.setBrush(QColor(color))
         p.drawPie(rect, int(round(angle * 16)), int(round(-span * 16)))
         angle -= span
-    p.setBrush(QColor("#2b2b2b"))
+    p.setBrush(QColor(C.PANEL))
     p.drawEllipse(QPointF(size / 2, size / 2), size * 0.185, size * 0.185)
     p.end()
     return QIcon(pixmap)

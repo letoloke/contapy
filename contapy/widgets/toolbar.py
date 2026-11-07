@@ -110,7 +110,7 @@ class AppToolbar(QWidget):
         line = QFrame(self)
         line.setFrameShape(QFrame.Shape.VLine)
         line.setFixedHeight(24)
-        line.setStyleSheet("color:#454545; background:#454545; max-width:1px;")
+        line.setStyleSheet(f"color:{C.SEPARATOR}; background:{C.SEPARATOR}; max-width:1px;")
         return line
 
     def paintEvent(self, event):  # noqa: N802

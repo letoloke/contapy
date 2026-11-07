@@ -104,7 +104,7 @@ def draw_info(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> N
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(QColor(C.INFO))
     p.drawEllipse(r)
-    p.setPen(QColor("#ffffff"))
+    p.setPen(QColor(C.ON_ACCENT))
     p.setFont(font(int(r.height() * 0.68), 700))
     p.drawText(r, Qt.AlignmentFlag.AlignCenter, "i")
     p.restore()
@@ -115,9 +115,9 @@ def draw_check_circle(p: QPainter, rect: QRectF, color: QColor, width: float = 1
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     r = rect.adjusted(1.5, 1.5, -1.5, -1.5)
     p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(QColor("#43a047"))
+    p.setBrush(QColor(C.GREEN))
     p.drawEllipse(r)
-    pen = QPen(QColor("#ffffff"), 1.7, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
+    pen = QPen(QColor(C.ON_GREEN), 1.7, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
                Qt.PenJoinStyle.RoundJoin)
     p.setPen(pen)
     p.setBrush(Qt.BrushStyle.NoBrush)
@@ -134,9 +134,9 @@ def draw_calendar(p: QPainter, rect: QRectF, color: QColor, width: float = 1.2) 
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     r = rect.adjusted(1, 2, -1, -1)
     p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(QColor("#5c9736"))
+    p.setBrush(QColor(C.GREEN_BAR))
     p.drawRoundedRect(r, 2, 2)
-    p.setPen(QPen(QColor("#e8f2df"), 1.0))
+    p.setPen(QPen(QColor(C.CALENDAR_FG), 1.0))
     p.drawLine(QPointF(r.left() + 2, r.top() + r.height() * 0.34),
                QPointF(r.right() - 2, r.top() + r.height() * 0.34))
     p.drawLine(QPointF(r.center().x(), r.top() + 1.5),
@@ -156,7 +156,7 @@ def draw_warning(p: QPainter, rect: QRectF, color: QColor, width: float = 1.2) -
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(QColor(C.WARNING))
     p.drawPath(path)
-    p.setPen(QColor("#2b2b2b"))
+    p.setPen(QColor(C.WARNING_TEXT))
     p.setFont(font(max(9, int(r.height() * 0.62)), 700))
     p.drawText(r.adjusted(0, r.height() * 0.18, 0, 0), Qt.AlignmentFlag.AlignCenter, "!")
     p.restore()
@@ -258,9 +258,9 @@ def draw_reconciled(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     r = rect.adjusted(1.5, 1.5, -1.5, -1.5)
     p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(QColor("#3f8f7a"))
+    p.setBrush(QColor(C.RECONCILED))
     p.drawEllipse(r)
-    p.setPen(QPen(QColor("#ffffff"), 1.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
+    p.setPen(QPen(QColor(C.ON_RECONCILED), 1.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
                   Qt.PenJoinStyle.RoundJoin))
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.drawPolyline(QPolygonF([
@@ -325,10 +325,10 @@ class IconButton(QAbstractButton):
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         if self._hover and self.isEnabled():
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor("#414141"))
+            p.setBrush(QColor(C.ROW_HOVER))
             p.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), 4, 4)
         if not self.isEnabled():
-            color = QColor("#5f5f5f")
+            color = QColor(C.DISABLED)
         else:
             color = QColor(self._color or C.TEXT_SOFT)
         inner = QRectF(self.rect()).adjusted(4, 4, -4, -4)

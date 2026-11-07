@@ -91,9 +91,9 @@ class _Tabs(QWidget):
             if name == self.active:
                 p.fillRect(rect, QColor(C.ACCENT))
             elif name == self._hover:
-                p.fillRect(rect, QColor("#383838"))
+                p.fillRect(rect, QColor(C.ROW_HOVER))
             p.setFont(font(14, 400))
-            p.setPen(QColor("#ffffff" if name == self.active else C.TEXT_SOFT))
+            p.setPen(QColor(C.ON_ACCENT if name == self.active else C.TEXT_SOFT))
             p.drawText(
                 rect.adjusted(13, 0, 0, 0),
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
@@ -297,16 +297,16 @@ class _Canvas(QWidget):
                 and self.hasFocus()
             )
             if selected:
-                p.fillRect(rect, QColor("#31465f"))
+                p.fillRect(rect, QColor(C.ROW_SELECTED))
             elif index == self._hover:
-                p.fillRect(rect, QColor("#333333"))
+                p.fillRect(rect, QColor(C.ROW_HOVER))
 
-            p.setPen(QPen(QColor("#575757"), 1))
+            p.setPen(QPen(QColor(C.SEPARATOR), 1))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawRoundedRect(QRectF(X_CHECK, y + 8, 11, 11), 2, 2)
 
             p.setFont(font(14, 400))
-            p.setPen(QColor("#e3e3e3" if not selected else "#ffffff"))
+            p.setPen(QColor(C.TEXT if not selected else C.ROW_SELECTED_TEXT))
             p.drawText(
                 QRectF(X_DATE, y, 120, ROW_H),
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
@@ -314,16 +314,16 @@ class _Canvas(QWidget):
             )
             metrics = QFontMetrics(font(14, 400))
             date_w = metrics.horizontalAdvance(item.next_date)
-            draw_calendar(p, QRectF(X_DATE + date_w + 8, y + 8, 12, 12), QColor("#5c9736"), 1.0)
+            draw_calendar(p, QRectF(X_DATE + date_w + 8, y + 8, 12, 12), QColor(C.GREEN_BAR), 1.0)
 
-            p.setPen(QColor("#f0f0f0" if not selected else "#ffffff"))
+            p.setPen(QColor(C.TEXT if not selected else C.ROW_SELECTED_TEXT))
             p.drawText(
                 QRectF(X_PAYEE, y, 120, ROW_H),
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                 item.payee,
             )
 
-            p.setPen(QColor("#c7c7c7" if not selected else "#ffffff"))
+            p.setPen(QColor(C.TEXT_SOFT if not selected else C.ROW_SELECTED_TEXT))
             p.drawText(
                 QRectF(X_CATEGORY, y, 80, ROW_H),
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
@@ -333,7 +333,7 @@ class _Canvas(QWidget):
             if item.status == "remind":
                 draw_bell(p, QRectF(X_STATUS, y + 7, 13, 13), QColor(C.WARNING), 1.4)
             elif item.status == "future":
-                draw_clock(p, QRectF(X_STATUS, y + 7, 13, 13), QColor("#6aa2d8"), 1.4)
+                draw_clock(p, QRectF(X_STATUS, y + 7, 13, 13), QColor(C.FUTURE), 1.4)
             else:
                 draw_check_circle(p, QRectF(X_STATUS, y + 7, 13, 13), QColor(C.GREEN), 1.5)
 
@@ -369,7 +369,7 @@ class _Canvas(QWidget):
             )
 
         total_y = len(self.panel.visible) * ROW_H
-        p.fillRect(QRectF(0, total_y, width, TOTAL_H), QColor("#2e2e2e"))
+        p.fillRect(QRectF(0, total_y, width, TOTAL_H), QColor(C.TOTAL_ROW))
         total_expense = sum(-i.amount for i in self.panel.visible if i.amount < 0)
         total_income = sum(i.amount for i in self.panel.visible if i.amount > 0)
         p.setFont(font(14, 600))

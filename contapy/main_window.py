@@ -186,7 +186,7 @@ class MainWindow(QMainWindow):
         self.charts_split = QSplitter(Qt.Orientation.Horizontal)
         self.charts_split.setHandleWidth(10)
         self.charts_split.setChildrenCollapsible(False)
-        self.charts_split.setStyleSheet("QSplitter::handle { background: #333333; }")
+        self.charts_split.setStyleSheet(f"QSplitter::handle {{ background: {C.BG}; }}")
         self.charts_split.addWidget(self.donut_card)
         self.charts_split.addWidget(self.bar_card)
         self.charts_split.setStretchFactor(0, 1)
@@ -195,7 +195,7 @@ class MainWindow(QMainWindow):
         self.hsplit = QSplitter(Qt.Orientation.Horizontal)
         self.hsplit.setHandleWidth(8)
         self.hsplit.setChildrenCollapsible(False)
-        self.hsplit.setStyleSheet("QSplitter::handle { background: #333333; }")
+        self.hsplit.setStyleSheet(f"QSplitter::handle {{ background: {C.BG}; }}")
         self.hsplit.addWidget(self.accounts_panel)
         self.hsplit.addWidget(self.charts_split)
         self.hsplit.setStretchFactor(0, 0)
@@ -204,7 +204,7 @@ class MainWindow(QMainWindow):
         self.vsplit = QSplitter(Qt.Orientation.Vertical)
         self.vsplit.setHandleWidth(1)
         self.vsplit.setChildrenCollapsible(False)
-        self.vsplit.setStyleSheet("QSplitter::handle { background: #1b1b1b; }")
+        self.vsplit.setStyleSheet(f"QSplitter::handle {{ background: {C.BORDER}; }}")
         self.vsplit.addWidget(self.hsplit)
         self.vsplit.addWidget(self.scheduled_panel)
         self.vsplit.setStretchFactor(0, 54)
@@ -223,7 +223,8 @@ class MainWindow(QMainWindow):
         self.toast.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.toast.setFont(font(13, 400))
         self.toast.setStyleSheet(
-            "QLabel#toast { background:#1f1f1f; color:#ededed; border:1px solid #4a4a4a;"
+            f"QLabel#toast {{ background:{C.TOOLTIP_BG}; color:{C.TOOLTIP_TEXT};"
+            f" border:1px solid {C.TOOLTIP_BORDER};"
             "border-radius:6px; padding:8px 16px; }"
         )
         self.toast.hide()
