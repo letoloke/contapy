@@ -146,6 +146,14 @@ def default_db_path() -> Path:
     return path
 
 
+BACKUP_DIR_NAME = "dailylbaka"
+
+
+def daily_backup_dir(db_path: str | Path) -> Path:
+    """Folder for the automatic daily copies, beside the active database."""
+    return Path(db_path).expanduser().parent / BACKUP_DIR_NAME
+
+
 class DataStore:
     def __init__(self, path: str | Path | None = None, seed: bool = True):
         self.path = Path(path).expanduser() if path else default_db_path()
@@ -229,6 +237,20 @@ class DataStore:
             except OSError:
                 pass
         return target
+
+    def ensure_daily_backup(
+        self, directory: str | Path | None = None, day: date | None = None
+    ) -> Path | None:
+        """Create today's backup once; return its path only when newly written."""
+        if directory is None:
+            folder = daily_backup_dir(self.path)
+        else:
+            folder = Path(directory).expanduser()
+        day = day or date.today()
+        target = folder / f"{self.path.stem}-{day.isoformat()}.db"
+        if target.exists():
+            return None
+        return self.backup_to(target)
 
     def _rows(self, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
         return list(self.conn.execute(sql, params))

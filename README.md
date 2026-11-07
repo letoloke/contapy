@@ -127,6 +127,23 @@ new location and continues working from that copy, so later edits go to the
 new file. The new path is remembered for the next launch, and the original
 database is left untouched as a safety copy.
 
+### Daily backups
+
+ContaPy keeps one automatic copy per day in a folder named `dailylbaka` beside
+the active database:
+
+```
+~/.local/share/contapy/dailylbaka/contapy-2026-11-06.db
+```
+
+The backup is created the first time ContaPy runs on a new day, checked again
+hourly while the app stays open, and when the app closes. Existing daily files
+are never overwritten, so the folder grows by one database per day. Backups are
+ordinary SQLite files: to restore one, use **File → Open Database…** to open the
+dated file, then **File → Save Database As…** to write it back over your normal
+database. Backups follow the database: after **Save Database As…**, the new
+location gets its own `dailylbaka` folder.
+
 > **Upgrading from Budget:** if the old `~/.local/share/budget/budget.db` exists, the first ContaPy launch copies it to the new location automatically. The original file is left untouched. `CONTAPY_DB` overrides the path; the older `BUDGET_DB` variable is still honoured.
 
 ### Theme

@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 from contapy.csv_io import parse_amount, read_csv_plan
-from contapy.db import DataStore, default_db_path
+from contapy.db import DataStore, daily_backup_dir, default_db_path
 from contapy.models import TransactionDraft
 
 
@@ -390,6 +390,32 @@ class StoreTests(unittest.TestCase):
     def test_backup_to_same_path_is_a_noop(self) -> None:
         self.assertEqual(self.store.backup_to(self.path), self.path)
         self.assertEqual(len(self.store.accounts()), 7)
+
+    def test_daily_backup_is_written_once_per_day(self) -> None:
+        day = date(2026, 11, 6)
+        self.assertEqual(daily_backup_dir(self.path), self.path.parent / "dailylbaka")
+
+        first = self.store.ensure_daily_backup(day=day)
+        expected = self.path.parent / "dailylbaka" / "contapy-2026-11-06.db"
+        self.assertEqual(first, expected)
+        self.assertTrue(first.is_file())
+
+        self.store.add_account("Later edit", "Cash")
+        self.assertIsNone(self.store.ensure_daily_backup(day=day))
+
+        backup = DataStore(first, seed=False)
+        try:
+            self.assertFalse(any(a.name == "Later edit" for a in backup.accounts()))
+        finally:
+            backup.close()
+
+        next_day = self.store.ensure_daily_backup(day=date(2026, 11, 7))
+        self.assertEqual(next_day, self.path.parent / "dailylbaka" / "contapy-2026-11-07.db")
+        later = DataStore(next_day, seed=False)
+        try:
+            self.assertTrue(any(a.name == "Later edit" for a in later.accounts()))
+        finally:
+            later.close()
 
 
 class DatabasePathTests(unittest.TestCase):

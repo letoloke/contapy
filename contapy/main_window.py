@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -59,6 +60,12 @@ class MainWindow(QMainWindow):
         self._toast_timer = QTimer(self)
         self._toast_timer.setSingleShot(True)
         self._toast_timer.timeout.connect(self._hide_toast)
+
+        self._backup_timer = QTimer(self)
+        self._backup_timer.setInterval(60 * 60 * 1000)
+        self._backup_timer.timeout.connect(lambda: self._daily_backup(notify=True))
+        self._backup_timer.start()
+        self._daily_backup()
 
     # ------------------------------------------------------------------ chrome
     def _build_menus(self) -> None:
@@ -680,10 +687,22 @@ class MainWindow(QMainWindow):
         self._update_window_title()
         self.refresh_all()
         self.show_toast(f"Opened {target.name}")
+        self._daily_backup()
         return True
 
     def _update_window_title(self) -> None:
         self.setWindowTitle(f"ContaPy — {self.store.path.name}")
+
+    def _daily_backup(self, notify: bool = False) -> None:
+        try:
+            created = self.store.ensure_daily_backup()
+        except Exception as exc:  # pragma: no cover - filesystem problems
+            print(f"ContaPy: daily backup failed: {exc}", file=sys.stderr)
+            if notify:
+                self.show_toast("Daily backup failed")
+            return
+        if created is not None and notify:
+            self.show_toast(f"Daily backup: {created.name}")
 
     def import_csv(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -788,6 +807,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):  # noqa: N802
         self._closing = True
+        self._daily_backup()
         for ledger in list(self.ledgers.values()):
             try:
                 ledger.close()
