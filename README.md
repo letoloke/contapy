@@ -136,13 +136,14 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | Navigate ledger rows | `↑` / `↓`; **Home/End** for newest/oldest |
 | Open a ledger transaction | `Enter` on the selected row |
 | Delete a ledger transaction | `Delete` on the selected row |
+| Close the account ledger | `Escape` (or `Ctrl+W`) |
 | Filter the strip | The **All** account combo and the filter icon |
 | Change chart period | The combo in each chart footer |
 | Import / export | `Ctrl+I` / `Ctrl+E`; the import dialog auto-detects HomeBank/Spanish headers |
 | Refresh | `F5` |
 | Preferences | `Ctrl+,` |
 
-In the account list: **↑/↓** move, **Home/End** jump, **Enter** opens the ledger. In the ledger: **↑/↓** move, **Home/End** jump, **Enter** opens the selected transaction, **Delete** removes it. In the transaction window: **Enter** saves, **Tab** moves, **Alt+E/I/T** switches type and **Ctrl+0–4** sets status. **Escape** cancels. The home strip also supports **↑/↓** and **Enter** (edit scheduled / open future or remind rows). Keyboard shortcuts are also available under **Help → Keyboard Shortcuts**.
+In the account list: **↑/↓** move, **Home/End** jump, **Enter** opens the ledger. In the ledger: **↑/↓** move, **Home/End** jump, **Enter** opens the selected transaction, **Delete** removes it, and **Escape** closes the ledger. In the transaction window: **Enter** saves, **Tab** moves, **Alt+E/I/T** switches type and **Ctrl+0–4** sets status. **Escape** cancels. The home strip also supports **↑/↓** and **Enter** (edit scheduled / open future or remind rows). Keyboard shortcuts are also available under **Help → Keyboard Shortcuts**.
 
 ### CSV format
 

@@ -416,7 +416,8 @@ class LedgerWindow(QMainWindow):
         self.act_select_all = self._action("Select All", self._select_all)
         self.act_import = self._action("Import CSV…", self.import_csv)
         self.act_export = self._action("Export CSV…", self.export_csv)
-        self.act_close = self._action("Close", self.close, "Ctrl+W")
+        self.act_close = self._action("Close", self.close)
+        self.act_close.setShortcuts([QKeySequence("Ctrl+W"), QKeySequence("Escape")])
 
         account_menu = bar.addMenu("Account")
         account_menu.addAction(self.act_new)

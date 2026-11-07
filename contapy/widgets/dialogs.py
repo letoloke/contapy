@@ -1093,7 +1093,7 @@ def shortcuts_text() -> str:
         "<b>↑/↓</b> move · <b>Home/End</b> jump · <b>Enter</b> open ledger<br><br>"
         "<b>In the ledger</b><br>"
         "<b>↑/↓</b> move · <b>Home/End</b> jump · <b>Enter</b> open · "
-        "<b>Delete</b> remove<br><br>"
+        "<b>Delete</b> remove · <b>Esc</b> close<br><br>"
         "<b>In the transaction window</b><br>"
         "<b>Enter</b> saves · <b>Tab</b> moves · <b>Alt+E/I/T</b> type · "
         "<b>Ctrl+0–4</b> status<br><br>"
