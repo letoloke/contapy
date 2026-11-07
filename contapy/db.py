@@ -197,6 +197,39 @@ class DataStore:
         except Exception:
             pass
 
+    def backup_to(self, path: str | Path) -> Path:
+        """Write a consistent snapshot of this database to ``path``.
+
+        The copy is written to a temporary file first and moved into place, so
+        an interrupted save never leaves a half-written database behind. The
+        live database stays open and usable throughout.
+        """
+        target = Path(path).expanduser()
+        if target.resolve() == self.path.resolve():
+            return self.path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.parent / f".{target.name}.{uuid.uuid4().hex}.tmp"
+        try:
+            destination = sqlite3.connect(temporary)
+            try:
+                self.conn.backup(destination)
+            finally:
+                destination.close()
+            os.replace(temporary, target)
+        except BaseException:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
+        # A replaced database must not inherit stale sidecars from an older file.
+        for suffix in ("-wal", "-shm"):
+            try:
+                target.with_name(target.name + suffix).unlink(missing_ok=True)
+            except OSError:
+                pass
+        return target
+
     def _rows(self, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
         return list(self.conn.execute(sql, params))
 

@@ -367,6 +367,30 @@ class StoreTests(unittest.TestCase):
         grand = sum(b.today for b in self.store.balances().values())
         self.assertAlmostEqual(grand, -97_263.62, places=2)
 
+    def test_backup_to_writes_independent_copy(self) -> None:
+        target = Path(self.tmp.name) / "copies" / "snapshot.db"
+        result = self.store.backup_to(target)
+        self.assertEqual(result, target)
+        self.assertTrue(target.is_file())
+
+        copy = DataStore(target, seed=False)
+        try:
+            self.assertEqual(len(copy.accounts()), len(self.store.accounts()))
+            copy.add_account("Only in copy", "Cash")
+            self.assertFalse(
+                any(a.name == "Only in copy" for a in self.store.accounts())
+            )
+            self.store.add_account("Only in original", "Cash")
+            self.assertFalse(
+                any(a.name == "Only in original" for a in copy.accounts())
+            )
+        finally:
+            copy.close()
+
+    def test_backup_to_same_path_is_a_noop(self) -> None:
+        self.assertEqual(self.store.backup_to(self.path), self.path)
+        self.assertEqual(len(self.store.accounts()), 7)
+
 
 class DatabasePathTests(unittest.TestCase):
     def test_legacy_budget_database_is_copied_to_contapy(self) -> None:

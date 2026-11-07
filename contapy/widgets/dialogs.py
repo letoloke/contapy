@@ -1088,6 +1088,7 @@ def shortcuts_text() -> str:
         "<b>Ctrl+I</b> &nbsp; Import CSV<br>"
         "<b>Ctrl+E</b> &nbsp; Export CSV<br>"
         "<b>Ctrl+O</b> &nbsp; Open database<br>"
+        "<b>Ctrl+Shift+S</b> &nbsp; Save database as<br>"
         "<b>Ctrl+L</b> &nbsp; Open account ledger<br>"
         "<b>F5</b> &nbsp; Refresh dashboard<br>"
         "<b>Ctrl+,</b> &nbsp; Preferences<br>"

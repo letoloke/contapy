@@ -76,10 +76,14 @@ class MainWindow(QMainWindow):
         self.act_open_database = self._action(
             "Open Database…", self.open_database, "Ctrl+O"
         )
+        self.act_save_database = self._action(
+            "Save Database As…", self.save_database_as, "Ctrl+Shift+S"
+        )
         self.act_quit = self._action("Quit", self.close, "Ctrl+Q")
 
         file_menu = bar.addMenu("File")
         file_menu.addAction(self.act_open_database)
+        file_menu.addAction(self.act_save_database)
         file_menu.addSeparator()
         file_menu.addAction(self.act_new)
         file_menu.addAction(self.act_new_account)
@@ -608,6 +612,34 @@ class MainWindow(QMainWindow):
         )
         if path:
             self.load_database(path)
+
+    def save_database_as(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save database as",
+            str(self.store.path),
+            "SQLite databases (*.db *.sqlite *.sqlite3);;All files (*)",
+        )
+        if not path:
+            return
+        target = Path(path).expanduser()
+        if not target.suffix:
+            target = target.with_name(target.name + ".db")
+        if target.resolve() == self.store.path.resolve():
+            self.show_toast("That database is already open")
+            return
+        try:
+            self.store.backup_to(target)
+        except Exception as exc:  # pragma: no cover - surfaced to the user
+            QMessageBox.warning(
+                self,
+                "Could not save database",
+                f"ContaPy could not save:\n{target}\n\n{exc}",
+            )
+            return
+        # Continue on the copy so future edits land in the new location. The
+        # original file is left untouched as a safety copy.
+        self.load_database(target)
 
     def load_database(self, path: str | Path) -> bool:
         """Switch to the database at ``path`` and remember it for next launch."""

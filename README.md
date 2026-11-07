@@ -122,6 +122,11 @@ the default location. `--db` and environment overrides are one-off and do not
 change what is remembered. To go back to the default database, open it from
 the same menu or delete `~/.config/contapy/config.json`.
 
+**File → Save Database As…** (`Ctrl+Shift+S`) writes a consistent snapshot to a
+new location and continues working from that copy, so later edits go to the
+new file. The new path is remembered for the next launch, and the original
+database is left untouched as a safety copy.
+
 > **Upgrading from Budget:** if the old `~/.local/share/budget/budget.db` exists, the first ContaPy launch copies it to the new location automatically. The original file is left untouched. `CONTAPY_DB` overrides the path; the older `BUDGET_DB` variable is still honoured.
 
 ### Theme
@@ -171,6 +176,7 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | Change chart period | The combo in each chart footer |
 | Import / export | `Ctrl+I` / `Ctrl+E`; the import dialog auto-detects HomeBank/Spanish headers |
 | Open another database | **File → Open Database…** or `Ctrl+O` |
+| Save a copy elsewhere | **File → Save Database As…** or `Ctrl+Shift+S` |
 | Refresh | `F5` |
 | Preferences | `Ctrl+,` |
 
