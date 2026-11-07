@@ -108,6 +108,20 @@ CONTAPY_DB=/tmp/demo.db python3 main.py
 
 The first launch seeds a demo dataset. Data lives at `~/.local/share/contapy/contapy.db` (honouring `XDG_DATA_HOME`). Use **Preferences → Reset demo data** to return to the seeded state.
 
+### Switching databases
+
+**File → Open Database…** (`Ctrl+O`) opens another SQLite database without
+restarting. ContaPy remembers the choice in `~/.config/contapy/config.json`
+(honouring `XDG_CONFIG_HOME`) and reopens that database on the next launch. The
+window title shows the database filename so it is always clear which file is
+active.
+
+Startup precedence is: `--db`, then `CONTAPY_DB` / `BUDGET_DB`, then the
+database remembered from the File menu (only if the file still exists), then
+the default location. `--db` and environment overrides are one-off and do not
+change what is remembered. To go back to the default database, open it from
+the same menu or delete `~/.config/contapy/config.json`.
+
 > **Upgrading from Budget:** if the old `~/.local/share/budget/budget.db` exists, the first ContaPy launch copies it to the new location automatically. The original file is left untouched. `CONTAPY_DB` overrides the path; the older `BUDGET_DB` variable is still honoured.
 
 ### Theme
@@ -156,6 +170,7 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | Filter the strip | The **All** account combo and the filter icon |
 | Change chart period | The combo in each chart footer |
 | Import / export | `Ctrl+I` / `Ctrl+E`; the import dialog auto-detects HomeBank/Spanish headers |
+| Open another database | **File → Open Database…** or `Ctrl+O` |
 | Refresh | `F5` |
 | Preferences | `Ctrl+,` |
 
@@ -177,6 +192,7 @@ date,account,payee,category,memo,amount,cleared,reconciled,remind,flagged,paymen
 main.py                     launcher
 contapy/
   app.py                    QApplication, icon, screenshot mode
+  config.py                 remembers the last database outside the DB
   main_window.py            chrome, menus, actions, refresh
   db.py                     SQLite schema, balances, reports, CSV
   seed.py                   deterministic reference-shaped demo data

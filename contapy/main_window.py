@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from pathlib import Path
 
 from PySide6.QtCore import QTimer, Qt, QUrl
 from PySide6.QtGui import QAction, QDesktopServices, QKeySequence
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .config import remember_database
 from .db import DataStore
 from .models import ScheduledItem
 from .money import money
@@ -44,7 +46,7 @@ class MainWindow(QMainWindow):
         self.ledgers: dict[int, LedgerWindow] = {}
         self._initial_focus_done = False
         self._closing = False
-        self.setWindowTitle("ContaPy")
+        self._update_window_title()
         self.setMinimumSize(1400, 760)
         self.resize(1500, 870)
         self.setStyleSheet(f"QMainWindow {{ background: {C.BG}; }}")
@@ -71,9 +73,14 @@ class MainWindow(QMainWindow):
         self.act_new_account = self._action("New Account…", self.new_account, "Ctrl+Shift+N")
         self.act_import = self._action("Import CSV…", self.import_csv, "Ctrl+I")
         self.act_export = self._action("Export CSV…", self.export_csv, "Ctrl+E")
+        self.act_open_database = self._action(
+            "Open Database…", self.open_database, "Ctrl+O"
+        )
         self.act_quit = self._action("Quit", self.close, "Ctrl+Q")
 
         file_menu = bar.addMenu("File")
+        file_menu.addAction(self.act_open_database)
+        file_menu.addSeparator()
         file_menu.addAction(self.act_new)
         file_menu.addAction(self.act_new_account)
         file_menu.addSeparator()
@@ -537,8 +544,10 @@ class MainWindow(QMainWindow):
         self.accounts_panel.flash()
 
     def _ledger_closed(self, account_id: int) -> None:
+        if self._closing or account_id not in self.ledgers:
+            return
         self.ledgers.pop(account_id, None)
-        if self._closing or not self.isVisible() or not self.accounts_panel.isVisible():
+        if not self.isVisible() or not self.accounts_panel.isVisible():
             return
         self.raise_()
         self.activateWindow()
@@ -588,6 +597,61 @@ class MainWindow(QMainWindow):
 
     def open_data_folder(self) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.store.path.parent)))
+
+    # --------------------------------------------------------------- databases
+    def open_database(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open database",
+            str(self.store.path.parent),
+            "SQLite databases (*.db *.sqlite *.sqlite3);;All files (*)",
+        )
+        if path:
+            self.load_database(path)
+
+    def load_database(self, path: str | Path) -> bool:
+        """Switch to the database at ``path`` and remember it for next launch."""
+        target = Path(path).expanduser()
+        if target.resolve() == self.store.path.resolve():
+            self.show_toast("That database is already open")
+            return False
+        try:
+            store = DataStore(target)
+        except Exception as exc:  # pragma: no cover - surfaced to the user
+            QMessageBox.warning(
+                self,
+                "Could not open database",
+                f"ContaPy could not open:\n{target}\n\n{exc}",
+            )
+            return False
+
+        # Close ledgers tied to the old store before swapping connections.
+        self._closing = True
+        try:
+            for ledger in list(self.ledgers.values()):
+                try:
+                    ledger.close()
+                except RuntimeError:
+                    pass
+            self.ledgers.clear()
+        finally:
+            self._closing = False
+        old_store = self.store
+        self.store = store
+        old_store.close()
+
+        try:
+            remember_database(target)
+        except OSError:
+            # The switch still works even if the config folder is read-only.
+            pass
+        self._update_window_title()
+        self.refresh_all()
+        self.show_toast(f"Opened {target.name}")
+        return True
+
+    def _update_window_title(self) -> None:
+        self.setWindowTitle(f"ContaPy — {self.store.path.name}")
 
     def import_csv(self) -> None:
         path, _ = QFileDialog.getOpenFileName(

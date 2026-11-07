@@ -12,7 +12,8 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication
 
 from . import __version__
-from .db import DataStore
+from .config import last_database
+from .db import DataStore, default_db_path
 from .main_window import MainWindow
 from .theme import C, DONUT_COLORS, apply_theme
 
@@ -48,6 +49,22 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def startup_database(cli_path: str | None = None) -> Path:
+    """Pick the database for this launch.
+
+    Precedence: ``--db``, then ``CONTAPY_DB``/``BUDGET_DB``, then the database
+    remembered from the File menu, then the default location.
+    """
+    if cli_path:
+        return Path(cli_path).expanduser()
+    if os.environ.get("CONTAPY_DB") or os.environ.get("BUDGET_DB"):
+        return default_db_path()
+    remembered = last_database()
+    if remembered is not None and remembered.is_file():
+        return remembered
+    return default_db_path()
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(list(sys.argv[1:] if argv is None else argv))
 
@@ -65,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
     apply_theme(app)
     app.setWindowIcon(build_app_icon())
 
-    store = DataStore(args.db)
+    store = DataStore(startup_database(args.db))
     window = MainWindow(store)
     window.setWindowIcon(build_app_icon())
 
