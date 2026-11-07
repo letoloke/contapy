@@ -165,6 +165,8 @@ class DonutChart(QWidget):
         super().__init__(parent)
         self.slices: list[Slice] = []
         self.total = 0.0
+        self.empty_text = "No spending in this period"
+        self.show_legend = True
         self._hover = -1
         self._center = QPointF(0, 0)
         self._radius = 0.0
@@ -190,11 +192,15 @@ class DonutChart(QWidget):
         if not self.slices or self.total <= 0:
             p.setPen(QColor(C.MUTED))
             p.setFont(font(14, 400))
-            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "No spending in this period")
+            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.empty_text)
             p.end()
             return
 
-        if width >= 540:
+        if not self.show_legend:
+            radius = min(150.0, height * 0.47, width * 0.42)
+            cx = width * 0.5
+            legend_x = width
+        elif width >= 540:
             radius = min(150.0, height * 0.47, width * 0.252)
             cx = width * 0.382
             legend_x = width * 0.732
@@ -239,6 +245,9 @@ class DonutChart(QWidget):
         p.drawEllipse(QPointF(cx, cy), self._inner, self._inner)
 
         # Legend
+        if not self.show_legend:
+            p.end()
+            return
         row_h = 22.5
         top = 4.0
         p.setFont(font(14, 400))

@@ -454,6 +454,60 @@ class StoreTests(unittest.TestCase):
             later.close()
 
 
+    def test_report_rows_and_months_cover_the_ledger(self) -> None:
+        start, end = self.store.date_span()
+        self.assertEqual(start, date(2025, 12, 3))
+        self.assertEqual(end, date(2026, 11, 6))
+
+        expense_rows = self.store.report_rows(start, end, kind="expense")
+        expense_labels = {row.label for row in expense_rows}
+        self.assertIn("renta", expense_labels)
+        self.assertIn("(no category)", expense_labels)
+        self.assertNotIn("Ingresos", expense_labels)
+        self.assertAlmostEqual(
+            sum(-row.expense for row in expense_rows), 2_817_772.68, places=2
+        )
+
+        income_rows = self.store.report_rows(start, end, kind="income")
+        income_labels = {row.label for row in income_rows}
+        self.assertIn("Ingresos", income_labels)
+        # Uncategorised transactions appear in both reports, as HomeBank does.
+        self.assertIn("(no category)", income_labels)
+        self.assertAlmostEqual(
+            sum(row.income for row in income_rows), 2_161_970.77, places=2
+        )
+
+        sorted_rows = self.store.report_rows(
+            start, end, kind="expense", sort_by_amount=True
+        )
+        magnitudes = [row.magnitude for row in sorted_rows]
+        self.assertEqual(magnitudes, sorted(magnitudes, reverse=True))
+
+        months = self.store.report_months(start, end, kind="expense")
+        self.assertEqual(len(months), 12)
+        self.assertEqual((months[0].label, months[0].year), ("Dec", 2025))
+        self.assertAlmostEqual(months[0].expense, 8_000.0, places=2)
+        self.assertGreaterEqual(min(flow.expense for flow in months), 0.0)
+
+        payees = self.store.report_rows(start, end, kind="expense", view_by="payee")
+        accounts = self.store.report_rows(start, end, kind="expense", view_by="account")
+        self.assertEqual(len(payees), 12)
+        self.assertEqual(len(accounts), 7)
+        self.assertTrue(all(not row.color for row in payees))
+        self.assertTrue(all(not row.color for row in accounts))
+
+        searched = self.store.report_rows(
+            start, end, kind="expense", search="renta"
+        )
+        self.assertEqual([row.label for row in searched], ["renta"])
+
+        banamex = self.account("Banamex")
+        filtered = self.store.report_rows(
+            start, end, kind="expense", account_id=banamex.id
+        )
+        self.assertEqual(len(filtered), 5)
+
+
 class DatabasePathTests(unittest.TestCase):
     def test_legacy_budget_database_is_copied_to_contapy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -88,6 +88,24 @@ class Slice:
 
 
 @dataclass(slots=True)
+class ReportRow:
+    key: str
+    label: str
+    expense: float = 0.0
+    income: float = 0.0
+    color: str = ""
+    sort_order: int = 0
+
+    @property
+    def total(self) -> float:
+        return self.income + self.expense
+
+    @property
+    def magnitude(self) -> float:
+        return abs(self.total)
+
+
+@dataclass(slots=True)
 class MonthFlow:
     year: int
     month: int

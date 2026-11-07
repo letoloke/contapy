@@ -1090,6 +1090,7 @@ def shortcuts_text() -> str:
         "<b>Ctrl+O</b> &nbsp; Open database<br>"
         "<b>Ctrl+Shift+S</b> &nbsp; Save database as<br>"
         "<b>Ctrl+L</b> &nbsp; Open account ledger<br>"
+        "<b>Ctrl+R</b> &nbsp; Open reports<br>"
         "<b>F5</b> &nbsp; Refresh dashboard<br>"
         "<b>Ctrl+,</b> &nbsp; Preferences<br>"
         "<b>Ctrl+Q</b> &nbsp; Quit<br><br>"
@@ -1101,6 +1102,9 @@ def shortcuts_text() -> str:
         "<b>In the transaction window</b><br>"
         "<b>Enter</b> saves · <b>Tab</b> moves · <b>Alt+E/I/T</b> type · "
         "<b>Ctrl+0–4</b> status<br><br>"
+        "<b>In the reports window</b><br>"
+        "<b>Ctrl+1/2/3</b> table, pie, bar · <b>F5</b> refresh · "
+        "<b>Esc</b> close<br><br>"
         f"<span style='color:{C.MUTED};'>Double-click an account to open its ledger, or a "
         "scheduled transaction to edit and post it.</span>"
     )

@@ -12,7 +12,7 @@ This is totally vibe coding, using first DeepSeek-Harness and then (while on Oma
 
 The layout, terminology and dark chrome follow HomeBank: grouped accounts with **Reconciled / Cleared / Today / Future** columns, the total and time charts, the Scheduled / Future / Remind strip at the bottom, and a separate **account ledger** window with filters, running balances and status icons. Everything is implemented independently in Python/PySide6; this is not the HomeBank codebase and is not affiliated with the HomeBank project.
 
-The account **Ledger** and the **Transaction editor** are implemented as separate windows, like HomeBank's own windows. Budget and Statistics reports are the next natural steps for a fuller HomeBank-style app. The current build uses its own SQLite store; opening HomeBank `.xhb` files or importing QIF/OFX/QFX is not implemented yet.
+The account **Ledger**, the **Transaction editor** and the **Reports** window are implemented as separate windows, like HomeBank's own windows. The current build uses its own SQLite store; opening HomeBank `.xhb` files or importing QIF/OFX/QFX is not implemented yet.
 
 ## Transaction editor
 
@@ -71,6 +71,37 @@ The ledger opens focused on the newest transaction:
 - **Enter** in the search box jumps focus to the filtered results.
 - **Tab / Shift+Tab** return to the filters when needed.
 
+## Reports
+
+![ContaPy reports window](screenshots/reports.png)
+
+**Reports → Reports Window…** (`Ctrl+R`) opens a live report over the current
+database. The left **Display** panel controls the report:
+
+- **Mode** — **Total** groups the whole date range; **Time** breaks it down by
+  month.
+- **View by** — Category, Payee or Account (hidden in Time mode).
+- **Type** — Expense or Income. Uncategorised transactions appear in both
+  reports, as they do in HomeBank.
+- **Sort by amount** — largest first instead of the category order.
+- **Filter** — free-text search over payee, memo, tags and category, plus an
+  account filter.
+- **Date range** — All dates, This month, Last month, This year, Last year or
+  a custom From/To pair.
+
+The header always shows the **Expense**, **Income** and **Total** for the
+filtered rows. Switch between the three views from the toolbar or with
+`Ctrl+1` / `Ctrl+2` / `Ctrl+3`:
+
+- **Table** — one row per category/payee/account or month, with amounts and a
+  totals row.
+- **Pie chart** — donut with a legend showing the exact amount and share.
+- **Bar chart** — horizontal amount bars in Total mode, or a monthly
+  income/spending chart in Time mode.
+
+Every change applies immediately, and open report windows refresh when the
+ledger changes or `F5` is pressed.
+
 ## What the welcome page includes
 
 - **Account tree** — Bank, Cash, Credit card and Savings groups with collapsible rows, alert markers for accounts with unreconciled transactions, and the four reference columns: **Reconciled, Cleared, Today, Future**. Group totals and the grand total update from the ledger. The list opens focused: **↑/↓** walk the accounts, **Home/End** jump, and **Enter** opens the selected account's ledger.
@@ -86,6 +117,7 @@ The demo figures are aligned to the reference: last 30 days **$167,248.99**, rec
 - **Account ledger** — a HomeBank-style transaction window per account, with date/payee/type/status filters, a search box, running balance, reconciliation/remind/flag icons, account balance summary, and add/edit/inherit/delete actions.
 - **Transaction editor** — Expense/Income/Transfer tabs, payment mode, number, tags, status icons, type-to-search combos, and Enter-to-save.
 - **CSV import** — automatic English/Spanish header detection, editable field mapping, remembered header profiles, mapped-row preview, duplicate detection by memo, target-account selection and memo-to-payee fallback.
+- **Reports window** — HomeBank-style Display panel, Category/Payee/Account and monthly grouping, Expense/Income types, date presets and custom ranges, search and account filters, and table, pie and bar views.
 - Schedule one-off bills; post or skip them from the home strip.
 - Mark posted transactions as cleared, reconciled, remind or flagged; these drive the home balance columns and Future/Remind lists.
 - SQLite persistence (no server, no account, no telemetry).
@@ -203,7 +235,7 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | Refresh | `F5` |
 | Preferences | `Ctrl+,` |
 
-In the account list: **↑/↓** move, **Home/End** jump, **Enter** opens the ledger. In the ledger: **↑/↓** move, **Home/End** jump, **Enter** opens the selected transaction, **Delete** removes it, and **Escape** closes the ledger. In the transaction window: **Enter** saves, **Tab** moves, **Alt+E/I/T** switches type and **Ctrl+0–4** sets status. **Escape** cancels. The home strip also supports **↑/↓** and **Enter** (edit scheduled / open future or remind rows). Keyboard shortcuts are also available under **Help → Keyboard Shortcuts**.
+In the account list: **↑/↓** move, **Home/End** jump, **Enter** opens the ledger. In the ledger: **↑/↓** move, **Home/End** jump, **Enter** opens the selected transaction, **Delete** removes it, and **Escape** closes the ledger. In the transaction window: **Enter** saves, **Tab** moves, **Alt+E/I/T** switches type and **Ctrl+0–4** sets status. **Escape** cancels. The home strip also supports **↑/↓** and **Enter** (edit scheduled / open future or remind rows). **Ctrl+R** opens the report window, where **Ctrl+1/2/3** switch table, pie and bar views and **F5** refreshes. Keyboard shortcuts are also available under **Help → Keyboard Shortcuts**.
 
 ### CSV format
 

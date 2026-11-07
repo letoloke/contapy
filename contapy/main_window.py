@@ -28,6 +28,7 @@ from .widgets.accounts import AccountsPanel
 from .widgets.charts import ChartCard, DonutChart, SpendingRevenueChart
 from .widgets.import_dialog import CsvImportDialog
 from .widgets.ledger import LedgerWindow
+from .widgets.reports import ReportsWindow
 from .widgets.dialogs import (
     AccountDialog,
     ListDialog,
@@ -45,6 +46,7 @@ class MainWindow(QMainWindow):
         super().__init__(parent)
         self.store = store
         self.ledgers: dict[int, LedgerWindow] = {}
+        self.reports_window: ReportsWindow | None = None
         self._initial_focus_done = False
         self._closing = False
         self._update_window_title()
@@ -142,7 +144,10 @@ class MainWindow(QMainWindow):
 
         self.act_focus_spending = self._action("Spending by Category", self.focus_spending)
         self.act_focus_cashflow = self._action("Spending & Revenue", self.focus_cashflow)
+        self.act_reports = self._action("Reports Window…", self.open_reports, "Ctrl+R")
         reports_menu = bar.addMenu("Reports")
+        reports_menu.addAction(self.act_reports)
+        reports_menu.addSeparator()
         reports_menu.addAction(self.act_focus_spending)
         reports_menu.addAction(self.act_focus_cashflow)
         reports_menu.addSeparator()
@@ -305,6 +310,11 @@ class MainWindow(QMainWindow):
                 ledger.reload()
             except RuntimeError:
                 continue
+        if self.reports_window is not None:
+            try:
+                self.reports_window.reload()
+            except RuntimeError:
+                self.reports_window = None
         self._update_actions()
 
     @staticmethod
@@ -328,6 +338,19 @@ class MainWindow(QMainWindow):
     def open_selected_ledger(self) -> None:
         if self.accounts_panel.selected_id is not None:
             self.open_ledger(self.accounts_panel.selected_id)
+
+    def open_reports(self) -> None:
+        if self.reports_window is not None and self.reports_window.isVisible():
+            self.reports_window.show()
+            self.reports_window.raise_()
+            self.reports_window.activateWindow()
+            return
+        window = ReportsWindow(self.store, self)
+        self.reports_window = window
+        window.destroyed.connect(lambda _obj=None: setattr(self, "reports_window", None))
+        window.show()
+        window.raise_()
+        window.activateWindow()
 
     def open_ledger(self, account_id: int) -> None:
         existing = self.ledgers.get(account_id)
@@ -664,9 +687,15 @@ class MainWindow(QMainWindow):
             )
             return False
 
-        # Close ledgers tied to the old store before swapping connections.
+        # Close ledgers and reports tied to the old store before swapping.
         self._closing = True
         try:
+            if self.reports_window is not None:
+                try:
+                    self.reports_window.close()
+                except RuntimeError:
+                    pass
+                self.reports_window = None
             for ledger in list(self.ledgers.values()):
                 try:
                     ledger.close()
@@ -820,6 +849,12 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):  # noqa: N802
         self._closing = True
         self._daily_backup()
+        if self.reports_window is not None:
+            try:
+                self.reports_window.close()
+            except RuntimeError:
+                pass
+            self.reports_window = None
         for ledger in list(self.ledgers.values()):
             try:
                 ledger.close()

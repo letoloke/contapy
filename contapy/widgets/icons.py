@@ -287,6 +287,49 @@ def draw_search(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) ->
     p.restore()
 
 
+def draw_table(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> None:
+    p.save()
+    p.setPen(QPen(color, width))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    r = rect.adjusted(1, 2, -1, -2)
+    p.drawRoundedRect(r, 1.5, 1.5)
+    for factor in (0.34, 0.67):
+        y = r.top() + r.height() * factor
+        p.drawLine(QPointF(r.left(), y), QPointF(r.right(), y))
+    for factor in (0.42, 0.72):
+        x = r.left() + r.width() * factor
+        p.drawLine(QPointF(x, r.top()), QPointF(x, r.bottom()))
+    p.restore()
+
+
+def draw_pie(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> None:
+    p.save()
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    p.setPen(QPen(color, width))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    r = rect.adjusted(1, 1, -1, -1)
+    p.drawEllipse(r)
+    center = r.center()
+    p.drawLine(center, QPointF(center.x(), r.top()))
+    p.drawLine(center, QPointF(r.right(), center.y() - r.height() * 0.22))
+    p.restore()
+
+
+def draw_bars(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> None:
+    p.save()
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(color)
+    r = rect.adjusted(2, 2, -2, -1)
+    bar_w = r.width() / 5.0
+    heights = (0.42, 0.72, 1.0)
+    for index, factor in enumerate(heights):
+        x = r.left() + index * (bar_w + bar_w * 0.55)
+        top = r.bottom() - r.height() * factor
+        p.drawRoundedRect(QRectF(x, top, bar_w, r.height() * factor), 1, 1)
+    p.restore()
+
+
 DrawFn = Callable[[QPainter, QRectF, QColor, float], None]
 
 
@@ -329,6 +372,8 @@ class IconButton(QAbstractButton):
             p.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), 4, 4)
         if not self.isEnabled():
             color = QColor(C.DISABLED)
+        elif self.isCheckable() and self.isChecked():
+            color = QColor(C.ACCENT)
         else:
             color = QColor(self._color or C.TEXT_SOFT)
         inner = QRectF(self.rect()).adjusted(4, 4, -4, -4)

@@ -30,6 +30,7 @@ from .models import (
     Balance,
     Category,
     MonthFlow,
+    ReportRow,
     ScheduledItem,
     Slice,
     TransactionDraft,
@@ -412,6 +413,151 @@ class DataStore:
             if category.id == category_id:
                 return category
         return None
+
+    # --------------------------------------------------------------- reports
+    def date_span(self) -> tuple[date, date]:
+        """First and last transaction date, or today when the ledger is empty."""
+        row = self.conn.execute("SELECT MIN(date), MAX(date) FROM transactions").fetchone()
+        if row is None or row[0] is None or row[1] is None:
+            today = date.today()
+            return today, today
+        return date.fromisoformat(row[0]), date.fromisoformat(row[1])
+
+    def _report_transactions(
+        self,
+        start: date,
+        end: date,
+        account_id: int | None = None,
+        search: str = "",
+    ) -> list[sqlite3.Row]:
+        params: list = [start.isoformat(), end.isoformat()]
+        clauses = ["t.date BETWEEN ? AND ?"]
+        if account_id is not None:
+            clauses.append("t.account_id = ?")
+            params.append(account_id)
+        text = search.strip()
+        if text:
+            like = f"%{text}%"
+            clauses.append(
+                "(t.payee LIKE ? OR t.memo LIKE ? OR t.tags LIKE ? OR c.name LIKE ?)"
+            )
+            params.extend([like, like, like, like])
+        return self._rows(
+            f"""
+            SELECT t.date, t.amount, t.payee,
+                   a.id AS account_id, a.name AS account_name,
+                   c.id AS category_id, c.name AS category_name,
+                   c.kind AS category_kind, c.color AS category_color,
+                   c.sort_order AS category_sort
+            FROM transactions t
+            JOIN accounts a ON a.id = t.account_id
+            LEFT JOIN categories c ON c.id = t.category_id
+            WHERE {' AND '.join(clauses)}
+            """,
+            tuple(params),
+        )
+
+    @staticmethod
+    def _report_includes(row: sqlite3.Row, kind: str) -> bool:
+        # Uncategorised transactions appear in both reports, as HomeBank does.
+        if row["category_id"] is None:
+            return True
+        return (row["category_kind"] or "expense") == kind
+
+    def report_rows(
+        self,
+        start: date,
+        end: date,
+        kind: str = "expense",
+        view_by: str = "category",
+        account_id: int | None = None,
+        search: str = "",
+        sort_by_amount: bool = False,
+    ) -> list[ReportRow]:
+        """Aggregate a date range into report rows (category, payee or account)."""
+        groups: dict[str, ReportRow] = {}
+        for row in self._report_transactions(start, end, account_id, search):
+            if not self._report_includes(row, kind):
+                continue
+            if view_by == "payee":
+                label = str(row["payee"] or "").strip() or "(no payee)"
+                key = f"payee:{normalize(label)}"
+                color, sort_order = "", 0
+            elif view_by == "account":
+                label = str(row["account_name"] or "(no account)")
+                key = f"account:{row['account_id']}"
+                color, sort_order = "", 0
+            else:
+                name = row["category_name"]
+                label = str(name or "(no category)")
+                key = f"category:{row['category_id'] or 'none'}"
+                color = (
+                    theme_category_color(str(name), str(row["category_color"]))
+                    if name
+                    else theme_category_color("", None)
+                )
+                sort_order = int(row["category_sort"] or 0)
+
+            group = groups.get(key)
+            if group is None:
+                group = ReportRow(
+                    key=key, label=label, color=color, sort_order=sort_order
+                )
+                groups[key] = group
+            amount = float(row["amount"])
+            if amount < 0:
+                group.expense += amount
+            else:
+                group.income += amount
+
+        rows = list(groups.values())
+        if sort_by_amount:
+            rows.sort(key=lambda item: (-item.magnitude, item.label.lower()))
+        else:
+            rows.sort(key=lambda item: (item.sort_order, item.label.lower()))
+        return rows
+
+    def report_months(
+        self,
+        start: date,
+        end: date,
+        kind: str = "expense",
+        account_id: int | None = None,
+        search: str = "",
+        sort_by_amount: bool = False,
+    ) -> list[MonthFlow]:
+        """Monthly totals for the Time report."""
+        buckets: dict[str, list[float]] = {}
+        for row in self._report_transactions(start, end, account_id, search):
+            if not self._report_includes(row, kind):
+                continue
+            key = str(row["date"])[:7]
+            income, expense = buckets.setdefault(key, [0.0, 0.0])
+            amount = float(row["amount"])
+            if amount < 0:
+                expense += -amount
+            else:
+                income += amount
+            buckets[key] = [income, expense]
+
+        import calendar as _calendar
+
+        flows: list[MonthFlow] = []
+        for key in sorted(buckets):
+            year, month = (int(part) for part in key.split("-"))
+            income, expense = buckets[key]
+            flows.append(
+                MonthFlow(
+                    year=year,
+                    month=month,
+                    label=_calendar.month_abbr[month],
+                    income=income,
+                    expense=expense,
+                )
+            )
+        if sort_by_amount:
+            flows.sort(key=lambda flow: -abs(flow.net))
+        return flows
 
     # ---------------------------------------------------------------- charts
     def spend_by_category(
