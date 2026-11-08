@@ -8,10 +8,13 @@ from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import QAbstractButton, QWidget
 
+from ..fontawesome import draw_glyph
 from ..theme import C, font
 
 
 def draw_gear(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> None:
+    if draw_glyph(p, rect, color, "gear"):
+        return
     p.save()
     p.translate(rect.center())
     radius = min(rect.width(), rect.height()) / 2
@@ -30,6 +33,8 @@ def draw_gear(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> N
 
 
 def draw_pencil(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> None:
+    if draw_glyph(p, rect, color, "pencil"):
+        return
     p.save()
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     r = rect.adjusted(2, 1, -1, -2)
@@ -44,6 +49,8 @@ def draw_pencil(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) ->
 
 
 def draw_download(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> None:
+    if draw_glyph(p, rect, color, "download"):
+        return
     p.save()
     p.setPen(QPen(color, width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
                   Qt.PenJoinStyle.RoundJoin))
@@ -67,6 +74,14 @@ def draw_chevron(
     direction: str = "down",
     width: float = 1.6,
 ) -> None:
+    glyph = {
+        "down": "chevron-down",
+        "up": "chevron-up",
+        "left": "chevron-left",
+        "right": "chevron-right",
+    }.get(direction)
+    if glyph and draw_glyph(p, rect, color, glyph):
+        return
     p.save()
     p.setPen(QPen(color, width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
                   Qt.PenJoinStyle.RoundJoin))
@@ -86,6 +101,8 @@ def draw_chevron(
 
 
 def draw_filter(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> None:
+    if draw_glyph(p, rect, color, "filter"):
+        return
     p.save()
     p.setPen(QPen(color, width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
     r = rect.adjusted(3, 4, -3, -4)
@@ -98,6 +115,8 @@ def draw_filter(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) ->
 
 
 def draw_info(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> None:
+    if draw_glyph(p, rect, color, "circle-info"):
+        return
     p.save()
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     r = rect.adjusted(1.5, 1.5, -1.5, -1.5)
@@ -111,6 +130,8 @@ def draw_info(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> N
 
 
 def draw_check_circle(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> None:
+    if draw_glyph(p, rect, color, "circle-check"):
+        return
     p.save()
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     r = rect.adjusted(1.5, 1.5, -1.5, -1.5)
@@ -130,6 +151,8 @@ def draw_check_circle(p: QPainter, rect: QRectF, color: QColor, width: float = 1
 
 
 def draw_calendar(p: QPainter, rect: QRectF, color: QColor, width: float = 1.2) -> None:
+    if draw_glyph(p, rect, color, "calendar-days"):
+        return
     p.save()
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     r = rect.adjusted(1, 2, -1, -1)
@@ -145,6 +168,8 @@ def draw_calendar(p: QPainter, rect: QRectF, color: QColor, width: float = 1.2) 
 
 
 def draw_warning(p: QPainter, rect: QRectF, color: QColor, width: float = 1.2) -> None:
+    if draw_glyph(p, rect, color, "triangle-exclamation"):
+        return
     p.save()
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     r = rect.adjusted(1.5, 1, -1.5, -1)
@@ -163,6 +188,8 @@ def draw_warning(p: QPainter, rect: QRectF, color: QColor, width: float = 1.2) -
 
 
 def draw_check(p: QPainter, rect: QRectF, color: QColor, width: float = 1.6) -> None:
+    if draw_glyph(p, rect, color, "check"):
+        return
     p.save()
     p.setPen(QPen(color, width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
                   Qt.PenJoinStyle.RoundJoin))
@@ -176,6 +203,8 @@ def draw_check(p: QPainter, rect: QRectF, color: QColor, width: float = 1.6) -> 
 
 
 def draw_plus(p: QPainter, rect: QRectF, color: QColor, width: float = 1.7) -> None:
+    if draw_glyph(p, rect, color, "plus"):
+        return
     p.save()
     p.setPen(QPen(color, width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
     r = rect.adjusted(3, 3, -3, -3)
@@ -185,6 +214,8 @@ def draw_plus(p: QPainter, rect: QRectF, color: QColor, width: float = 1.7) -> N
 
 
 def draw_clock(p: QPainter, rect: QRectF, color: QColor, width: float = 1.4) -> None:
+    if draw_glyph(p, rect, color, "clock"):
+        return
     p.save()
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     r = rect.adjusted(2, 2, -2, -2)
@@ -199,6 +230,8 @@ def draw_clock(p: QPainter, rect: QRectF, color: QColor, width: float = 1.4) -> 
 
 
 def draw_bell(p: QPainter, rect: QRectF, color: QColor, width: float = 1.4) -> None:
+    if draw_glyph(p, rect, color, "bell"):
+        return
     p.save()
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     r = rect.adjusted(2, 2, -2, -2)
@@ -236,6 +269,8 @@ def draw_bell(p: QPainter, rect: QRectF, color: QColor, width: float = 1.4) -> N
 
 
 def draw_flag(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> None:
+    if draw_glyph(p, rect, color, "flag"):
+        return
     p.save()
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     r = rect.adjusted(3, 2, -3, -2)
@@ -254,6 +289,8 @@ def draw_flag(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> N
 
 
 def draw_reconciled(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> None:
+    if draw_glyph(p, rect, color, "circle-dot"):
+        return
     p.save()
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     r = rect.adjusted(1.5, 1.5, -1.5, -1.5)
@@ -277,6 +314,8 @@ def draw_reconciled(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5
 
 
 def draw_search(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> None:
+    if draw_glyph(p, rect, color, "magnifying-glass"):
+        return
     p.save()
     p.setPen(QPen(color, width))
     p.setBrush(Qt.BrushStyle.NoBrush)
@@ -288,6 +327,8 @@ def draw_search(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) ->
 
 
 def draw_table(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> None:
+    if draw_glyph(p, rect, color, "table"):
+        return
     p.save()
     p.setPen(QPen(color, width))
     p.setBrush(Qt.BrushStyle.NoBrush)
@@ -303,6 +344,8 @@ def draw_table(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> 
 
 
 def draw_pie(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> None:
+    if draw_glyph(p, rect, color, "chart-pie"):
+        return
     p.save()
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     p.setPen(QPen(color, width))
@@ -316,6 +359,8 @@ def draw_pie(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> No
 
 
 def draw_bars(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> None:
+    if draw_glyph(p, rect, color, "chart-column"):
+        return
     p.save()
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     p.setPen(Qt.PenStyle.NoPen)

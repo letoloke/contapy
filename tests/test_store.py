@@ -455,9 +455,14 @@ class StoreTests(unittest.TestCase):
 
 
     def test_report_rows_and_months_cover_the_ledger(self) -> None:
+        today = date.today()
+        index = today.year * 12 + today.month - 1 - 11
+        year, month0 = divmod(index, 12)
+        expected_start = date(year, month0 + 1, 3)
+
         start, end = self.store.date_span()
-        self.assertEqual(start, date(2025, 12, 3))
-        self.assertEqual(end, date(2026, 11, 6))
+        self.assertEqual(start, expected_start)
+        self.assertIn(end, (today - timedelta(days=1), today))
 
         expense_rows = self.store.report_rows(start, end, kind="expense")
         expense_labels = {row.label for row in expense_rows}
@@ -485,7 +490,10 @@ class StoreTests(unittest.TestCase):
 
         months = self.store.report_months(start, end, kind="expense")
         self.assertEqual(len(months), 12)
-        self.assertEqual((months[0].label, months[0].year), ("Dec", 2025))
+        self.assertEqual(
+            (months[0].label, months[0].year),
+            (expected_start.strftime("%b"), expected_start.year),
+        )
         self.assertAlmostEqual(months[0].expense, 8_000.0, places=2)
         self.assertGreaterEqual(min(flow.expense for flow in months), 0.0)
 

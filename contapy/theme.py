@@ -40,12 +40,49 @@ def palette_source() -> str:
 def palette_mode() -> str:
     return _PALETTE.mode
 
+
+def terminal_style() -> bool:
+    """True when the active palette uses the btop-style terminal look."""
+    return _PALETTE.monospace
+
 _FONT_FAMILY: str | None = None
+_MONO_FAMILY: str | None = None
 _EMOJI_FAMILY: str | None = None
+
+MONOSPACE_FAMILIES = (
+    "JetBrainsMono Nerd Font",
+    "JetBrains Mono",
+    "Iosevka Nerd Font",
+    "Iosevka Term",
+    "FiraCode Nerd Font",
+    "CaskaydiaCove Nerd Font Mono",
+    "Cascadia Mono",
+    "Source Code Pro",
+    "Noto Sans Mono",
+    "DejaVu Sans Mono",
+    "Liberation Mono",
+)
+
+
+def monospace_family() -> str:
+    global _MONO_FAMILY
+    if _MONO_FAMILY is None:
+        available = set(QFontDatabase.families())
+        for candidate in MONOSPACE_FAMILIES:
+            if candidate in available:
+                _MONO_FAMILY = candidate
+                break
+        else:
+            _MONO_FAMILY = QFontDatabase.systemFont(
+                QFontDatabase.SystemFont.FixedFont
+            ).family()
+    return _MONO_FAMILY
 
 
 def font_family() -> str:
     global _FONT_FAMILY
+    if _PALETTE.monospace:
+        return monospace_family()
     if _FONT_FAMILY is None:
         available = set(QFontDatabase.families())
         for candidate in (
@@ -85,6 +122,8 @@ def emoji_family() -> str:
 def font(size: int = 14, weight: int = 400, family: str | None = None) -> QFont:
     f = QFont(family or font_family())
     f.setPixelSize(size)
+    if _PALETTE.monospace:
+        f.setStyleHint(QFont.StyleHint.Monospace)
     weights = {
         400: QFont.Weight.Normal,
         500: QFont.Weight.Medium,
@@ -135,6 +174,32 @@ def _make_painter(pixmap: QPixmap):
 def stylesheet() -> str:
     chevron = (ASSETS / "chevron-down.svg").as_posix()
     check = (ASSETS / "check.svg").as_posix()
+    radius = "0px" if _PALETTE.monospace else "4px"
+    small_radius = "0px" if _PALETTE.monospace else "3px"
+    terminal_qss = (
+        f"""
+        QTableView {{
+            border: 1px solid {C.BORDER};
+        }}
+        QHeaderView::section {{
+            color: {C.TITLE};
+            background: {C.BG};
+        }}
+        QMenuBar {{
+            color: {C.TITLE};
+            border-bottom: 1px solid {C.BORDER};
+        }}
+        QMenuBar::item:selected {{
+            background: {C.ROW_HOVER};
+            color: {C.ACCENT_LIGHT};
+        }}
+        QMainWindow {{
+            border: 1px solid {C.BORDER};
+        }}
+        """
+        if _PALETTE.monospace
+        else ""
+    )
     return f"""
     QWidget {{
         color: {C.TEXT};
@@ -147,7 +212,7 @@ def stylesheet() -> str:
         color: {C.TOOLTIP_TEXT};
         border: 1px solid {C.TOOLTIP_BORDER};
         padding: 6px 9px;
-        border-radius: 4px;
+        border-radius: {radius};
         font-size: 13px;
     }}
     QMenuBar {{
@@ -159,7 +224,7 @@ def stylesheet() -> str:
     QMenuBar::item {{
         background: transparent;
         padding: 3px 7px;
-        border-radius: 3px;
+        border-radius: {small_radius};
     }}
     QMenuBar::item:selected {{
         background: {C.MENUBAR_HOVER};
@@ -175,7 +240,7 @@ def stylesheet() -> str:
     QMenu::item {{
         background: transparent;
         padding: 6px 28px 6px 14px;
-        border-radius: 4px;
+        border-radius: {radius};
         color: {C.MENU_TEXT};
     }}
     QMenu::item:selected {{
@@ -193,7 +258,7 @@ def stylesheet() -> str:
     QToolButton {{
         background: transparent;
         border: none;
-        border-radius: 5px;
+        border-radius: {small_radius};
         padding: 2px;
     }}
     QToolButton:hover {{
@@ -206,7 +271,7 @@ def stylesheet() -> str:
         background: {C.BUTTON_BG};
         color: {C.BUTTON_TEXT};
         border: 1px solid {C.BUTTON_BORDER};
-        border-radius: 4px;
+        border-radius: {radius};
         padding: 5px 14px;
         font-size: 13px;
     }}
@@ -233,7 +298,7 @@ def stylesheet() -> str:
         background: {C.ACTION_BG};
         color: {C.ACTION_TEXT};
         border: 1px solid {C.ACTION_BORDER};
-        border-radius: 4px;
+        border-radius: {radius};
         padding: 4px 7px;
         font-size: 13px;
     }}
@@ -250,7 +315,7 @@ def stylesheet() -> str:
         background: {C.INPUT_BG};
         color: {C.INPUT_TEXT};
         border: 1px solid {C.INPUT_BORDER};
-        border-radius: 4px;
+        border-radius: {radius};
         padding: 5px 8px;
         selection-background-color: {C.SELECTION};
         selection-color: {C.SELECTION_TEXT};
@@ -308,7 +373,7 @@ def stylesheet() -> str:
     QScrollBar::handle:vertical {{
         background: {C.SCROLL_HANDLE};
         min-height: 26px;
-        border-radius: 4px;
+        border-radius: {radius};
     }}
     QScrollBar::handle:vertical:hover {{
         background: {C.SCROLL_HANDLE_HOVER};
@@ -326,7 +391,7 @@ def stylesheet() -> str:
     QScrollBar::handle:horizontal {{
         background: {C.SCROLL_HANDLE};
         min-width: 26px;
-        border-radius: 4px;
+        border-radius: {radius};
     }}
     QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
         width: 0px;
@@ -335,7 +400,7 @@ def stylesheet() -> str:
         width: 14px;
         height: 14px;
         border: 1px solid {C.CHECK_BORDER};
-        border-radius: 3px;
+        border-radius: {small_radius};
         background: {C.CHECK_BG};
     }}
     QCheckBox::indicator:hover {{
@@ -368,7 +433,7 @@ def stylesheet() -> str:
     QListWidget {{
         background: {C.LIST_BG};
         border: 1px solid {C.LIST_BORDER};
-        border-radius: 4px;
+        border-radius: {radius};
         color: {C.TEXT};
         outline: 0;
     }}
@@ -385,6 +450,7 @@ def stylesheet() -> str:
     QMessageBox QLabel {{
         color: {C.TEXT};
     }}
+    {terminal_qss}
     """
 
 

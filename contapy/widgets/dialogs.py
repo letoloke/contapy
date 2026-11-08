@@ -189,7 +189,7 @@ class SearchCombo(QComboBox):
 
 
 def _info_button(text: str, parent: QWidget) -> IconButton:
-    button = IconButton(draw_info, 22, text, parent=parent)
+    button = IconButton(draw_info, 22, text, color=C.INFO, parent=parent)
     button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
     return button
 

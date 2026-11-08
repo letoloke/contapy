@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..fontawesome import glyph_icon
 from ..theme import C, emoji_pixmap, font
 
 
@@ -37,12 +38,17 @@ class AppToolbar(QWidget):
         layout.setContentsMargins(8, 4, 10, 4)
         layout.setSpacing(9)
 
-        self._button("📄", "New transaction  (Ctrl+N)", self.newTransaction.emit, layout)
-        self._button("🗂️", "Accounts", self.manageAccounts.emit, layout)
+        self._button(
+            "file-circle-plus", "📄", "New transaction  (Ctrl+N)",
+            self.newTransaction.emit, layout,
+        )
+        self._button(
+            "wallet", "🗂️", "Accounts", self.manageAccounts.emit, layout
+        )
 
         menu_button = QToolButton(self)
-        menu_button.setText("⌄")
-        menu_button.setFont(font(15, 400))
+        menu_button.setIcon(self._icon("chevron-down", "⌄", 16))
+        menu_button.setIconSize(QSize(16, 16))
         menu_button.setFixedSize(18, 34)
         menu_button.setCursor(Qt.CursorShape.PointingHandCursor)
         menu_button.setToolTip("More account actions")
@@ -58,23 +64,35 @@ class AppToolbar(QWidget):
 
         layout.addWidget(self._separator())
 
-        self._button("⬇️", "Import transactions", self.importRequested.emit, layout)
+        self._button(
+            "download", "⬇️", "Import transactions",
+            self.importRequested.emit, layout,
+        )
         layout.addSpacing(28)
         layout.addWidget(self._separator())
 
-        self._button("🗃️", "Categories", self.categoriesRequested.emit, layout)
-        self._button("👥", "Payees", self.payeesRequested.emit, layout)
-        self._button("🧩", "Manage accounts", self.manageAccounts.emit, layout)
-        self._button("📋", "Spending report", self.spendingFocus.emit, layout)
-        self._button("📨", "Cash flow report", self.cashflowFocus.emit, layout)
-        self._button("🪄", "Preferences", self.preferencesRequested.emit, layout)
+        self._button("tags", "🗃️", "Categories", self.categoriesRequested.emit, layout)
+        self._button("users", "👥", "Payees", self.payeesRequested.emit, layout)
+        self._button(
+            "sliders", "🧩", "Manage accounts", self.manageAccounts.emit, layout
+        )
+        self._button(
+            "chart-pie", "📋", "Spending report", self.spendingFocus.emit, layout
+        )
+        self._button(
+            "money-bill-transfer", "📨", "Cash flow report",
+            self.cashflowFocus.emit, layout,
+        )
+        self._button("gear", "🪄", "Preferences", self.preferencesRequested.emit, layout)
 
         layout.addWidget(self._separator())
-        self._button("📖", "Keyboard shortcuts", self.helpRequested.emit, layout)
+        self._button(
+            "keyboard", "📖", "Keyboard shortcuts", self.helpRequested.emit, layout
+        )
 
         add_button = QToolButton(self)
         add_button.setText("Add")
-        add_button.setIcon(QIcon(emoji_pixmap("📝", 20)))
+        add_button.setIcon(self._icon("circle-plus", "📝", 20))
         add_button.setIconSize(QSize(20, 20))
         add_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         add_button.setFont(font(14, 400))
@@ -86,18 +104,48 @@ class AppToolbar(QWidget):
         layout.addWidget(add_button)
 
         layout.addSpacing(31)
-        self._button("🥧", "Top spending by category", self.spendingFocus.emit, layout)
-        self._button("👤", "Payees", self.payeesRequested.emit, layout)
-        self._button("🏦", "Accounts", self.manageAccounts.emit, layout)
-        self._button("📊", "Spending & revenue", self.cashflowFocus.emit, layout)
-        self._button("🔄", "Refresh dashboard  (F5)", self.refreshRequested.emit, layout)
-        self._button("🎯", "Preferences", self.preferencesRequested.emit, layout)
-        self._button("❤️", "About ContaPy", self.aboutRequested.emit, layout)
+        self._button(
+            "chart-pie", "🥧", "Top spending by category",
+            self.spendingFocus.emit, layout,
+        )
+        self._button(
+            "user-group", "👤", "Payees", self.payeesRequested.emit, layout
+        )
+        self._button(
+            "building-columns", "🏦", "Accounts",
+            self.manageAccounts.emit, layout,
+        )
+        self._button(
+            "chart-column", "📊", "Spending & revenue",
+            self.cashflowFocus.emit, layout,
+        )
+        self._button(
+            "arrows-rotate", "🔄", "Refresh dashboard  (F5)",
+            self.refreshRequested.emit, layout,
+        )
+        self._button(
+            "gear", "🎯", "Preferences", self.preferencesRequested.emit, layout
+        )
+        self._button(
+            "heart", "❤️", "About ContaPy", self.aboutRequested.emit, layout
+        )
         layout.addStretch(1)
 
-    def _button(self, emoji: str, tip: str, slot, layout: QHBoxLayout) -> QToolButton:
+    @staticmethod
+    def _icon(glyph: str, emoji: str, size: int) -> QIcon:
+        icon = glyph_icon(glyph, logical=size)
+        return icon if icon is not None else QIcon(emoji_pixmap(emoji, size))
+
+    def _button(
+        self,
+        glyph: str,
+        emoji: str,
+        tip: str,
+        slot,
+        layout: QHBoxLayout,
+    ) -> QToolButton:
         button = QToolButton(self)
-        button.setIcon(QIcon(emoji_pixmap(emoji, 24)))
+        button.setIcon(self._icon(glyph, emoji, 24))
         button.setIconSize(QSize(24, 24))
         button.setFixedSize(34, 34)
         button.setCursor(Qt.CursorShape.PointingHandCursor)

@@ -108,7 +108,7 @@ ledger changes or `F5` is pressed.
 - **Spending donut** — top ten expense categories plus *Other*, drawn with `QPainter`. Hover a slice for the category, amount and share. Switch periods from the footer.
 - **Spending & Revenue bars** — twelve months of income above zero and spending below, with the exact plotting style of the reference (green up, red down, 100k grid, year tag). Hover a month for income, spending and net.
 - **Scheduled strip** — Scheduled lists upcoming bills; Future and Remind are filtered views of the ledger (posted future-dated transactions and reminder-flagged transactions), just like HomeBank. Scheduled rows have working **Skip**, **Edit & Post** and **Post** actions; ledger rows open the account ledger.
-- **Reference chrome** — the File/Edit/View/Manage/Transactions/Reports/Tools/Help menu, emoji shortcut toolbar, account footer tools, filter flyout, and the “Your accounts” status row.
+- **Reference chrome** — the File/Edit/View/Manage/Transactions/Reports/Tools/Help menu, icon shortcut toolbar, account footer tools, filter flyout, and the “Your accounts” status row.
 
 The demo figures are aligned to the reference: last 30 days **$167,248.99**, reconciled **$20,289.30**, today/future **−$97,263.62**.
 
@@ -186,19 +186,31 @@ location gets its own `dailylbaka` folder.
 
 ### Theme
 
-ContaPy follows the active **Omarchy** theme. At startup it reads
+The default look is a **btop-style terminal theme**: black canvas, neon
+cyan/green ANSI accents, boxed panels with square corners, bracketed uppercase
+chart titles, and a monospaced interface font (JetBrainsMono Nerd Font when
+installed, with the usual monospace fallbacks). Icons come from the bundled
+Font Awesome Free 6.6 Solid web font and fall back to the original painted
+shapes if the font cannot be loaded.
+
+ContaPy can still follow the active **Omarchy** desktop theme. At startup,
+with `CONTAPY_THEME=omarchy`, it reads
 `~/.local/state/omarchy/current/theme/colors.toml` (honouring `XDG_STATE_HOME`)
 and derives the whole interface from it — panels, menus, inputs, selection,
 status colours and the category donut. Both dark and light Omarchy themes work.
 Switch themes in Omarchy, then restart ContaPy to pick up the new palette.
 
-Without Omarchy, or if the palette file is missing, the built-in graphite
-palette is used. Two environment variables override the lookup:
+The environment variables override the default:
 
 ```bash
-CONTAPY_THEME=builtin python3 main.py                    # ignore Omarchy
+CONTAPY_THEME=btop python3 main.py                       # default terminal look
+CONTAPY_THEME=omarchy python3 main.py                    # follow Omarchy
+CONTAPY_THEME=builtin python3 main.py                    # original graphite
 CONTAPY_THEME_FILE=/path/to/colors.toml python3 main.py  # force a palette
 ```
+
+The bundled Font Awesome font is licensed under the SIL OFL 1.1; see
+`contapy/assets/FONT-AWESOME-LICENSE.txt`.
 
 ### Screenshot mode
 
@@ -258,7 +270,8 @@ contapy/
   db.py                     SQLite schema, balances, reports, CSV
   seed.py                   deterministic reference-shaped demo data
   omarchy.py                reads Omarchy colors.toml, derives semantic tokens
-  theme.py                  Qt tokens, stylesheet, palette, emoji rendering
+  theme.py                  Qt tokens, stylesheet, palette, font selection
+  fontawesome.py            bundled Font Awesome glyph loading and rendering
   models.py                 small dataclasses
   widgets/
     accounts.py             custom-painted account tree and footer
@@ -266,8 +279,9 @@ contapy/
     scheduled.py            tabs, table and action bar
     ledger.py               HomeBank-style account ledger window
     dialogs.py              transaction/account/preferences dialogs
-    toolbar.py              emoji toolbar
-    icons.py                painter-drawn mini icons
+    toolbar.py              Font Awesome shortcut toolbar
+    icons.py                themed glyph icons with painted fallbacks
+    reports.py              report window, table/pie/bar views
 tests/test_store.py         headless ledger tests
 tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 ```
@@ -284,7 +298,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-Twenty-nine tests cover the reference balances, the rolling donut total, posting schedules, running ledger balances, reconciled/cleared transitions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, remind flags, demo reset, and Omarchy palette parsing (dark, light, fallbacks and contrast).
+Forty-two tests cover the reference balances, the rolling donut total, posting schedules, running ledger balances, reconciled/cleared transitions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, and Omarchy palette parsing (dark, light, fallbacks and contrast).
 
 ## Notes / limitations
 

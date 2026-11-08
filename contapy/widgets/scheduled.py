@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 
 from ..models import Account, ScheduledItem
 from ..money import money
-from ..theme import C, font
+from ..theme import C, font, terminal_style
 from .icons import (
     IconButton,
     draw_bell,
@@ -67,6 +67,22 @@ HEADER_LABELS = [
     (660, "Income"),
     (740, "Memo"),
     (830, "Account"),
+]
+
+# The monospace face is wider, so the header labels need a little more room.
+BTOP_HEADER_LABELS = [
+    (37, "LATE"),
+    (84, "STILL"),
+    (132, "FLAG"),
+    (176, "NEXT DATE"),
+    (290, "PAY./NUM."),
+    (382, "PAYEE"),
+    (495, "CATEGORY"),
+    (588, "ST."),
+    (618, "EXPENSE"),
+    (702, "INCOME"),
+    (784, "MEMO"),
+    (830, "ACCOUNT"),
 ]
 
 
@@ -142,9 +158,10 @@ class _Header(QWidget):
     def paintEvent(self, event):  # noqa: N802
         p = QPainter(self)
         p.fillRect(self.rect(), QColor(C.PANEL))
-        p.setFont(font(14, 400))
+        p.setFont(font(13 if terminal_style() else 14, 400))
         p.setPen(QColor(C.MUTED))
-        for x, label in HEADER_LABELS:
+        labels = BTOP_HEADER_LABELS if terminal_style() else HEADER_LABELS
+        for x, label in labels:
             p.drawText(
                 QRectF(x, 0, 130, HEADER_H),
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
@@ -303,7 +320,11 @@ class _Canvas(QWidget):
 
             p.setPen(QPen(QColor(C.SEPARATOR), 1))
             p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawRoundedRect(QRectF(X_CHECK, y + 8, 11, 11), 2, 2)
+            check_rect = QRectF(X_CHECK, y + 8, 11, 11)
+            if terminal_style():
+                p.drawRect(check_rect)
+            else:
+                p.drawRoundedRect(check_rect, 2, 2)
 
             p.setFont(font(14, 400))
             p.setPen(QColor(C.TEXT if not selected else C.ROW_SELECTED_TEXT))
@@ -317,17 +338,29 @@ class _Canvas(QWidget):
             draw_calendar(p, QRectF(X_DATE + date_w + 8, y + 8, 12, 12), QColor(C.GREEN_BAR), 1.0)
 
             p.setPen(QColor(C.TEXT if not selected else C.ROW_SELECTED_TEXT))
+            payee_font = font(14, 400)
+            p.setFont(payee_font)
+            payee_rect = QRectF(X_PAYEE, y, X_CATEGORY - X_PAYEE - 6, ROW_H)
             p.drawText(
-                QRectF(X_PAYEE, y, 120, ROW_H),
+                payee_rect,
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                item.payee,
+                QFontMetrics(payee_font).elidedText(
+                    item.payee,
+                    Qt.TextElideMode.ElideRight,
+                    int(payee_rect.width()),
+                ),
             )
 
             p.setPen(QColor(C.TEXT_SOFT if not selected else C.ROW_SELECTED_TEXT))
+            category_rect = QRectF(X_CATEGORY, y, X_STATUS - X_CATEGORY - 4, ROW_H)
             p.drawText(
-                QRectF(X_CATEGORY, y, 80, ROW_H),
+                category_rect,
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                item.category_name,
+                QFontMetrics(payee_font).elidedText(
+                    item.category_name,
+                    Qt.TextElideMode.ElideRight,
+                    int(category_rect.width()),
+                ),
             )
 
             if item.status == "remind":
@@ -355,17 +388,28 @@ class _Canvas(QWidget):
                 )
 
             p.setPen(QColor(C.MUTED))
-            p.setFont(font(13, 400))
+            small_font = font(13, 400)
+            p.setFont(small_font)
+            small_metrics = QFontMetrics(small_font)
+            memo_rect = QRectF(X_MEMO, y, X_ACCOUNT - X_MEMO - 6, ROW_H)
             p.drawText(
-                QRectF(X_MEMO, y, 80, ROW_H),
+                memo_rect,
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                item.memo,
+                small_metrics.elidedText(
+                    item.memo,
+                    Qt.TextElideMode.ElideRight,
+                    int(memo_rect.width()),
+                ),
             )
-            p.setPen(QColor(C.MUTED))
+            account_rect = QRectF(X_ACCOUNT, y, 180, ROW_H)
             p.drawText(
-                QRectF(X_ACCOUNT, y, 180, ROW_H),
+                account_rect,
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                item.account_name,
+                small_metrics.elidedText(
+                    item.account_name,
+                    Qt.TextElideMode.ElideRight,
+                    int(account_rect.width()),
+                ),
             )
 
         total_y = len(self.panel.visible) * ROW_H
