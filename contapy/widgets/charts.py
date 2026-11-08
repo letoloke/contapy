@@ -22,6 +22,7 @@ from ..models import MonthFlow, Slice
 from ..money import money, money_short
 from ..theme import C, font
 from .icons import IconButton, draw_gear
+from .rounded_frame import RADIUS, RoundedFrame
 
 HEADER_SPACE = 62
 FOOTER_H = 42
@@ -109,6 +110,8 @@ class ChartCard(QWidget):
 
         self.footer.saveRequested.connect(self._save_image)
 
+        self.frame = RoundedFrame(self)
+
     def set_subtitle(self, text: str) -> None:
         self.subtitle = text
         self.update()
@@ -118,11 +121,13 @@ class ChartCard(QWidget):
 
     def flash(self) -> None:
         self._flash = True
+        self.frame.set_color(C.ACCENT)
         self.update()
         QTimer.singleShot(900, self._clear_flash)
 
     def _clear_flash(self) -> None:
         self._flash = False
+        self.frame.set_color(C.MUTED_DARK)
         self.update()
 
     def _save_image(self) -> None:
@@ -138,9 +143,10 @@ class ChartCard(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
-        border = QColor(C.ACCENT if self._flash else C.MUTED_DARK)
-        p.fillRect(self.rect(), border)
-        p.fillRect(QRectF(self.rect()).adjusted(3, 3, -3, -3), QColor(C.PANEL))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(C.PANEL))
+        p.drawRoundedRect(QRectF(self.rect()), RADIUS, RADIUS)
+        p.setBrush(Qt.BrushStyle.NoBrush)
 
         p.setPen(QColor(C.TITLE))
         p.setFont(font(20, 400))

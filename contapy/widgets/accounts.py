@@ -28,6 +28,7 @@ from .icons import (
     draw_pencil,
     draw_warning,
 )
+from .rounded_frame import RADIUS, RoundedFrame
 
 HEADER_H = 26
 FOOTER_H = 36
@@ -473,10 +474,14 @@ class AccountsPanel(QWidget):
         self.footer.upClicked.connect(lambda: self._reorder(-1))
         self.footer.downClicked.connect(lambda: self._reorder(1))
 
+        self.frame = RoundedFrame(self)
+
     def paintEvent(self, event):  # noqa: N802
         p = QPainter(self)
-        p.fillRect(self.rect(), QColor(C.MUTED_DARK))
-        p.fillRect(QRectF(self.rect()).adjusted(3, 3, -3, -3), QColor(C.PANEL))
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(C.PANEL))
+        p.drawRoundedRect(QRectF(self.rect()), RADIUS, RADIUS)
         p.end()
 
     # ------------------------------------------------------------- data flow
