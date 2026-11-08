@@ -99,7 +99,7 @@ class ChartCard(QWidget):
         self.setMinimumWidth(380)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setContentsMargins(3, 3, 3, 3)
         layout.setSpacing(0)
         layout.addSpacing(HEADER_SPACE)
         layout.addWidget(content, 1)
@@ -138,14 +138,9 @@ class ChartCard(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
-        p.fillRect(self.rect(), QColor(C.PANEL))
-        p.setPen(
-            QPen(
-                QColor(C.ACCENT if self._flash else C.BORDER_SOFT),
-                2 if self._flash else 1,
-            )
-        )
-        p.drawRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5))
+        border = QColor(C.ACCENT if self._flash else C.MUTED_DARK)
+        p.fillRect(self.rect(), border)
+        p.fillRect(QRectF(self.rect()).adjusted(3, 3, -3, -3), QColor(C.PANEL))
 
         p.setPen(QColor(C.TITLE))
         p.setFont(font(20, 400))

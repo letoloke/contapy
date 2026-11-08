@@ -417,7 +417,7 @@ class ScheduledPanel(QWidget):
         self._account_id: int | None = None
 
         outer = QHBoxLayout(self)
-        outer.setContentsMargins(1, 1, 1, 1)
+        outer.setContentsMargins(3, 3, 3, 3)
         outer.setSpacing(0)
 
         self.tabs = _Tabs(self)
@@ -487,9 +487,8 @@ class ScheduledPanel(QWidget):
 
     def paintEvent(self, event):  # noqa: N802
         p = QPainter(self)
-        p.fillRect(self.rect(), QColor(C.PANEL))
-        p.setPen(QPen(QColor(C.BORDER_SOFT), 1))
-        p.drawRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5))
+        p.fillRect(self.rect(), QColor(C.MUTED_DARK))
+        p.fillRect(QRectF(self.rect()).adjusted(3, 3, -3, -3), QColor(C.PANEL))
         p.end()
 
     # ------------------------------------------------------------- data flow
@@ -665,10 +664,3 @@ class ScheduledPanel(QWidget):
         }
         self.filter_btn.setToolTip(f"Due-date filter: {labels.get(value, 'All dates')}")
         self._rebuild()
-
-    def paintEvent(self, event):  # noqa: N802
-        p = QPainter(self)
-        p.fillRect(self.rect(), QColor(C.PANEL))
-        p.setPen(QPen(QColor(C.BORDER), 1))
-        p.drawLine(0, 0, self.width(), 0)
-        p.end()
