@@ -139,7 +139,12 @@ class ChartCard(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         p.fillRect(self.rect(), QColor(C.PANEL))
-        p.setPen(QPen(QColor(C.ACCENT if self._flash else C.BORDER), 2 if self._flash else 1))
+        p.setPen(
+            QPen(
+                QColor(C.ACCENT if self._flash else C.BORDER_SOFT),
+                2 if self._flash else 1,
+            )
+        )
         p.drawRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5))
 
         p.setPen(QColor(C.TITLE))

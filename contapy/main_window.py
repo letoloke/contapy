@@ -6,8 +6,15 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, Qt, QUrl
-from PySide6.QtGui import QAction, QDesktopServices, QKeySequence
+from PySide6.QtCore import QRectF, QTimer, Qt, QUrl
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QDesktopServices,
+    QKeySequence,
+    QPainter,
+    QPen,
+)
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -39,6 +46,24 @@ from .widgets.dialogs import (
 )
 from .widgets.scheduled import ScheduledPanel
 from .widgets.toolbar import AppToolbar
+
+
+class _WindowFrame(QWidget):
+    """Translucent overlay that paints the window-wide border."""
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
+    def paintEvent(self, event):  # noqa: N802
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(QColor(C.BORDER_SOFT), 5))
+        p.drawRect(QRectF(self.rect()).adjusted(2.5, 2.5, -2.5, -2.5))
+        p.end()
 
 
 class MainWindow(QMainWindow):
@@ -239,6 +264,10 @@ class MainWindow(QMainWindow):
         self.hsplit.setSizes([615, 1225])
         self.charts_split.setSizes([610, 610])
         self.vsplit.setSizes([412, 349])
+
+        self.frame_overlay = _WindowFrame(self)
+        self.frame_overlay.setGeometry(self.rect())
+        self.frame_overlay.raise_()
 
         self.toast = QLabel(self)
         self.toast.setObjectName("toast")
@@ -838,12 +867,18 @@ class MainWindow(QMainWindow):
 
     def showEvent(self, event):  # noqa: N802
         super().showEvent(event)
+        if hasattr(self, "frame_overlay"):
+            self.frame_overlay.setGeometry(self.rect())
+            self.frame_overlay.raise_()
         if not self._initial_focus_done:
             self._initial_focus_done = True
             QTimer.singleShot(0, self.accounts_panel.focus_list)
 
     def resizeEvent(self, event):  # noqa: N802
         super().resizeEvent(event)
+        if hasattr(self, "frame_overlay"):
+            self.frame_overlay.setGeometry(self.rect())
+            self.frame_overlay.raise_()
         self._position_toast()
 
     def closeEvent(self, event):  # noqa: N802

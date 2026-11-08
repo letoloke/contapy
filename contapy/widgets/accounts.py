@@ -449,7 +449,7 @@ class AccountsPanel(QWidget):
         self.expanded: set[str] = set(KIND_LABELS)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(1, 1, 1, 1)
         layout.setSpacing(0)
         self.header = AccountsHeader(self)
         layout.addWidget(self.header)
@@ -472,6 +472,13 @@ class AccountsPanel(QWidget):
         self.footer.editClicked.connect(self._edit_selected)
         self.footer.upClicked.connect(lambda: self._reorder(-1))
         self.footer.downClicked.connect(lambda: self._reorder(1))
+
+    def paintEvent(self, event):  # noqa: N802
+        p = QPainter(self)
+        p.fillRect(self.rect(), QColor(C.PANEL))
+        p.setPen(QPen(QColor(C.BORDER_SOFT), 1))
+        p.drawRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5))
+        p.end()
 
     # ------------------------------------------------------------- data flow
     def set_data(self, accounts: list[Account], balances: dict[int, Balance]) -> None:

@@ -417,7 +417,7 @@ class ScheduledPanel(QWidget):
         self._account_id: int | None = None
 
         outer = QHBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setContentsMargins(1, 1, 1, 1)
         outer.setSpacing(0)
 
         self.tabs = _Tabs(self)
@@ -484,6 +484,13 @@ class ScheduledPanel(QWidget):
 
         self.action_bar.setStyleSheet(f"background:{C.BG};")
         self._sync_buttons()
+
+    def paintEvent(self, event):  # noqa: N802
+        p = QPainter(self)
+        p.fillRect(self.rect(), QColor(C.PANEL))
+        p.setPen(QPen(QColor(C.BORDER_SOFT), 1))
+        p.drawRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5))
+        p.end()
 
     # ------------------------------------------------------------- data flow
     def set_data(
