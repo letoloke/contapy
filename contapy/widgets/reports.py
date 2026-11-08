@@ -39,7 +39,7 @@ from PySide6.QtWidgets import (
 from ..db import DataStore
 from ..models import MonthFlow, ReportRow, Slice
 from ..money import friendly_date, money
-from ..theme import C, DONUT_COLORS, font, terminal_style
+from ..theme import C, DONUT_COLORS, font
 from .charts import DonutChart, SpendingRevenueChart
 from .icons import IconButton, draw_bars, draw_pie, draw_table
 
@@ -334,7 +334,7 @@ class ReportsWindow(QMainWindow):
 
         titles = QVBoxLayout()
         titles.setSpacing(1)
-        title = QLabel("REPORTS" if terminal_style() else "Reports")
+        title = QLabel("Reports")
         title.setFont(font(22, 600))
         title.setStyleSheet(f"color:{C.TITLE};")
         self.span_label = QLabel("")
@@ -395,7 +395,7 @@ class ReportsWindow(QMainWindow):
         layout.setSpacing(6)
         scroll.setWidget(body)
 
-        heading = QLabel("DISPLAY" if terminal_style() else "Display")
+        heading = QLabel("Display")
         heading.setFont(font(18, 600))
         heading.setStyleSheet(f"color:{C.TITLE};")
         layout.addWidget(heading)

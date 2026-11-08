@@ -142,122 +142,6 @@ FALLBACK_DONUT_COLORS: list[str] = [
     "#77544d",
 ]
 
-# ---------------------------------------------------------------- btop theme
-# btop's terminal palette: black canvas, cyan chrome and ANSI-style accents.
-BTOP_TOKENS: dict[str, str] = dict(FALLBACK_TOKENS)
-BTOP_TOKENS.update(
-    {
-        "BG": "#000000",
-        "PANEL": "#0b0b0b",
-        "PANEL_RAISED": "#101616",
-        "HEADER": "#0b0b0b",
-        "BORDER": "#1f6f6f",
-        "BORDER_SOFT": "#2f9f9f",
-        "GRID": "#143f3f",
-        "GRID_ZERO": "#1f6a6a",
-        "TEXT": "#d0d0d0",
-        "TEXT_SOFT": "#b8b8b8",
-        "MUTED": "#808080",
-        "MUTED_DARK": "#5f5f5f",
-        "TITLE": "#00e0e0",
-        "ACCENT": "#00d7d7",
-        "ACCENT_LIGHT": "#40ffff",
-        "ACCENT_HOVER": "#20e8e8",
-        "GREEN": "#00d787",
-        "GREEN_BAR": "#00d787",
-        "ORANGE": "#ff8700",
-        "RED_BAR": "#ff005f",
-        "WARNING": "#ffd700",
-        "INFO": "#5fafff",
-        "ROW_HOVER": "#102a2a",
-        "ROW_SELECTED": "#004c4c",
-        "ROW_SELECTED_TEXT": "#ffffff",
-        "TOTAL_ROW": "#0f1e1e",
-        "ALT_ROW": "#0d1414",
-        "INPUT_BG": "#050505",
-        "INPUT_TEXT": "#e0e0e0",
-        "INPUT_BORDER": "#1f6f6f",
-        "FOCUS_BORDER": "#00ffff",
-        "BUTTON_BG": "#081010",
-        "BUTTON_BG_HOVER": "#102a2a",
-        "BUTTON_BG_PRESSED": "#174040",
-        "BUTTON_TEXT": "#d0d0d0",
-        "BUTTON_BORDER": "#1f6f6f",
-        "BUTTON_PRIMARY_BORDER": "#00ffff",
-        "ACTION_BG": "#081010",
-        "ACTION_BG_HOVER": "#102a2a",
-        "ACTION_BORDER": "#1f6f6f",
-        "ACTION_TEXT": "#b8b8b8",
-        "MENU_BG": "#050505",
-        "MENU_BORDER": "#1f6f6f",
-        "MENU_TEXT": "#d0d0d0",
-        "MENU_SELECTED": "#00d7d7",
-        "MENU_SELECTED_TEXT": "#000000",
-        "MENU_SEPARATOR": "#123a3a",
-        "MENUBAR_HOVER": "#102a2a",
-        "TOOLTIP_BG": "#050505",
-        "TOOLTIP_TEXT": "#e0e0e0",
-        "TOOLTIP_BORDER": "#1f6f6f",
-        "SELECTION": "#004c4c",
-        "SELECTION_TEXT": "#ffffff",
-        "ON_ACCENT": "#000000",
-        "ON_GREEN": "#000000",
-        "ON_RECONCILED": "#000000",
-        "SEPARATOR": "#123a3a",
-        "DISABLED": "#5f5f5f",
-        "DISABLED_BG": "#0a0a0a",
-        "DISABLED_BORDER": "#1a3a3a",
-        "SCROLL_HANDLE": "#1f6f6f",
-        "SCROLL_HANDLE_HOVER": "#2f9f9f",
-        "CHECK_BG": "#050505",
-        "CHECK_BORDER": "#1f6f6f",
-        "CHECK_HOVER": "#2f9f9f",
-        "LIST_BG": "#050505",
-        "LIST_BORDER": "#1f6f6f",
-        "POPUP_BG": "#050505",
-        "POPUP_BORDER": "#1f6f6f",
-        "POPUP_TEXT": "#d0d0d0",
-        "TAB_HOVER": "#102a2a",
-        "TAB_ACTIVE_BG": "#050505",
-        "CATEGORY_TEXT": "#b8b8b8",
-        "CATEGORY_MUTED": "#5f5f5f",
-        "RECONCILED": "#00d787",
-        "FUTURE": "#5fafff",
-        "CALENDAR_FG": "#000000",
-        "AMOUNT": "#c0c0c0",
-        "WARNING_TEXT": "#000000",
-    }
-)
-
-BTOP_CATEGORY_COLORS: dict[str, str] = {
-    "renta": "#5fafff",
-    "nomina": "#00d7d7",
-    "Retiro de efectivo": "#ff8700",
-    "Impuestos": "#ffd700",
-    "suscripciones": "#00d787",
-    "alimentos": "#87d787",
-    "manto": "#ff005f",
-    "comision": "#ff5f87",
-    "servicios": "#d787ff",
-    "bebes": "#ff87d7",
-    "Other": "#af875f",
-    "Ingresos": "#00d787",
-}
-
-BTOP_DONUT_COLORS: list[str] = [
-    "#00d7d7",
-    "#00d787",
-    "#ffd700",
-    "#ff8700",
-    "#d787ff",
-    "#5fafff",
-    "#ff005f",
-    "#87d787",
-    "#ff5f87",
-    "#87afff",
-    "#af875f",
-]
-
 # Seed category -> Omarchy colour role.
 CATEGORY_KEYS: dict[str, str] = {
     "renta": "blue",
@@ -289,7 +173,6 @@ class Palette:
     tokens: dict[str, str] = field(default_factory=dict)
     category_colors: dict[str, str] = field(default_factory=dict)
     donut_colors: list[str] = field(default_factory=list)
-    monospace: bool = False
 
     @property
     def is_light(self) -> bool:
@@ -610,16 +493,7 @@ def donut_from_categories(category_colors: dict[str, str]) -> list[str]:
 
 # ------------------------------------------------------------- public loading
 def _resolve(environ: dict[str, str]) -> Palette:
-    choice = (environ.get("CONTAPY_THEME") or "btop").strip().lower()
-    if choice in ("btop", "terminal"):
-        return Palette(
-            "dark",
-            "btop",
-            dict(BTOP_TOKENS),
-            dict(BTOP_CATEGORY_COLORS),
-            list(BTOP_DONUT_COLORS),
-            monospace=True,
-        )
+    choice = (environ.get("CONTAPY_THEME") or "omarchy").strip().lower()
     if choice in ("builtin", "default", "none", "off"):
         return Palette(
             "dark",

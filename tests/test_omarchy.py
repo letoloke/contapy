@@ -124,20 +124,9 @@ class PaletteTokenTests(unittest.TestCase):
         dark.pop("mode")
         self.assertEqual(tokens_from_colors(dark)["BG"], "#282c34")
 
-    def test_load_palette_defaults_to_btop(self) -> None:
-        palette = load_palette(
-            {"CONTAPY_THEME_FILE": "/nonexistent/colors.toml"}
-        )
-        self.assertEqual(palette.source, "btop")
-        self.assertTrue(palette.monospace)
-        self.assertEqual(palette.tokens["BG"], "#000000")
-
     def test_load_palette_uses_builtin_without_omarchy(self) -> None:
         palette = load_palette(
-            {
-                "CONTAPY_THEME": "omarchy",
-                "CONTAPY_THEME_FILE": "/nonexistent/colors.toml",
-            }
+            {"CONTAPY_THEME_FILE": "/nonexistent/colors.toml"}
         )
         self.assertIn("built-in", palette.source)
         self.assertEqual(palette.tokens["BG"], FALLBACK_TOKENS["BG"])
@@ -151,12 +140,7 @@ class PaletteTokenTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "colors.toml"
             path.write_text(DARK)
-            palette = load_palette(
-                {
-                    "CONTAPY_THEME": "omarchy",
-                    "CONTAPY_THEME_FILE": str(path),
-                }
-            )
+            palette = load_palette({"CONTAPY_THEME_FILE": str(path)})
             self.assertEqual(palette.mode, "dark")
             self.assertEqual(palette.tokens["BG"], "#282c34")
             self.assertEqual(palette.category_colors["renta"], "#61afef")
@@ -166,12 +150,7 @@ class PaletteTokenTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "colors.toml"
             path.write_text(LIGHT)
-            palette = load_palette(
-                {
-                    "CONTAPY_THEME": "omarchy",
-                    "CONTAPY_THEME_FILE": str(path),
-                }
-            )
+            palette = load_palette({"CONTAPY_THEME_FILE": str(path)})
             self.assertNotEqual(
                 palette.category_colors["manto"],
                 palette.category_colors["comision"],

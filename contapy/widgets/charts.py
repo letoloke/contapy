@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 
 from ..models import MonthFlow, Slice
 from ..money import money, money_short
-from ..theme import C, font, terminal_style
+from ..theme import C, font
 from .icons import IconButton, draw_gear
 
 HEADER_SPACE = 62
@@ -144,11 +144,10 @@ class ChartCard(QWidget):
 
         p.setPen(QColor(C.TITLE))
         p.setFont(font(20, 400))
-        title = f"[ {self.title.upper()} ]" if terminal_style() else self.title
         p.drawText(
             QRectF(15, 12, self.width() - 30, 28),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-            title,
+            self.title,
         )
         if self.subtitle:
             p.setPen(QColor(C.MUTED))
@@ -204,9 +203,9 @@ class DonutChart(QWidget):
         elif width >= 540:
             radius = min(150.0, height * 0.47, width * 0.252)
             cx = width * 0.382
-            legend_x = width * (0.69 if terminal_style() else 0.732)
+            legend_x = width * 0.732
         else:
-            legend_font = font(13 if terminal_style() else 14, 400)
+            legend_font = font(14, 400)
             metrics = QFontMetrics(legend_font)
             max_label = max(metrics.horizontalAdvance(item.name) for item in self.slices)
             legend_x = max(width * 0.60, width - max_label - 30)
@@ -251,25 +250,18 @@ class DonutChart(QWidget):
             return
         row_h = 22.5
         top = 4.0
-        legend_size = 13 if terminal_style() else 14
-        p.setFont(font(legend_size, 400))
+        p.setFont(font(14, 400))
         for index, item in enumerate(self.slices):
             y = top + index * row_h
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QColor(item.color))
             p.drawEllipse(QPointF(legend_x + 6, y + row_h / 2), 6.2, 6.2)
             p.setPen(QColor(C.TEXT if index == self._hover else C.TEXT_SOFT))
-            p.setFont(font(legend_size, 400))
-            label_rect = QRectF(
-                legend_x + 19, y, max(40, width - legend_x - 24), row_h
-            )
-            label = QFontMetrics(p.font()).elidedText(
-                item.name, Qt.TextElideMode.ElideRight, int(label_rect.width())
-            )
+            p.setFont(font(14, 400))
             p.drawText(
-                label_rect,
+                QRectF(legend_x + 19, y, max(40, width - legend_x - 24), row_h),
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                label,
+                item.name,
             )
         p.end()
 
@@ -390,11 +382,7 @@ class SpendingRevenueChart(QWidget):
         slot = plot.width() / n
         self._slot = slot
         bar_w = min(35.0, slot * 0.90)
-        terminal = terminal_style()
-        if terminal:
-            label_size = 12 if slot >= 32 else (11 if slot >= 26 else 10)
-        else:
-            label_size = 13 if slot >= 30 else (12 if slot >= 24 else 11)
+        label_size = 13 if slot >= 30 else (12 if slot >= 24 else 11)
         p.setPen(QPen(QColor(C.GRID_ZERO), 1))
         p.drawLine(QPointF(plot.left(), zero_y), QPointF(plot.right(), zero_y))
         p.setPen(QPen(QColor(C.GRID), 1))
@@ -411,24 +399,13 @@ class SpendingRevenueChart(QWidget):
             if income_h > 0.4:
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(green)
-                if terminal:
-                    p.drawRect(income_rect)
-                else:
-                    p.drawRoundedRect(income_rect, 2, 2)
+                p.drawRoundedRect(income_rect, 2, 2)
             if expense_h > 0.4:
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(red)
-                if terminal:
-                    p.drawRect(expense_rect)
-                else:
-                    p.drawRoundedRect(expense_rect, 2, 2)
+                p.drawRoundedRect(expense_rect, 2, 2)
 
-            show_label = slot >= (26 if terminal else 22)
-            if (
-                show_label
-                or index == n - 1
-                or (index % 2 == 0 and index != n - 2)
-            ):
+            if slot >= 22 or index == n - 1 or (index % 2 == 0 and index != n - 2):
                 p.setPen(QColor(C.MUTED))
                 p.setFont(font(label_size, 400))
                 p.drawText(

@@ -535,11 +535,11 @@ class LedgerWindow(QMainWindow):
         header.setSectionResizeMode(STATUS, QHeaderView.ResizeMode.Fixed)
         header.resizeSection(STATUS, 64)
         header.setSectionResizeMode(EXPENSE, QHeaderView.ResizeMode.Fixed)
-        header.resizeSection(EXPENSE, 122)
+        header.resizeSection(EXPENSE, 104)
         header.setSectionResizeMode(INCOME, QHeaderView.ResizeMode.Fixed)
-        header.resizeSection(INCOME, 122)
+        header.resizeSection(INCOME, 104)
         header.setSectionResizeMode(BALANCE, QHeaderView.ResizeMode.Fixed)
-        header.resizeSection(BALANCE, 120)
+        header.resizeSection(BALANCE, 112)
         header.setSectionResizeMode(MEMO, QHeaderView.ResizeMode.Stretch)
         self.table.setStyleSheet(
             f"QTableView {{ background:{C.PANEL}; border:none; "

@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from ..db import KIND_LABELS
 from ..models import Account, Balance
 from ..money import money
-from ..theme import C, font, terminal_style
+from ..theme import C, font
 from .icons import (
     IconButton,
     draw_chevron,
@@ -32,7 +32,7 @@ from .icons import (
 HEADER_H = 26
 FOOTER_H = 36
 ROW_H = 25
-COLUMNS = (0.445, 0.633, 0.815, 0.982)
+COLUMNS = (0.442, 0.613, 0.776, 0.940)
 COLUMN_LABELS = ("Reconciled", "Cleared", "Today", "Future")
 
 
@@ -66,14 +66,10 @@ class AccountsHeader(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         p.fillRect(self.rect(), QColor(C.PANEL))
-        terminal = terminal_style()
-        p.setFont(font(13 if terminal else 14, 400))
-        p.setPen(QColor(C.TITLE if terminal else C.MUTED))
-        p.drawText(
-            QRectF(40, 0, 160, HEADER_H),
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-            "[ ACCOUNTS ]" if terminal else "Accounts",
-        )
+        p.setFont(font(14, 400))
+        p.setPen(QColor(C.MUTED))
+        p.drawText(QRectF(40, 0, 120, HEADER_H),
+                   Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "Accounts")
         for edge, label in zip(COLUMNS, COLUMN_LABELS):
             right = self.width() * edge
             p.drawText(
@@ -316,13 +312,11 @@ class _AccountCanvas(QWidget):
         name_x = max(50, int(width * 0.125))
         group_x = max(46, int(width * 0.114))
         warn_x = max(8, int(width * 0.022))
-        value_size = 13 if terminal_style() else 14
-        name_size = 13 if terminal_style() else 14
-        value_font = font(value_size, 400)
-        bold_value_font = font(value_size, 600)
-        name_font = font(name_size, 400)
-        bold_name_font = font(name_size, 600)
-        grand_font = font(name_size, 700)
+        value_font = font(14, 400)
+        bold_value_font = font(14, 600)
+        name_font = font(14, 400)
+        bold_name_font = font(14, 600)
+        grand_font = font(14, 700)
 
         if not self.panel.accounts:
             p.setPen(QColor(C.TEXT_SOFT))

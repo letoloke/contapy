@@ -186,31 +186,23 @@ location gets its own `dailylbaka` folder.
 
 ### Theme
 
-The default look is a **btop-style terminal theme**: black canvas, neon
-cyan/green ANSI accents, boxed panels with square corners, bracketed uppercase
-chart titles, and a monospaced interface font (JetBrainsMono Nerd Font when
-installed, with the usual monospace fallbacks). Icons come from the bundled
-Font Awesome Free 6.6 Solid web font and fall back to the original painted
-shapes if the font cannot be loaded.
-
-ContaPy can still follow the active **Omarchy** desktop theme. At startup,
-with `CONTAPY_THEME=omarchy`, it reads
+ContaPy follows the active **Omarchy** theme. At startup it reads
 `~/.local/state/omarchy/current/theme/colors.toml` (honouring `XDG_STATE_HOME`)
 and derives the whole interface from it — panels, menus, inputs, selection,
 status colours and the category donut. Both dark and light Omarchy themes work.
 Switch themes in Omarchy, then restart ContaPy to pick up the new palette.
 
-The environment variables override the default:
+Without Omarchy, or if the palette file is missing, the built-in graphite
+palette is used. Two environment variables override the lookup:
 
 ```bash
-CONTAPY_THEME=btop python3 main.py                       # default terminal look
-CONTAPY_THEME=omarchy python3 main.py                    # follow Omarchy
-CONTAPY_THEME=builtin python3 main.py                    # original graphite
+CONTAPY_THEME=builtin python3 main.py                    # ignore Omarchy
 CONTAPY_THEME_FILE=/path/to/colors.toml python3 main.py  # force a palette
 ```
 
-The bundled Font Awesome font is licensed under the SIL OFL 1.1; see
-`contapy/assets/FONT-AWESOME-LICENSE.txt`.
+Toolbar and status icons come from the bundled Font Awesome Free 6.6 Solid web
+font, with the original painted shapes as fallbacks. The font is licensed under
+the SIL OFL 1.1; see `contapy/assets/FONT-AWESOME-LICENSE.txt`.
 
 ### Screenshot mode
 
@@ -298,7 +290,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-Forty-two tests cover the reference balances, the rolling donut total, posting schedules, running ledger balances, reconciled/cleared transitions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, and Omarchy palette parsing (dark, light, fallbacks and contrast).
+Forty-one tests cover the reference balances, the rolling donut total, posting schedules, running ledger balances, reconciled/cleared transitions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, and Omarchy palette parsing (dark, light, fallbacks and contrast).
 
 ## Notes / limitations
 
