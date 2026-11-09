@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .airbnb import transform as transform_airbnb
 from .config import remember_database
 from .db import DataStore
 from .models import ScheduledItem
@@ -82,6 +84,7 @@ class MainWindow(QMainWindow):
         )
         self.act_new_account = self._action("New Account…", self.new_account, "Ctrl+Shift+N")
         self.act_import = self._action("Import CSV…", self.import_csv, "Ctrl+I")
+        self.act_import_airbnb = self._action("From Airbnb…", self.import_airbnb)
         self.act_export = self._action("Export CSV…", self.export_csv, "Ctrl+E")
         self.act_open_database = self._action(
             "Open Database…", self.open_database, "Ctrl+O"
@@ -99,6 +102,7 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self.act_new_account)
         file_menu.addSeparator()
         file_menu.addAction(self.act_import)
+        file_menu.addAction(self.act_import_airbnb)
         file_menu.addAction(self.act_export)
         file_menu.addSeparator()
         file_menu.addAction(self.act_quit)
@@ -159,6 +163,7 @@ class MainWindow(QMainWindow):
         tools_menu.addAction(self._action("Open Data Folder", self.open_data_folder))
         tools_menu.addSeparator()
         tools_menu.addAction(self.act_import)
+        tools_menu.addAction(self.act_import_airbnb)
         tools_menu.addAction(self.act_export)
 
         help_menu = bar.addMenu("Help")
@@ -257,6 +262,7 @@ class MainWindow(QMainWindow):
         self.toolbar.newTransaction.connect(self.new_transaction)
         self.toolbar.newAccount.connect(self.new_account)
         self.toolbar.importRequested.connect(self.import_csv)
+        self.toolbar.airbnbImportRequested.connect(self.import_airbnb)
         self.toolbar.exportRequested.connect(self.export_csv)
         self.toolbar.manageAccounts.connect(self.focus_accounts)
         self.toolbar.payeesRequested.connect(self.show_payees)
@@ -740,6 +746,29 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
+        self._import_csv_path(Path(path))
+
+    def import_airbnb(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import from Airbnb",
+            "",
+            "Airbnb exports (*.csv);;All files (*)",
+        )
+        if not path:
+            return
+        source = Path(path)
+        with tempfile.TemporaryDirectory(prefix="contapy-airbnb-") as folder:
+            target = Path(folder) / f"{source.stem}_airbnb.csv"
+            try:
+                written, excluded = transform_airbnb(source, target)
+            except Exception as exc:  # pragma: no cover - surfaced to the user
+                QMessageBox.warning(self, "Airbnb import failed", str(exc))
+                return
+            note = f"{excluded} payout(s) excluded" if excluded else ""
+            self._import_csv_path(target, note=note)
+
+    def _import_csv_path(self, path: Path, note: str = "") -> None:
         try:
             dialog = CsvImportDialog(
                 self.store,
@@ -770,6 +799,8 @@ class MainWindow(QMainWindow):
             detail += f", {duplicates} duplicate(s) skipped"
         if skipped:
             detail += f", {skipped} unreadable"
+        if note:
+            detail += f", {note}"
         self.show_toast(f"Import: {detail}")
         if skipped or duplicates:
             QMessageBox.information(
