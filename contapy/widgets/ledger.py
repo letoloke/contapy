@@ -175,18 +175,12 @@ class LedgerDelegate(QStyledItemDelegate):
         painter.setClipRect(rect)
 
         pad = 8
-        text_color = QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.TEXT)
-        muted = QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.MUTED)
+        text_color = QColor(C.ROW_SELECTED_TEXT) if selected else QColor("#ffffff")
+        muted = QColor(C.ROW_SELECTED_TEXT) if selected else QColor("#ffffff")
         if row.voided and not selected:
             text_color = QColor(C.MUTED_DARK)
             muted = QColor(C.MUTED_DARK)
-        category_color = (
-            QColor(C.CATEGORY_MUTED)
-            if row.category_name == "Uncategorized"
-            else (
-                QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.CATEGORY_TEXT)
-            )
-        )
+        category_color = text_color
 
         if col == FLAG:
             if row.flagged:
@@ -224,7 +218,7 @@ class LedgerDelegate(QStyledItemDelegate):
                 if row.voided and not selected:
                     color = QColor(C.MUTED_DARK)
                 else:
-                    color = QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.ORANGE)
+                    color = QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.RED_BAR)
                 self._text(
                     painter,
                     rect,
@@ -250,9 +244,12 @@ class LedgerDelegate(QStyledItemDelegate):
                     Qt.AlignmentFlag.AlignRight,
                 )
         elif col == BALANCE:
-            color = QColor(C.MUTED_DARK) if row.voided and not selected else (
-                QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.AMOUNT)
-            )
+            if row.voided and not selected:
+                color = QColor(C.MUTED_DARK)
+            elif selected:
+                color = QColor(C.ROW_SELECTED_TEXT)
+            else:
+                color = QColor(C.GREEN) if row.balance > 0 else QColor(C.RED_BAR)
             self._text(
                 painter,
                 rect,
@@ -370,7 +367,7 @@ class LedgerSummary(QWidget):
         if selected_count:
             parts.append(f"<span style='color:{C.MUTED}'>{selected_count} selected</span>")
         amount = selected_sum if selected_count else total_sum
-        color = C.GREEN if amount > 0 else (C.ORANGE if amount < 0 else C.TEXT_SOFT)
+        color = C.GREEN if amount > 0 else (C.RED_BAR if amount < 0 else C.TEXT_SOFT)
         parts.append(f"<span style='color:{C.MUTED}'>sum:</span> <span style='color:{color}'>{money(amount)}</span>")
         self.left.setText(" &nbsp;·&nbsp; ".join(parts))
 
@@ -382,7 +379,7 @@ class LedgerSummary(QWidget):
         }
         for key, value in values.items():
             label = self.balance_labels[key]
-            color = C.GREEN if value > 0.004 else (C.ORANGE if value < -0.004 else C.TEXT_SOFT)
+            color = C.GREEN if value > 0.004 else (C.RED_BAR if value < -0.004 else C.TEXT_SOFT)
             label.setText(money(value))
             label.setStyleSheet(f"color:{color};")
 
