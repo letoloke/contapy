@@ -16,6 +16,8 @@ import json
 import os
 from pathlib import Path
 
+from .omarchy import DEFAULT_THEME
+
 
 def config_path(environ: dict[str, str] | None = None) -> Path:
     env = os.environ if environ is None else environ
@@ -44,6 +46,25 @@ def remember_database(path: str | Path, environ: dict[str, str] | None = None) -
     target = Path(path).expanduser().resolve()
     data = _read(environ)
     data["database"] = str(target)
+    _write(data, environ)
+
+
+def theme_choice(environ: dict[str, str] | None = None) -> str:
+    """The saved theme slug, defaulting to One Dark."""
+    value = _read(environ).get("theme")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return DEFAULT_THEME
+
+
+def remember_theme(choice: str, environ: dict[str, str] | None = None) -> None:
+    """Persist the selected theme for the next launch."""
+    data = _read(environ)
+    data["theme"] = choice.strip()
+    _write(data, environ)
+
+
+def _write(data: dict, environ: dict[str, str] | None = None) -> None:
     config = config_path(environ)
     config.parent.mkdir(parents=True, exist_ok=True)
     temporary = config.with_suffix(".tmp")

@@ -45,9 +45,10 @@ from PySide6.QtWidgets import (
 )
 
 from .. import __version__
+from ..config import remember_theme, theme_choice
 from ..db import DataStore
 from ..models import Account, Category, TransactionDraft
-from ..theme import C, font
+from ..theme import C, font, theme_options
 from .icons import (
     IconButton,
     draw_bell,
@@ -1046,6 +1047,7 @@ class PreferencesDialog(QDialog):
         super().__init__(parent)
         self.store = store
         self.was_reset = False
+        self.changed_theme = False
         self.setWindowTitle("Preferences")
         self.setModal(True)
         self.setMinimumWidth(520)
@@ -1063,6 +1065,30 @@ class PreferencesDialog(QDialog):
         intro.setFont(font(13, 400))
         intro.setStyleSheet(f"color:{C.MUTED};")
         root.addWidget(intro)
+
+        theme_row = QHBoxLayout()
+        theme_row.setSpacing(10)
+        theme_label = QLabel("Theme")
+        theme_label.setFont(font(13, 400))
+        theme_label.setStyleSheet(f"color:{C.TEXT_SOFT};")
+        theme_row.addWidget(theme_label)
+        self.theme_combo = QComboBox()
+        self.theme_combo.setFont(font(13, 400))
+        for option in theme_options():
+            self.theme_combo.addItem(option.label, option.slug)
+        current_theme = theme_choice()
+        index = self.theme_combo.findData(current_theme)
+        self.theme_combo.setCurrentIndex(index if index >= 0 else 0)
+        theme_row.addWidget(self.theme_combo, 1)
+        root.addLayout(theme_row)
+
+        theme_help = QLabel(
+            "One Dark is the default. Theme changes apply immediately."
+        )
+        theme_help.setWordWrap(True)
+        theme_help.setFont(font(12, 400))
+        theme_help.setStyleSheet(f"color:{C.MUTED_DARK};")
+        root.addWidget(theme_help)
 
         path_label = QLabel(str(store.path))
         path_label.setWordWrap(True)
@@ -1106,6 +1132,13 @@ class PreferencesDialog(QDialog):
         footer.setFont(font(12, 400))
         footer.setStyleSheet(f"color:{C.MUTED_DARK};")
         root.addWidget(footer)
+
+    def accept(self) -> None:
+        choice = self.theme_combo.currentData()
+        if choice and choice != theme_choice():
+            remember_theme(choice)
+            self.changed_theme = True
+        super().accept()
 
     def _open_folder(self) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.store.path.parent)))

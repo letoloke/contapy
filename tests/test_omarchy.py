@@ -5,10 +5,16 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from contapy import omarchy
 from contapy.omarchy import (
+    DEFAULT_THEME,
     FALLBACK_TOKENS,
+    ONE_DARK_COLORS,
+    available_themes,
     contrast,
+    find_theme_dir,
     load_palette,
     parse_colors,
     read_colors,
@@ -156,6 +162,41 @@ class PaletteTokenTests(unittest.TestCase):
                 palette.category_colors["comision"],
             )
             self.assertGreaterEqual(len(palette.donut_colors), 8)
+
+    def test_installed_themes_are_listed_with_default_first(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = {
+                "XDG_CONFIG_HOME": str(root / "config"),
+                "XDG_DATA_HOME": str(root / "data"),
+            }
+            theme = root / "config" / "omarchy" / "themes" / "my-theme"
+            theme.mkdir(parents=True)
+            (theme / "colors.toml").write_text(DARK, encoding="utf-8")
+
+            options = available_themes(env)
+            self.assertEqual(options[0].slug, DEFAULT_THEME)
+            self.assertIn("my-theme", [option.slug for option in options])
+            self.assertEqual(options[-2].slug, "omarchy")
+            self.assertEqual(options[-1].slug, "builtin")
+            self.assertEqual(find_theme_dir("my-theme", env), theme)
+
+    def test_missing_default_theme_uses_bundled_one_dark(self) -> None:
+        previous = omarchy.selected_theme()
+        try:
+            omarchy.set_theme_choice(DEFAULT_THEME)
+            with mock.patch("contapy.omarchy.theme_search_dirs", return_value=[]):
+                omarchy.reset_cache()
+                palette = load_palette()
+            self.assertEqual(palette.source, "built-in One Dark")
+            self.assertEqual(
+                palette.tokens["BG"], ONE_DARK_COLORS["background"]
+            )
+            self.assertEqual(
+                palette.tokens["ACCENT"], ONE_DARK_COLORS["accent"]
+            )
+        finally:
+            omarchy.set_theme_choice(previous)
 
 
 if __name__ == "__main__":

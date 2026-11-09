@@ -23,11 +23,11 @@ from PySide6.QtWidgets import (
 from .airbnb import transform as transform_airbnb
 from .banamex import transform as transform_banamex
 from .booking import transform as transform_booking
-from .config import remember_database
+from .config import remember_database, theme_choice
 from .db import DataStore
 from .models import ScheduledItem
 from .money import money
-from .theme import C, font
+from .theme import C, font, select_theme
 from .widgets.accounts import AccountsPanel
 from .widgets.charts import ChartCard, DonutChart, SpendingRevenueChart
 from .widgets.import_dialog import CsvImportDialog
@@ -53,6 +53,7 @@ class MainWindow(QMainWindow):
         self.reports_window: ReportsWindow | None = None
         self._initial_focus_done = False
         self._closing = False
+        self._keep_store = False
         self._update_window_title()
         self.setMinimumSize(1400, 760)
         self.resize(1500, 870)
@@ -620,6 +621,28 @@ class MainWindow(QMainWindow):
         if dialog.was_reset:
             self.refresh_all()
             self.show_toast("Demo data restored")
+        if dialog.changed_theme:
+            self._rebuild_for_theme()
+
+    def _rebuild_for_theme(self) -> None:
+        """Apply the saved theme by rebuilding the window with fresh styles."""
+        from PySide6.QtWidgets import QApplication
+
+        select_theme(theme_choice())
+        geometry = self.geometry()
+        maximized = self.isMaximized()
+        self._keep_store = True
+        replacement = MainWindow(self.store)
+        replacement.setGeometry(geometry)
+        app = QApplication.instance()
+        if app is not None:
+            app._contapy_main_window = replacement  # type: ignore[attr-defined]
+        replacement.show()
+        if maximized:
+            replacement.showMaximized()
+        replacement.raise_()
+        replacement.activateWindow()
+        self.close()
 
     def show_categories(self) -> None:
         categories = self.store.categories()
@@ -959,7 +982,8 @@ class MainWindow(QMainWindow):
             except RuntimeError:
                 pass
         self.ledgers.clear()
-        self.store.close()
+        if not self._keep_store:
+            self.store.close()
         super().closeEvent(event)
 
 

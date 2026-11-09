@@ -202,17 +202,25 @@ location gets its own `dailylbaka` folder.
 
 ### Theme
 
-ContaPy follows the active **Omarchy** theme. At startup it reads
-`~/.local/state/omarchy/current/theme/colors.toml` (honouring `XDG_STATE_HOME`)
-and derives the whole interface from it — panels, menus, inputs, selection,
-status colours and the category donut. Both dark and light Omarchy themes work.
-Switch themes in Omarchy, then restart ContaPy to pick up the new palette.
+ContaPy defaults to **One Dark**. Open **Preferences** (`Ctrl+,`) and use the
+**Theme** selector to switch to any theme installed under
+`~/.config/omarchy/themes`, `~/.local/share/omarchy/themes` or
+`/usr/share/omarchy/themes`. The choice is remembered in
+`~/.config/contapy/config.json` and the window is rebuilt immediately with the
+new palette — panels, menus, inputs, selection, status colours and the category
+donut all follow it. Both dark and light themes work.
 
-Without Omarchy, or if the palette file is missing, the built-in graphite
-palette is used. Two environment variables override the lookup:
+The selector also offers **Omarchy current theme**, which follows
+`~/.local/state/omarchy/current/theme/colors.toml` (honouring
+`XDG_STATE_HOME`), and **Graphite (built-in)**, the original ContaPy palette.
+If the selected theme disappears, ContaPy falls back to the graphite palette;
+One Dark itself is bundled so the default works without Omarchy installed.
+
+Environment variables override the saved choice:
 
 ```bash
-CONTAPY_THEME=builtin python3 main.py                    # ignore Omarchy
+CONTAPY_THEME=builtin python3 main.py                    # ignore the saved theme
+CONTAPY_THEME=one-dark python3 main.py                   # force a theme slug
 CONTAPY_THEME_FILE=/path/to/colors.toml python3 main.py  # force a palette
 ```
 
@@ -306,7 +314,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-Fifty-eight tests cover the reference balances, the rolling donut total, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing (dark, light, fallbacks and contrast).
+Sixty-three tests cover the reference balances, the rolling donut total, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
 
 ## Notes / limitations
 

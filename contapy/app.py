@@ -12,10 +12,10 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication
 
 from . import __version__
-from .config import last_database
+from .config import last_database, theme_choice
 from .db import DataStore, default_db_path
 from .main_window import MainWindow
-from .theme import C, DONUT_COLORS, apply_theme
+from .theme import C, DONUT_COLORS, apply_theme, select_theme
 
 
 def build_app_icon() -> QIcon:
@@ -79,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationDisplayName("ContaPy")
     app.setOrganizationName("ContaPy")
     app.setApplicationVersion(__version__)
+    select_theme(theme_choice())
     apply_theme(app)
     app.setWindowIcon(build_app_icon())
 

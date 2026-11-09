@@ -13,7 +13,7 @@ from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette, QPixmap
 from PySide6.QtWidgets import QApplication
 
-from .omarchy import load_palette
+from .omarchy import load_palette, set_theme_choice
 
 ASSETS = Path(__file__).resolve().parent / "assets"
 
@@ -30,6 +30,36 @@ del _token, _value
 
 CATEGORY_COLORS = dict(_PALETTE.category_colors)
 DONUT_COLORS = list(_PALETTE.donut_colors)
+
+
+def _install_palette(palette) -> None:
+    """Refresh the shared colour tokens after a theme change."""
+    global _PALETTE
+    _PALETTE = palette
+    for token, value in palette.tokens.items():
+        setattr(C, token, value)
+    CATEGORY_COLORS.clear()
+    CATEGORY_COLORS.update(palette.category_colors)
+    # Mutate in place: widgets imported this list by reference at import time.
+    DONUT_COLORS[:] = list(palette.donut_colors)
+
+
+def select_theme(choice: str) -> None:
+    """Select and immediately install a theme palette."""
+    set_theme_choice(choice)
+    _install_palette(load_palette())
+
+
+def selected_theme() -> str:
+    from .omarchy import selected_theme as _selected_theme
+
+    return _selected_theme()
+
+
+def theme_options():
+    from .omarchy import available_themes
+
+    return available_themes()
 
 
 def palette_source() -> str:

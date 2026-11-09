@@ -1,14 +1,20 @@
-"""Read the active Omarchy colour scheme.
+"""Read Omarchy colour schemes and resolve the active palette.
 
-ContaPy follows the desktop's current Omarchy theme by reading
-``~/.local/state/omarchy/current/theme/colors.toml`` at startup.  The palette
-covers both dark and light themes; when Omarchy (or that file) is absent the
-app falls back to its original built-in palette.
+ContaPy ships with **One Dark** as its default theme.  The Preferences window
+can switch to any theme installed under ``~/.config/omarchy/themes``,
+``~/.local/share/omarchy/themes`` or ``/usr/share/omarchy/themes``.  Selecting
+``omarchy`` follows the desktop's current theme by reading
+``~/.local/state/omarchy/current/theme/colors.toml``.
+
+Palettes cover both dark and light themes.  When a selected theme is missing,
+the app falls back to its original built-in graphite palette.
 
 Environment overrides:
 
 ``CONTAPY_THEME=builtin``
-    Ignore Omarchy and always use the built-in palette.
+    Ignore the saved selection and always use the built-in palette.
+``CONTAPY_THEME=<slug>`` or ``CONTAPY_THEME=/path/to/theme``
+    Force a specific installed theme or palette directory.
 ``CONTAPY_THEME_FILE=/path/to/colors.toml``
     Read a specific Omarchy palette file (useful for testing themes).
 
@@ -113,6 +119,38 @@ FALLBACK_TOKENS: dict[str, str] = {
     "WARNING_TEXT": "#2b2b2b",
 }
 
+# One Dark's raw Omarchy colours.  Kept in the app so the default theme works
+# on machines that do not have the One Dark Omarchy package installed.
+DEFAULT_THEME = "one-dark"
+ONE_DARK_COLORS: dict[str, str] = {
+    "mode": "dark",
+    "accent": "#61afef",
+    "selection": "#3e4451",
+    "muted": "#5c6370",
+    "background": "#282c34",
+    "dark_background": "#21252b",
+    "darker_background": "#1b1e24",
+    "lighter_background": "#333842",
+    "foreground": "#abb2bf",
+    "dark_foreground": "#5c6370",
+    "light_foreground": "#c5cbd6",
+    "bright_foreground": "#dcdfe4",
+    "red": "#e06c75",
+    "yellow": "#e5c07b",
+    "orange": "#d19a66",
+    "green": "#98c379",
+    "cyan": "#56b6c2",
+    "blue": "#61afef",
+    "magenta": "#c678dd",
+    "brown": "#be5046",
+    "bright_red": "#ff7b86",
+    "bright_yellow": "#f0d399",
+    "bright_green": "#a9d98a",
+    "bright_cyan": "#66d9e8",
+    "bright_blue": "#7cc3ff",
+    "bright_magenta": "#d68fe8",
+}
+
 FALLBACK_CATEGORY_COLORS: dict[str, str] = {
     "renta": "#4571a6",
     "nomina": "#acbdce",
@@ -177,6 +215,15 @@ class Palette:
     @property
     def is_light(self) -> bool:
         return self.mode == "light"
+
+
+@dataclass(frozen=True)
+class ThemeOption:
+    """One entry in the theme selector."""
+
+    slug: str
+    label: str
+    path: Path | None = None
 
 
 # --------------------------------------------------------------- colour maths
@@ -315,6 +362,89 @@ def theme_path(environ: dict[str, str] | None = None) -> Path:
     state_home = env.get("XDG_STATE_HOME")
     base = Path(state_home).expanduser() if state_home else Path.home() / ".local" / "state"
     return base / "omarchy" / "current" / "theme" / "colors.toml"
+
+
+def theme_search_dirs(environ: dict[str, str] | None = None) -> list[Path]:
+    """Directories that may contain installed Omarchy themes."""
+    env = os.environ if environ is None else environ
+    config_home = Path(
+        env.get("XDG_CONFIG_HOME") or Path.home() / ".config"
+    ).expanduser()
+    data_home = Path(
+        env.get("XDG_DATA_HOME") or Path.home() / ".local" / "share"
+    ).expanduser()
+    return [
+        config_home / "omarchy" / "themes",
+        data_home / "omarchy" / "themes",
+        Path("/usr/share/omarchy/themes"),
+    ]
+
+
+def find_theme_dir(
+    choice: str, environ: dict[str, str] | None = None
+) -> Path | None:
+    """Resolve a theme slug or directory to its ``colors.toml`` folder."""
+    target = choice.strip()
+    if not target:
+        return None
+    direct = Path(target).expanduser()
+    if direct.is_file() and direct.name == "colors.toml":
+        return direct.parent
+    if direct.is_dir() and (direct / "colors.toml").is_file():
+        return direct
+
+    for root in theme_search_dirs(environ):
+        candidate = root / target
+        if (candidate / "colors.toml").is_file():
+            return candidate
+    # Theme folders are usually lowercase; accept a display-name match too.
+    needle = target.lower()
+    for root in theme_search_dirs(environ):
+        try:
+            entries = list(root.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            if entry.name.lower() == needle and (entry / "colors.toml").is_file():
+                return entry
+    return None
+
+
+def theme_label(slug: str) -> str:
+    """Human-readable name for a theme folder."""
+    if slug == DEFAULT_THEME:
+        return "One Dark"
+    if slug == "builtin":
+        return "Graphite (built-in)"
+    if slug == "omarchy":
+        return "Omarchy current theme"
+    words = re.split(r"[-_]+", slug)
+    return " ".join(word.capitalize() for word in words if word)
+
+
+def available_themes(environ: dict[str, str] | None = None) -> list[ThemeOption]:
+    """Installed themes, with One Dark first and the built-in palette last."""
+    found: dict[str, Path] = {}
+    for root in theme_search_dirs(environ):
+        try:
+            entries = sorted(root.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            colors = entry / "colors.toml"
+            if colors.is_file():
+                found.setdefault(entry.name, colors)
+
+    options = [
+        ThemeOption(DEFAULT_THEME, theme_label(DEFAULT_THEME), found.get(DEFAULT_THEME))
+    ]
+    for slug in sorted(found):
+        if slug == DEFAULT_THEME:
+            continue
+        options.append(ThemeOption(slug, theme_label(slug), found[slug]))
+    options.append(ThemeOption("omarchy", theme_label("omarchy"), None))
+    options.append(ThemeOption("builtin", theme_label("builtin"), None))
+    return options
 
 
 # ------------------------------------------------------------- token builder
@@ -492,40 +622,73 @@ def donut_from_categories(category_colors: dict[str, str]) -> list[str]:
 
 
 # ------------------------------------------------------------- public loading
-def _resolve(environ: dict[str, str]) -> Palette:
-    choice = (environ.get("CONTAPY_THEME") or "omarchy").strip().lower()
-    if choice in ("builtin", "default", "none", "off"):
-        return Palette(
-            "dark",
-            "built-in",
-            dict(FALLBACK_TOKENS),
-            dict(FALLBACK_CATEGORY_COLORS),
-            list(FALLBACK_DONUT_COLORS),
-        )
-
-    path = theme_path(environ)
-    colors = read_colors(path)
-    if colors is None:
-        return Palette(
-            "dark",
-            "built-in (Omarchy theme not found)",
-            dict(FALLBACK_TOKENS),
-            dict(FALLBACK_CATEGORY_COLORS),
-            list(FALLBACK_DONUT_COLORS),
-        )
-
+def _from_colors(colors: dict[str, str], source: str) -> Palette:
     tokens = tokens_from_colors(colors)
     categories = categories_from_colors(colors, tokens)
     return Palette(
         _mode(colors),
-        str(path),
+        source,
         tokens,
         categories,
         donut_from_categories(categories),
     )
 
 
+def _fallback(source: str) -> Palette:
+    return Palette(
+        "dark",
+        source,
+        dict(FALLBACK_TOKENS),
+        dict(FALLBACK_CATEGORY_COLORS),
+        list(FALLBACK_DONUT_COLORS),
+    )
+
+
+def _resolve(
+    environ: dict[str, str], default_choice: str | None = None
+) -> Palette:
+    raw = environ.get("CONTAPY_THEME")
+    if raw is None:
+        # CONTAPY_THEME_FILE is an explicit override and still wins.
+        raw = "omarchy" if environ.get("CONTAPY_THEME_FILE") else default_choice
+    choice = (raw or "omarchy").strip()
+    lowered = choice.lower()
+    if lowered in ("builtin", "default", "none", "off"):
+        return _fallback("built-in")
+
+    if lowered in ("", "omarchy", "auto", "system"):
+        path = theme_path(environ)
+        colors = read_colors(path)
+        if colors is None:
+            return _fallback("built-in (Omarchy theme not found)")
+        return _from_colors(colors, str(path))
+
+    directory = find_theme_dir(choice, environ)
+    if directory is not None:
+        path = directory / "colors.toml"
+        colors = read_colors(path)
+        if colors is not None:
+            return _from_colors(colors, str(path))
+
+    if lowered == DEFAULT_THEME:
+        return _from_colors(dict(ONE_DARK_COLORS), "built-in One Dark")
+    return _fallback(f"built-in ({choice} not found)")
+
+
 _cached: Palette | None = None
+_selected_theme: str | None = None
+
+
+def set_theme_choice(choice: str | None) -> None:
+    """Select the app-wide theme (a slug, a path, ``omarchy`` or ``builtin``)."""
+    global _selected_theme
+    _selected_theme = choice.strip() if isinstance(choice, str) and choice.strip() else None
+    reset_cache()
+
+
+def selected_theme() -> str:
+    """The selected theme slug, defaulting to One Dark."""
+    return _selected_theme or DEFAULT_THEME
 
 
 def load_palette(environ: dict[str, str] | None = None) -> Palette:
@@ -534,7 +697,7 @@ def load_palette(environ: dict[str, str] | None = None) -> Palette:
     if environ is not None:
         return _resolve(environ)
     if _cached is None:
-        _cached = _resolve(os.environ)
+        _cached = _resolve(os.environ, selected_theme())
     return _cached
 
 
