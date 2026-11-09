@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from .airbnb import transform as transform_airbnb
 from .banamex import transform as transform_banamex
+from .booking import transform as transform_booking
 from .config import remember_database
 from .db import DataStore
 from .models import ScheduledItem
@@ -86,6 +87,7 @@ class MainWindow(QMainWindow):
         self.act_new_account = self._action("New Account…", self.new_account, "Ctrl+Shift+N")
         self.act_import = self._action("Import CSV…", self.import_csv, "Ctrl+I")
         self.act_import_airbnb = self._action("From Airbnb…", self.import_airbnb)
+        self.act_import_booking = self._action("From Booking…", self.import_booking)
         self.act_import_banamex = self._action("From Banamex…", self.import_banamex)
         self.act_export = self._action("Export CSV…", self.export_csv, "Ctrl+E")
         self.act_open_database = self._action(
@@ -105,6 +107,7 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction(self.act_import)
         file_menu.addAction(self.act_import_airbnb)
+        file_menu.addAction(self.act_import_booking)
         file_menu.addAction(self.act_import_banamex)
         file_menu.addAction(self.act_export)
         file_menu.addSeparator()
@@ -167,6 +170,7 @@ class MainWindow(QMainWindow):
         tools_menu.addSeparator()
         tools_menu.addAction(self.act_import)
         tools_menu.addAction(self.act_import_airbnb)
+        tools_menu.addAction(self.act_import_booking)
         tools_menu.addAction(self.act_import_banamex)
         tools_menu.addAction(self.act_export)
 
@@ -267,6 +271,7 @@ class MainWindow(QMainWindow):
         self.toolbar.newAccount.connect(self.new_account)
         self.toolbar.importRequested.connect(self.import_csv)
         self.toolbar.airbnbImportRequested.connect(self.import_airbnb)
+        self.toolbar.bookingImportRequested.connect(self.import_booking)
         self.toolbar.banamexImportRequested.connect(self.import_banamex)
         self.toolbar.exportRequested.connect(self.export_csv)
         self.toolbar.manageAccounts.connect(self.focus_accounts)
@@ -772,6 +777,39 @@ class MainWindow(QMainWindow):
                 return
             note = f"{excluded} payout(s) excluded" if excluded else ""
             self._import_csv_path(target, note=note)
+
+    def import_booking(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import from Booking — payouts",
+            "",
+            "Booking exports (*.csv);;All files (*)",
+        )
+        if not path:
+            return
+        booking_source = Path(path)
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import from Booking — Sabee reservations",
+            "",
+            "Sabee exports (*.csv);;All files (*)",
+        )
+        if not path:
+            return
+        sabee_source = Path(path)
+        with tempfile.TemporaryDirectory(prefix="contapy-booking-") as folder:
+            target = Path(folder) / f"{booking_source.stem}_booking.csv"
+            try:
+                written, rooms_missing = transform_booking(
+                    booking_source, sabee_source, target
+                )
+            except Exception as exc:  # pragma: no cover - surfaced to the user
+                QMessageBox.warning(self, "Booking import failed", str(exc))
+                return
+            parts = [f"{written} amount row(s)"]
+            if rooms_missing:
+                parts.append(f"{rooms_missing} reservation(s) without a room")
+            self._import_csv_path(target, note=" · ".join(parts))
 
     def import_banamex(self) -> None:
         path, _ = QFileDialog.getOpenFileName(

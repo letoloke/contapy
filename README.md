@@ -55,6 +55,10 @@ Mappings are remembered automatically. After an import, the current field mappin
 
 **File → From Airbnb…** (also in the toolbar's account-actions menu and under **Tools**) converts an Airbnb reservation export and then opens the normal import preview. It drops `Payout` rows, converts `Fecha de inicio` to an ISO date, and builds the memo from the confirmation code, type, space and guest. The result matches the output of the original `airtransa.py` script.
 
+### Booking payouts and Sabee reservations
+
+**File → From Booking…** asks for two files: the Booking finance/payout CSV and the Sabee reservation CSV. It merges them on the Booking number / Sabee Channel ID, adds the Sabee room name to each memo, and unpivots the amount columns (`Amount`, `Commission`, `Payments Service Fee`, VAT and withholding, plus `Final amount`/`Commission amount`/`Payment fee` when present) into one row each. Dates come from `Checkout`/`Departure`; reservations without a matching Sabee room are labelled `Sin habitación`. The result matches the output of the original `tui_consolidator.py` script.
+
 ### Banamex statements
 
 **File → From Banamex…** converts a saved Banamex HTML statement and opens the same import preview. It reads the statement's transactions table, converts `08 Nov` dates to ISO using the year from the statement header (rolling December into the previous year for January statements), and cleans up `Concepto de pago`/`Referencia` descriptions. The result matches the original `banahtml.py` script.
@@ -126,6 +130,7 @@ The demo figures are aligned to the reference: last 30 days **$167,248.99**, rec
 - **Transaction editor** — Expense/Income/Transfer tabs, payment mode, number, tags, status icons, type-to-search combos, and Enter-to-save.
 - **CSV import** — automatic English/Spanish header detection, editable field mapping, remembered header profiles, mapped-row preview with per-row import checkboxes, duplicate detection by memo, target-account selection and memo-to-payee fallback.
 - **Airbnb import** — converts Airbnb reservation exports (dropping payout rows and rebuilding memos) before the standard import preview.
+- **Booking import** — merges Booking payout and Sabee reservation exports, unpivots the amount columns and adds room names before the standard import preview.
 - **Banamex import** — converts saved Banamex HTML statements (dates, memos and amounts) before the standard import preview.
 - **Reports window** — HomeBank-style Display panel, Category/Payee/Account and monthly grouping, Expense/Income types, date presets and custom ranges, search and account filters, and table, pie and bar views.
 - Schedule one-off bills; post or skip them from the home strip.
@@ -300,7 +305,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-Forty-nine tests cover the reference balances, the rolling donut total, posting schedules, running ledger balances, reconciled/cleared transitions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, and Omarchy palette parsing (dark, light, fallbacks and contrast).
+Fifty-three tests cover the reference balances, the rolling donut total, posting schedules, running ledger balances, reconciled/cleared transitions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing (dark, light, fallbacks and contrast).
 
 ## Notes / limitations
 
