@@ -49,6 +49,19 @@ class StoreTests(unittest.TestCase):
         self.assertAlmostEqual(slices[0].amount, 64_056.36, places=2)
         self.assertEqual(slices[-1].name, "Other")
 
+    def test_last_thirty_days_income_donut(self) -> None:
+        today = date.today()
+        slices, total = self.store.category_slices(
+            today - timedelta(days=29), today, "income"
+        )
+        self.assertAlmostEqual(total, 213_000.00, places=2)
+        self.assertEqual([item.name for item in slices], ["Ingresos"])
+        self.assertAlmostEqual(slices[0].percent, 1.0, places=3)
+
+    def test_category_slices_rejects_unknown_kind(self) -> None:
+        with self.assertRaises(ValueError):
+            self.store.category_slices(date.today(), date.today(), "transfer")
+
     def test_schedules_are_not_in_balances_until_posted(self) -> None:
         account = self.account("eCash")
         before = self.store.balances()[account.id]

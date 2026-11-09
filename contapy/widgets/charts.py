@@ -30,6 +30,7 @@ FOOTER_H = 42
 
 class ChartFooter(QWidget):
     periodChanged = Signal(str)
+    modeChanged = Signal(str)
     refreshRequested = Signal()
     saveRequested = Signal()
 
@@ -38,6 +39,8 @@ class ChartFooter(QWidget):
         periods: list[str],
         current: str,
         parent: QWidget | None = None,
+        modes: list[str] | None = None,
+        current_mode: str | None = None,
     ):
         super().__init__(parent)
         self.setFixedHeight(FOOTER_H)
@@ -50,6 +53,18 @@ class ChartFooter(QWidget):
         self.label.setStyleSheet(f"color:{C.TEXT_SOFT};")
         layout.addWidget(self.label)
         layout.addStretch(1)
+
+        self.mode_combo: QComboBox | None = None
+        if modes:
+            self.mode_combo = QComboBox(self)
+            self.mode_combo.addItems(modes)
+            if current_mode:
+                self.mode_combo.setCurrentText(current_mode)
+            self.mode_combo.setFixedSize(110, 29)
+            self.mode_combo.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.mode_combo.setFont(font(13, 400))
+            self.mode_combo.currentTextChanged.connect(self.modeChanged.emit)
+            layout.addWidget(self.mode_combo)
 
         self.combo = QComboBox(self)
         self.combo.addItems(periods)
@@ -89,6 +104,8 @@ class ChartCard(QWidget):
         periods: list[str],
         current_period: str,
         content: QWidget,
+        modes: list[str] | None = None,
+        current_mode: str | None = None,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
@@ -104,7 +121,13 @@ class ChartCard(QWidget):
         layout.setSpacing(0)
         layout.addSpacing(HEADER_SPACE)
         layout.addWidget(content, 1)
-        self.footer = ChartFooter(periods, current_period, self)
+        self.footer = ChartFooter(
+            periods,
+            current_period,
+            self,
+            modes=modes,
+            current_mode=current_mode,
+        )
         self.footer.label.setText(footer_label)
         layout.addWidget(self.footer)
 
@@ -112,12 +135,20 @@ class ChartCard(QWidget):
 
         self.frame = RoundedFrame(self)
 
+    def set_title(self, text: str) -> None:
+        self.title = text
+        self.update()
+
     def set_subtitle(self, text: str) -> None:
         self.subtitle = text
         self.update()
 
     def period(self) -> str:
         return self.footer.combo.currentText()
+
+    def mode(self) -> str:
+        combo = self.footer.mode_combo
+        return combo.currentText() if combo is not None else ""
 
     def flash(self) -> None:
         self._flash = True

@@ -572,28 +572,43 @@ class DataStore:
         end: date,
         account_id: int | None = None,
     ) -> tuple[list[Slice], float]:
-        params: list = [start.isoformat(), end.isoformat()]
+        return self.category_slices(start, end, "expense", account_id)
+
+    def category_slices(
+        self,
+        start: date,
+        end: date,
+        kind: str = "expense",
+        account_id: int | None = None,
+    ) -> tuple[list[Slice], float]:
+        """Top ten categories of ``kind`` in a date range, plus an Other slice."""
+        if kind not in ("expense", "income"):
+            raise ValueError(f"unknown category kind: {kind}")
+        expense = kind == "expense"
+        sign = "-" if expense else ""
+        comparison = "<" if expense else ">"
+        params: list = [start.isoformat(), end.isoformat(), kind]
         account_sql = ""
         if account_id is not None:
             account_sql = " AND t.account_id = ?"
             params.append(account_id)
         rows = self._rows(
             f"""
-            SELECT c.id, c.name, c.color, SUM(-t.amount) AS spent
+            SELECT c.id, c.name, c.color, SUM({sign}t.amount) AS total_amount
             FROM transactions t
             JOIN categories c ON c.id = t.category_id
             WHERE t.date BETWEEN ? AND ?
               AND t.voided = 0
-              AND t.amount < 0
-              AND c.kind = 'expense'
+              AND t.amount {comparison} 0
+              AND c.kind = ?
               {account_sql}
             GROUP BY c.id
-            HAVING spent > 0
-            ORDER BY spent DESC
+            HAVING total_amount > 0
+            ORDER BY total_amount DESC
             """,
             tuple(params),
         )
-        items = [(r["name"], float(r["spent"]), r["color"]) for r in rows]
+        items = [(r["name"], float(r["total_amount"]), r["color"]) for r in rows]
         total = sum(v for _, v, _ in items)
         if not items:
             return [], 0.0

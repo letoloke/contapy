@@ -206,6 +206,8 @@ class MainWindow(QMainWindow):
             ["Last 30 Days", "This Month", "Last Month", "Last 3 Months", "This Year"],
             "Last 30 Days",
             self.donut,
+            modes=["Expenses", "Income"],
+            current_mode="Expenses",
         )
         self.bars = SpendingRevenueChart()
         self.bar_card = ChartCard(
@@ -304,6 +306,7 @@ class MainWindow(QMainWindow):
         self.scheduled_panel.selectionChanged.connect(lambda _id: self._update_actions())
 
         self.donut_card.footer.periodChanged.connect(self._refresh_donut)
+        self.donut_card.footer.modeChanged.connect(self._refresh_donut)
         self.donut_card.footer.refreshRequested.connect(self.refresh_all)
         self.bar_card.footer.periodChanged.connect(self._refresh_bars)
         self.bar_card.footer.refreshRequested.connect(self.refresh_all)
@@ -411,10 +414,18 @@ class MainWindow(QMainWindow):
 
     def _refresh_donut(self, _period: str | None = None) -> None:
         period = self.donut_card.period()
+        income = self.donut_card.mode() == "Income"
+        kind = "income" if income else "expense"
         start, end = self._donut_range(period)
-        slices, total = self.store.spend_by_category(start, end)
+        slices, total = self.store.category_slices(start, end, kind)
         self.donut.set_data(slices, total)
-        self.donut_card.set_subtitle(money(-total) if total else money(0))
+        self.donut.empty_text = (
+            "No income in this period" if income else "No spending in this period"
+        )
+        self.donut_card.set_title(
+            "Top 10 Income / Category" if income else "Top 10 Spending / Category"
+        )
+        self.donut_card.set_subtitle(money(total) if income else money(-total))
 
     def _refresh_bars(self, _period: str | None = None) -> None:
         period = self.bar_card.period()
