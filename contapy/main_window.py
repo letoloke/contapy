@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from .airbnb import transform as transform_airbnb
+from .banamex import transform as transform_banamex
 from .config import remember_database
 from .db import DataStore
 from .models import ScheduledItem
@@ -85,6 +86,7 @@ class MainWindow(QMainWindow):
         self.act_new_account = self._action("New Account…", self.new_account, "Ctrl+Shift+N")
         self.act_import = self._action("Import CSV…", self.import_csv, "Ctrl+I")
         self.act_import_airbnb = self._action("From Airbnb…", self.import_airbnb)
+        self.act_import_banamex = self._action("From Banamex…", self.import_banamex)
         self.act_export = self._action("Export CSV…", self.export_csv, "Ctrl+E")
         self.act_open_database = self._action(
             "Open Database…", self.open_database, "Ctrl+O"
@@ -103,6 +105,7 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction(self.act_import)
         file_menu.addAction(self.act_import_airbnb)
+        file_menu.addAction(self.act_import_banamex)
         file_menu.addAction(self.act_export)
         file_menu.addSeparator()
         file_menu.addAction(self.act_quit)
@@ -164,6 +167,7 @@ class MainWindow(QMainWindow):
         tools_menu.addSeparator()
         tools_menu.addAction(self.act_import)
         tools_menu.addAction(self.act_import_airbnb)
+        tools_menu.addAction(self.act_import_banamex)
         tools_menu.addAction(self.act_export)
 
         help_menu = bar.addMenu("Help")
@@ -263,6 +267,7 @@ class MainWindow(QMainWindow):
         self.toolbar.newAccount.connect(self.new_account)
         self.toolbar.importRequested.connect(self.import_csv)
         self.toolbar.airbnbImportRequested.connect(self.import_airbnb)
+        self.toolbar.banamexImportRequested.connect(self.import_banamex)
         self.toolbar.exportRequested.connect(self.export_csv)
         self.toolbar.manageAccounts.connect(self.focus_accounts)
         self.toolbar.payeesRequested.connect(self.show_payees)
@@ -767,6 +772,28 @@ class MainWindow(QMainWindow):
                 return
             note = f"{excluded} payout(s) excluded" if excluded else ""
             self._import_csv_path(target, note=note)
+
+    def import_banamex(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import from Banamex",
+            "",
+            "Banamex statements (*.html *.htm);;All files (*)",
+        )
+        if not path:
+            return
+        source = Path(path)
+        with tempfile.TemporaryDirectory(prefix="contapy-banamex-") as folder:
+            target = Path(folder) / f"{source.stem}_banamex.csv"
+            try:
+                _written, skipped, year = transform_banamex(source, target)
+            except Exception as exc:  # pragma: no cover - surfaced to the user
+                QMessageBox.warning(self, "Banamex import failed", str(exc))
+                return
+            parts = [f"{year} statement"]
+            if skipped:
+                parts.append(f"{skipped} unreadable row(s) ignored")
+            self._import_csv_path(target, note=" · ".join(parts))
 
     def _import_csv_path(self, path: Path, note: str = "") -> None:
         try:
