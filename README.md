@@ -88,7 +88,8 @@ The ledger opens focused on the newest transaction:
 ![ContaPy reports window](screenshots/reports.png)
 
 **Reports → Reports Window…** (`Ctrl+R`) opens a live report over the current
-database. The left **Display** panel controls the report:
+database. The toolbar's **Spending report** button also opens this window. The
+left **Display** panel controls the report:
 
 - **Mode** — **Total** groups the whole date range; **Time** breaks it down by
   month.

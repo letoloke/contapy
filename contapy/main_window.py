@@ -283,6 +283,7 @@ class MainWindow(QMainWindow):
         self.toolbar.refreshRequested.connect(self.refresh_all)
         self.toolbar.spendingFocus.connect(self.focus_spending)
         self.toolbar.cashflowFocus.connect(self.focus_cashflow)
+        self.toolbar.reportsRequested.connect(self.open_reports)
 
         self.accounts_panel.accountSelected.connect(lambda _id: self._update_actions())
         self.accounts_panel.openRequested.connect(self.open_ledger)

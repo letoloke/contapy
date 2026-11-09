@@ -33,6 +33,7 @@ class AppToolbar(QWidget):
     refreshRequested = Signal()
     spendingFocus = Signal()
     cashflowFocus = Signal()
+    reportsRequested = Signal()
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -83,7 +84,7 @@ class AppToolbar(QWidget):
             "sliders", "🧩", "Manage accounts", self.manageAccounts.emit, layout
         )
         self._button(
-            "chart-pie", "📋", "Spending report", self.spendingFocus.emit, layout
+            "chart-pie", "📋", "Spending report", self.reportsRequested.emit, layout
         )
         self._button(
             "money-bill-transfer", "📨", "Cash flow report",
