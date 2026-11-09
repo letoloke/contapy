@@ -73,7 +73,7 @@ Every row has an **Import** checkbox. Rows that are not duplicates start checked
 
 ![ContaPy account ledger](screenshots/ledger.png)
 
-Double-click an account (or press `Ctrl+L`) to open its ledger. It follows HomeBank's account window: date/payee/type/status filters, a search box, newest activity first with a running balance per row, status icons for cleared/reconciled/remind/flag, reconciled–cleared–today–future balances, and Add / Inherit / Edit / Delete actions. Select rows to mark them cleared or reconciled, or to toggle remind and flag.
+Double-click an account (or press `Ctrl+L`) to open its ledger. It follows HomeBank's account window: date/payee/type/status filters, a search box, newest activity first with a running balance per row, status icons for cleared/reconciled/remind/flag, reconciled–cleared–today–future balances, and Add / Inherit / Edit / Delete actions. Select rows to mark them cleared or reconciled, or to toggle remind and flag. The date filter offers **All date**, **This month**, **Last month**, **This year**, **Last year** and **Custom range…**, which asks for an inclusive start and end date.
 
 The ledger opens focused on the newest transaction:
 
@@ -126,7 +126,7 @@ The demo figures are aligned to the reference: last 30 days **$167,248.99**, rec
 
 ## Features beyond the screenshot
 
-- **Account ledger** — a HomeBank-style transaction window per account, with date/payee/type/status filters, a search box, running balance, reconciliation/remind/flag icons, account balance summary, and add/edit/inherit/delete actions.
+- **Account ledger** — a HomeBank-style transaction window per account, with date/payee/type/status filters (including a custom date range), a search box, running balance, reconciliation/remind/flag icons, account balance summary, and add/edit/inherit/delete actions.
 - **Transaction editor** — Expense/Income/Transfer tabs, payment mode, number, tags, status icons, type-to-search combos, and Enter-to-save.
 - **CSV import** — automatic English/Spanish header detection, editable field mapping, remembered header profiles, mapped-row preview with per-row import checkboxes, duplicate detection by memo, target-account selection and memo-to-payee fallback.
 - **Airbnb import** — converts Airbnb reservation exports (dropping payout rows and rebuilding memos) before the standard import preview.
@@ -305,7 +305,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-Fifty-three tests cover the reference balances, the rolling donut total, posting schedules, running ledger balances, reconciled/cleared transitions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing (dark, light, fallbacks and contrast).
+Fifty-six tests cover the reference balances, the rolling donut total, posting schedules, running ledger balances, reconciled/cleared transitions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing (dark, light, fallbacks and contrast).
 
 ## Notes / limitations
 

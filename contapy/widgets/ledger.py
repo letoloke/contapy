@@ -40,7 +40,7 @@ from ..db import DataStore
 from ..models import Account, Balance, TransactionRow
 from ..money import money
 from ..theme import C, font
-from .dialogs import TransactionDialog
+from .dialogs import DateRangeDialog, TransactionDialog
 from .import_dialog import CsvImportDialog
 from .icons import (
     IconButton,
@@ -54,6 +54,7 @@ ROWS = 9
 FLAG, DATE, PAYEE, CATEGORY, STATUS, EXPENSE, INCOME, BALANCE, MEMO = range(ROWS)
 HEADERS = ("Flag", "Date", "Payee", "Category", "Status", "Expense", "Income", "Balance", "Memo")
 FILTER_DAY = 24
+CUSTOM_RANGE = "Custom range…"
 
 
 def ledger_date(iso: str) -> str:
@@ -61,7 +62,11 @@ def ledger_date(iso: str) -> str:
     return f"{calendar.month_abbr[d.month]}, {d.day:02d}, {d.year % 100:02d}"
 
 
-def date_bounds(period: str) -> tuple[date | None, date | None]:
+def date_bounds(
+    period: str, custom: tuple[date, date] | None = None
+) -> tuple[date | None, date | None]:
+    if period == CUSTOM_RANGE:
+        return custom if custom else (None, None)
     today = date.today()
     if period == "This month":
         start = today.replace(day=1)
@@ -385,6 +390,8 @@ class LedgerWindow(QMainWindow):
         self.account: Account | None = store.account(account_id)
         self.all_rows: list[TransactionRow] = []
         self.balance_snapshot: Balance | None = None
+        self._custom_range: tuple[date, date] | None = None
+        self._previous_period = "All date"
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.setMinimumSize(1040, 540)
         self.resize(1120, 680)
@@ -470,8 +477,17 @@ class LedgerWindow(QMainWindow):
         filter_layout.addWidget(self.account_label)
 
         self.date_combo = QComboBox()
-        self.date_combo.addItems(["All date", "This month", "Last month", "This year", "Last year"])
-        self.date_combo.setFixedWidth(122)
+        self.date_combo.addItems(
+            [
+                "All date",
+                "This month",
+                "Last month",
+                "This year",
+                "Last year",
+                CUSTOM_RANGE,
+            ]
+        )
+        self.date_combo.setFixedWidth(132)
         filter_layout.addWidget(self.date_combo)
 
         self.payee_combo = QComboBox()
@@ -612,7 +628,7 @@ class LedgerWindow(QMainWindow):
         self.remind_btn.clicked.connect(self._toggle_remind)
         self.flag_btn.clicked.connect(self._toggle_flag)
 
-        self.date_combo.currentTextChanged.connect(lambda _v: self._apply_filters())
+        self.date_combo.activated.connect(self._date_filter_changed)
         self.payee_combo.currentTextChanged.connect(lambda _v: self._apply_filters())
         self.type_combo.currentIndexChanged.connect(lambda _v: self._apply_filters())
         self.status_combo.currentIndexChanged.connect(lambda _v: self._apply_filters())
@@ -684,10 +700,43 @@ class LedgerWindow(QMainWindow):
 
         self._apply_filters(selected)
 
+    def _date_filter_changed(self, _index: int) -> None:
+        period = self.date_combo.currentText()
+        if period == CUSTOM_RANGE:
+            start, end = self._ask_custom_range()
+            if start is None or end is None:
+                self.date_combo.blockSignals(True)
+                self.date_combo.setCurrentText(self._previous_period)
+                self.date_combo.blockSignals(False)
+                return
+            self._custom_range = (start, end)
+        else:
+            self._custom_range = None
+        self._previous_period = period
+        self._apply_filters()
+
+    def _ask_custom_range(self) -> tuple[date | None, date | None]:
+        if self._custom_range:
+            start, end = self._custom_range
+        else:
+            start, end = date_bounds(self._previous_period)
+            if start is None or end is None:
+                days = [date.fromisoformat(row.date) for row in self.all_rows]
+                if days:
+                    start, end = min(days), max(days)
+                else:
+                    today = date.today()
+                    start = today.replace(day=1)
+                    end = today
+        dialog = DateRangeDialog(start, end, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return None, None
+        return dialog.values()
+
     def _apply_filters(self, selected_ids: list[int] | None = None) -> None:
         if selected_ids is None:
             selected_ids = self._selected_ids()
-        start, end = date_bounds(self.date_combo.currentText())
+        start, end = date_bounds(self.date_combo.currentText(), self._custom_range)
         payee = self.payee_combo.currentText()
         if payee == "All payee":
             payee = ""

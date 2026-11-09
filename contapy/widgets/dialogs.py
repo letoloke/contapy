@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from PySide6.QtCore import (
     QDate,
     QEvent,
@@ -943,6 +945,81 @@ class AccountDialog(QDialog):
             self.kind_combo.currentData(),
             self.opening_spin.value(),
         )
+
+
+class DateRangeDialog(QDialog):
+    """Ask for a custom start and end date."""
+
+    def __init__(
+        self,
+        start: date,
+        end: date,
+        parent: QWidget | None = None,
+    ):
+        super().__init__(parent)
+        self.setWindowTitle("Custom date range")
+        self.setModal(True)
+        self.setMinimumWidth(380)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(22, 20, 22, 18)
+        root.setSpacing(14)
+
+        heading = QLabel("Custom date range")
+        heading.setFont(font(18, 600))
+        root.addWidget(heading)
+
+        note = QLabel("Show transactions dated inside this range, inclusive.")
+        note.setWordWrap(True)
+        note.setFont(font(12, 400))
+        note.setStyleSheet(f"color:{C.MUTED};")
+        root.addWidget(note)
+
+        form = QFormLayout()
+        form.setVerticalSpacing(10)
+        form.setHorizontalSpacing(16)
+        self.start_edit = QDateEdit(QDate(start.year, start.month, start.day))
+        self.end_edit = QDateEdit(QDate(end.year, end.month, end.day))
+        for editor in (self.start_edit, self.end_edit):
+            editor.setCalendarPopup(True)
+            editor.setDisplayFormat("yyyy-MM-dd")
+            editor.setFixedWidth(170)
+        form.addRow("From", self.start_edit)
+        form.addRow("To", self.end_edit)
+        root.addLayout(form)
+
+        buttons = QDialogButtonBox()
+        cancel = buttons.addButton("Cancel", QDialogButtonBox.ButtonRole.RejectRole)
+        apply = buttons.addButton("Apply", QDialogButtonBox.ButtonRole.AcceptRole)
+        cancel.setCursor(Qt.CursorShape.PointingHandCursor)
+        apply.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel.setAutoDefault(False)
+        cancel.setDefault(False)
+        apply.setProperty("role", "primary")
+        apply.setAutoDefault(True)
+        apply.setDefault(True)
+        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self.accept)
+        root.addWidget(buttons)
+
+    def values(self) -> tuple[date, date]:
+        start = self.start_edit.date()
+        end = self.end_edit.date()
+        return (
+            date(start.year(), start.month(), start.day()),
+            date(end.year(), end.month(), end.day()),
+        )
+
+    def accept(self) -> None:
+        start, end = self.values()
+        if start > end:
+            QMessageBox.warning(
+                self,
+                "Invalid date range",
+                "The start date must be on or before the end date.",
+            )
+            return
+        super().accept()
 
 
 class PreferencesDialog(QDialog):
