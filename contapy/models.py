@@ -72,6 +72,7 @@ class TransactionRow:
     reconciled: bool = False
     remind: bool = False
     flagged: bool = False
+    voided: bool = False
     payment: str = ""
     number: str = ""
     tags: str = ""
@@ -130,6 +131,7 @@ class TransactionDraft:
     reconciled: bool = False
     remind: bool = False
     flagged: bool = False
+    voided: bool = False
     payment: str = ""
     number: str = ""
     tags: str = ""

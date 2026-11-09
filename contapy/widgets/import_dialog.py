@@ -44,6 +44,7 @@ class CsvImportDialog(QDialog):
         ("reconciled", "Reconciled", False),
         ("remind", "Remind", False),
         ("flagged", "Flagged", False),
+        ("voided", "Voided", False),
     )
 
     def __init__(

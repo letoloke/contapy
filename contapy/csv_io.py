@@ -83,6 +83,7 @@ FIELD_ALIASES: dict[str, set[str]] = {
     "reconciled": {"reconciled", "reconciliado"},
     "remind": {"remind", "recordatorio"},
     "flagged": {"flagged", "marcado", "flag"},
+    "voided": {"voided", "void", "anulado", "anulada"},
     "status": {"status", "estado"},
 }
 
@@ -166,6 +167,7 @@ class CsvPlan:
             "reconciled": "Reconciled",
             "remind": "Remind",
             "flagged": "Flagged",
+            "voided": "Voided",
             "status": "Status",
         }
         return [
@@ -276,24 +278,29 @@ def parse_bool(value: str, default: bool = False) -> bool:
     return default
 
 
-def statuses_from_row(plan: CsvPlan, row: dict[str, str]) -> tuple[bool, bool, bool, bool]:
-    """Return cleared, reconciled, remind, flagged."""
+def statuses_from_row(
+    plan: CsvPlan, row: dict[str, str]
+) -> tuple[bool, bool, bool, bool, bool]:
+    """Return cleared, reconciled, remind, flagged, voided."""
     if plan.has("status"):
         status = normalize(plan.value(row, "status"))
+        if "void" in status or "anul" in status:
+            return True, False, False, False, True
         if "reconcil" in status:
-            return True, True, False, False
+            return True, True, False, False, False
         if "remind" in status or "record" in status:
-            return True, False, True, False
+            return True, False, True, False, False
         if "flag" in status:
-            return True, False, False, True
+            return True, False, False, True, False
         if "clear" in status:
-            return True, False, False, False
+            return True, False, False, False, False
         if status in {"none", "no", "uncleared", "pendiente"}:
-            return False, False, False, False
+            return False, False, False, False, False
     cleared = parse_bool(plan.value(row, "cleared"), True) if plan.has("cleared") else True
     reconciled = parse_bool(plan.value(row, "reconciled"), False) if plan.has("reconciled") else False
     remind = parse_bool(plan.value(row, "remind"), False) if plan.has("remind") else False
     flagged = parse_bool(plan.value(row, "flagged"), False) if plan.has("flagged") else False
+    voided = parse_bool(plan.value(row, "voided"), False) if plan.has("voided") else False
     if reconciled:
         cleared = True
-    return cleared, reconciled, remind, flagged
+    return cleared, reconciled, remind, flagged, voided

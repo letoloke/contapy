@@ -25,7 +25,7 @@ Keyboard-first behaviour:
 - **Enter** saves from any field (including an open completion popup).
 - **Tab / Shift+Tab** moves through the form; info buttons are skipped.
 - **Alt+E / Alt+I / Alt+T** switch Expense / Income / Transfer.
-- **Ctrl+0…4** set None / Flag / Cleared / Reconciled / Remind.
+- **Ctrl+0…5** set None / Flag / Cleared / Reconciled / Remind / Void.
 - **Escape** cancels.
 
 Transfers create two linked transaction legs (one per account) and are deleted together.
@@ -34,7 +34,7 @@ Transfers create two linked transaction legs (one per account) and are deleted t
 
 ![CSV import preview](screenshots/import.png)
 
-CSV import auto-detects HomeBank-style English and Spanish headers, ignores accents and punctuation, and previews the mapped rows before importing. Every field in the **Header mapping** grid is an editable dropdown — Date, Amount, Payee, Memo, Payment, Number, Category, Tags, Account, Status and the four flags. The supplied bank file maps like this:
+CSV import auto-detects HomeBank-style English and Spanish headers, ignores accents and punctuation, and previews the mapped rows before importing. Every field in the **Header mapping** grid is an editable dropdown — Date, Amount, Payee, Memo, Payment, Number, Category, Tags, Account, Status and the status flags. The supplied bank file maps like this:
 
 | File column | ContaPy field |
 |---|---|
@@ -73,7 +73,7 @@ Every row has an **Import** checkbox. Rows that are not duplicates start checked
 
 ![ContaPy account ledger](screenshots/ledger.png)
 
-Double-click an account (or press `Ctrl+L`) to open its ledger. It follows HomeBank's account window: date/payee/type/status filters, a search box, newest activity first with a running balance per row, status icons for cleared/reconciled/remind/flag, reconciled–cleared–today–future balances, and Add / Inherit / Edit / Delete actions. Select rows to mark them cleared or reconciled, or to toggle remind and flag. The date filter offers **All date**, **This month**, **Last month**, **This year**, **Last year** and **Custom range…**, which asks for an inclusive start and end date.
+Double-click an account (or press `Ctrl+L`) to open its ledger. It follows HomeBank's account window: date/payee/type/status filters, a search box, newest activity first with a running balance per row, status icons for cleared/reconciled/remind/flag/void, reconciled–cleared–today–future balances, and Add / Inherit / Edit / Delete actions. Select rows to mark them cleared or reconciled, or to toggle remind, flag and void. Voided rows stay visible in the ledger but are excluded from balances, reports, charts, future/remind lists and unreconciled alerts. The date filter offers **All date**, **This month**, **Last month**, **This year**, **Last year** and **Custom range…**, which asks for an inclusive start and end date.
 
 The ledger opens focused on the newest transaction:
 
@@ -127,7 +127,7 @@ The demo figures are aligned to the reference: last 30 days **$167,248.99**, rec
 
 ## Features beyond the screenshot
 
-- **Account ledger** — a HomeBank-style transaction window per account, with date/payee/type/status filters (including a custom date range), a search box, running balance, reconciliation/remind/flag icons, account balance summary, and add/edit/inherit/delete actions.
+- **Account ledger** — a HomeBank-style transaction window per account, with date/payee/type/status filters (including a custom date range), a search box, running balance, reconciliation/remind/flag/void icons, account balance summary, and add/edit/inherit/delete actions.
 - **Transaction editor** — Expense/Income/Transfer tabs, payment mode, number, tags, status icons, type-to-search combos, and Enter-to-save.
 - **CSV import** — automatic English/Spanish header detection, editable field mapping, remembered header profiles, mapped-row preview with per-row import checkboxes, duplicate detection by memo, target-account selection and memo-to-payee fallback.
 - **Airbnb import** — converts Airbnb reservation exports (dropping payout rows and rebuilding memos) before the standard import preview.
@@ -135,7 +135,7 @@ The demo figures are aligned to the reference: last 30 days **$167,248.99**, rec
 - **Banamex import** — converts saved Banamex HTML statements (dates, memos and amounts) before the standard import preview.
 - **Reports window** — HomeBank-style Display panel, Category/Payee/Account and monthly grouping, Expense/Income types, date presets and custom ranges, search and account filters, and table, pie and bar views.
 - Schedule one-off bills; post or skip them from the home strip.
-- Mark posted transactions as cleared, reconciled, remind or flagged; these drive the home balance columns and Future/Remind lists.
+- Mark posted transactions as cleared, reconciled, remind, flagged or voided; these drive the home balance columns and Future/Remind lists. Voided transactions are kept for the audit trail but ignored by balances and reports.
 - SQLite persistence (no server, no account, no telemetry).
 - CSV import/export, chart PNG export, demo-data reset, keyboard shortcuts.
 - Responsive chart legends and axis labels down to a 1400×760 window.
@@ -242,7 +242,7 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | New scheduled bill | **Transactions → New Scheduled Transaction…** |
 | Post / skip a bill | Select it in the Scheduled tab, then use the bottom buttons |
 | Edit a ledger row | Select it in the strip and click **Open Ledger**, or double-click it |
-| Reconcile / remind / flag | Select rows in the ledger, then use the icons in the bottom bar |
+| Reconcile / remind / flag / void | Select rows in the ledger, then use the icons in the bottom bar |
 | Navigate ledger rows | `↑` / `↓`; **Home/End** for newest/oldest |
 | Open a ledger transaction | `Enter` on the selected row |
 | Delete a ledger transaction | `Delete` on the selected row |
@@ -255,12 +255,12 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | Refresh | `F5` |
 | Preferences | `Ctrl+,` |
 
-In the account list: **↑/↓** move, **Home/End** jump, **Enter** opens the ledger. In the ledger: **↑/↓** move, **Home/End** jump, **Enter** opens the selected transaction, **Delete** removes it, and **Escape** closes the ledger. In the transaction window: **Enter** saves, **Tab** moves, **Alt+E/I/T** switches type and **Ctrl+0–4** sets status. **Escape** cancels. The home strip also supports **↑/↓** and **Enter** (edit scheduled / open future or remind rows). **Ctrl+R** opens the report window, where **Ctrl+1/2/3** switch table, pie and bar views and **F5** refreshes. Keyboard shortcuts are also available under **Help → Keyboard Shortcuts**.
+In the account list: **↑/↓** move, **Home/End** jump, **Enter** opens the ledger. In the ledger: **↑/↓** move, **Home/End** jump, **Enter** opens the selected transaction, **Delete** removes it, and **Escape** closes the ledger. In the transaction window: **Enter** saves, **Tab** moves, **Alt+E/I/T** switches type and **Ctrl+0–5** sets status. **Escape** cancels. The home strip also supports **↑/↓** and **Enter** (edit scheduled / open future or remind rows). **Ctrl+R** opens the report window, where **Ctrl+1/2/3** switch table, pie and bar views and **F5** refreshes. Keyboard shortcuts are also available under **Help → Keyboard Shortcuts**.
 
 ### CSV format
 
 ```csv
-date,account,payee,category,memo,amount,cleared,reconciled,remind,flagged,payment,number,tags
+date,account,payee,category,memo,amount,cleared,reconciled,remind,flagged,voided,payment,number,tags
 2026-11-06,eCash,Coffee,alimentos,Morning coffee,-85.50,yes,no,no,no,Cash,,
 2026-11-07,Banamex,Client payment,Ingresos,Invoice 104,12000.00,yes,yes,no,no,,1042,work
 ```
@@ -295,7 +295,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 ```
 
 - **All charts are custom-painted** with `QPainter`; there is no matplotlib or QtCharts dependency.
-- **Balances are derived from posted transactions**, never stored as display-only snapshots. *Reconciled* and *Cleared* use the transaction statuses; *Future* adds already-posted future-dated transactions. Unposted schedule rows live in the scheduled strip until you post them.
+- **Balances are derived from posted transactions**, never stored as display-only snapshots. *Reconciled* and *Cleared* use the transaction statuses; *Future* adds already-posted future-dated transactions. Voided transactions are kept in the ledger but never contribute to balances or reports. Unposted schedule rows live in the scheduled strip until you post them.
 - **Alert triangles are derived too**: an account shows one while it has posted, past-dated transactions that are not reconciled. Reconcile them in the ledger (or clear future entries when they arrive) to make the marker disappear.
 - **Charts are portfolio-wide**; selecting an account highlights it for editing / opening its ledger without filtering the reports, matching the reference’s state.
 - The demo data uses a deterministic generator relative to “today”; a fresh seed lands on the reference totals, including the $167,248.99 rolling donut.
@@ -306,7 +306,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-Fifty-six tests cover the reference balances, the rolling donut total, posting schedules, running ledger balances, reconciled/cleared transitions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing (dark, light, fallbacks and contrast).
+Fifty-eight tests cover the reference balances, the rolling donut total, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing (dark, light, fallbacks and contrast).
 
 ## Notes / limitations
 

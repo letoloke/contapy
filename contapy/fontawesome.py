@@ -72,6 +72,7 @@ GLYPHS: dict[str, int] = {
     "arrow-up": 0xF062,
     "arrow-down": 0xF063,
     "xmark": 0xF00D,
+    "ban": 0xF05E,
     "file-lines": 0xF15C,
     "receipt": 0xF543,
     "piggy-bank": 0xF4D3,

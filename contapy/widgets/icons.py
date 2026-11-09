@@ -268,6 +268,20 @@ def draw_bell(p: QPainter, rect: QRectF, color: QColor, width: float = 1.4) -> N
     p.restore()
 
 
+def draw_void(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> None:
+    if draw_glyph(p, rect, color, "ban"):
+        return
+    p.save()
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    r = rect.adjusted(2, 2, -2, -2)
+    p.setPen(QPen(color, width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawEllipse(r)
+    p.drawLine(QPointF(r.left() + 1, r.bottom() - 1),
+               QPointF(r.right() - 1, r.top() + 1))
+    p.restore()
+
+
 def draw_flag(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> None:
     if draw_glyph(p, rect, color, "flag"):
         return

@@ -142,6 +142,76 @@ class StoreTests(unittest.TestCase):
         self.assertAlmostEqual(balances.reconciled, 1000.0, places=2)
         self.assertAlmostEqual(balances.cleared, 900.0, places=2)
 
+    def test_voided_transactions_are_ignored_outside_the_ledger(self) -> None:
+        account_id = self.store.add_account("Void test", "Cash", 100.0)
+        tx_id = self.store.add_transaction(
+            TransactionDraft(
+                date=date.today().isoformat(),
+                account_id=account_id,
+                payee="Mistake",
+                category_id=None,
+                amount=-40.0,
+            )
+        )
+        self.assertAlmostEqual(self.store.balances()[account_id].today, 60.0, places=2)
+
+        self.store.update_transaction_flags([tx_id], voided=True)
+        balances = self.store.balances()[account_id]
+        self.assertAlmostEqual(balances.today, 100.0, places=2)
+        self.assertAlmostEqual(balances.cleared, 100.0, places=2)
+
+        self.assertFalse(
+            next(a for a in self.store.accounts() if a.id == account_id).warning
+        )
+        self.assertEqual(
+            self.store.report_rows(
+                date.today(), date.today(), kind="expense", account_id=account_id
+            ),
+            [],
+        )
+
+        rows = self.store.ledger_rows(account_id)
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0].voided)
+        self.assertAlmostEqual(rows[0].balance, 100.0, places=2)
+
+        future_id = self.store.add_transaction(
+            TransactionDraft(
+                date=(date.today() + timedelta(days=5)).isoformat(),
+                account_id=account_id,
+                payee="Future mistake",
+                category_id=None,
+                amount=-10.0,
+                remind=True,
+            )
+        )
+        self.store.update_transaction_flags([future_id], voided=True)
+        future, remind = self.store.strip_transactions()
+        self.assertNotIn(future_id, [row.id for row in future])
+        self.assertNotIn(future_id, [row.id for row in remind])
+
+        category = next(c for c in self.store.categories() if c.kind == "expense")
+        chart_id = self.store.add_transaction(
+            TransactionDraft(
+                date=date.today().isoformat(),
+                account_id=account_id,
+                payee="Chart mistake",
+                category_id=category.id,
+                amount=-30.0,
+            )
+        )
+        self.store.update_transaction_flags([chart_id], voided=True)
+        self.assertEqual(self.store.spend_by_category(date.today(), date.today(), account_id), ([], 0.0))
+        flow = next(
+            f
+            for f in self.store.monthly_cashflow(1, account_id)
+            if (f.year, f.month) == (date.today().year, date.today().month)
+        )
+        self.assertAlmostEqual(flow.expense, 0.0, places=2)
+
+        self.store.update_transaction_flags([tx_id], voided=False)
+        self.assertAlmostEqual(self.store.balances()[account_id].today, 60.0, places=2)
+
     def test_account_warning_tracks_unreconciled_transactions(self) -> None:
         account_id = self.store.add_account("Test account", "Bank")
 
@@ -195,6 +265,32 @@ class StoreTests(unittest.TestCase):
         finally:
             second.close()
 
+    def test_csv_round_trip_preserves_voided_status(self) -> None:
+        account_id = self.store.add_account("Void export", "Bank", 500.0)
+        self.store.add_transaction(
+            TransactionDraft(
+                date=date.today().isoformat(),
+                account_id=account_id,
+                payee="Voided export",
+                category_id=None,
+                amount=-25.0,
+                voided=True,
+            )
+        )
+        csv_path = Path(self.tmp.name) / "void_export.csv"
+        self.store.export_csv(csv_path)
+
+        second = DataStore(Path(self.tmp.name) / "void_imported.db", seed=False)
+        try:
+            second.import_csv(csv_path)
+            imported = next(a for a in second.accounts() if a.name == "Void export")
+            rows = second.ledger_rows(imported.id)
+            self.assertEqual(len(rows), 1)
+            self.assertTrue(rows[0].voided)
+            self.assertAlmostEqual(second.balances()[imported.id].today, 0.0, places=2)
+        finally:
+            second.close()
+
     def test_old_schema_migrates_status_columns(self) -> None:
         path = Path(self.tmp.name) / "old.db"
         legacy = sqlite3.connect(path)
@@ -229,7 +325,7 @@ class StoreTests(unittest.TestCase):
         try:
             columns = {r[1] for r in migrated.conn.execute("PRAGMA table_info(transactions)")}
             self.assertTrue(
-                {"reconciled", "remind", "flagged", "payment", "number", "tags", "transfer_id"}
+                {"reconciled", "remind", "flagged", "voided", "payment", "number", "tags", "transfer_id"}
                 <= columns
             )
             balance = migrated.balances()[1]

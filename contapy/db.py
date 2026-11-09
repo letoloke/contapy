@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     reconciled  INTEGER NOT NULL DEFAULT 0,
     remind      INTEGER NOT NULL DEFAULT 0,
     flagged     INTEGER NOT NULL DEFAULT 0,
+    voided      INTEGER NOT NULL DEFAULT 0,
     payment     TEXT NOT NULL DEFAULT '',
     number      TEXT NOT NULL DEFAULT '',
     tags        TEXT NOT NULL DEFAULT '',
@@ -210,6 +211,10 @@ class DataStore:
             self.conn.execute(
                 "ALTER TABLE transactions ADD COLUMN flagged INTEGER NOT NULL DEFAULT 0"
             )
+        if "voided" not in columns:
+            self.conn.execute(
+                "ALTER TABLE transactions ADD COLUMN voided INTEGER NOT NULL DEFAULT 0"
+            )
         for name in ("payment", "number", "tags"):
             if name not in columns:
                 self.conn.execute(
@@ -292,6 +297,7 @@ class DataStore:
                        FROM transactions t
                        WHERE t.account_id = a.id
                          AND t.reconciled = 0
+                         AND t.voided = 0
                          AND t.date <= ?
                    ) AS unreconciled
             FROM accounts a
@@ -357,9 +363,9 @@ class DataStore:
             """
             SELECT a.id AS account_id,
                    a.opening AS opening,
-                   COALESCE(SUM(CASE WHEN t.reconciled = 1 AND t.date <= ? THEN t.amount END), 0) AS reconciled_sum,
-                   COALESCE(SUM(CASE WHEN (t.cleared = 1 OR t.reconciled = 1) AND t.date <= ? THEN t.amount END), 0) AS cleared_sum,
-                   COALESCE(SUM(CASE WHEN t.date <= ? THEN t.amount END), 0) AS today_sum
+                   COALESCE(SUM(CASE WHEN t.reconciled = 1 AND t.voided = 0 AND t.date <= ? THEN t.amount END), 0) AS reconciled_sum,
+                   COALESCE(SUM(CASE WHEN (t.cleared = 1 OR t.reconciled = 1) AND t.voided = 0 AND t.date <= ? THEN t.amount END), 0) AS cleared_sum,
+                   COALESCE(SUM(CASE WHEN t.voided = 0 AND t.date <= ? THEN t.amount END), 0) AS today_sum
             FROM accounts a
             LEFT JOIN transactions t ON t.account_id = a.id
             GROUP BY a.id
@@ -372,7 +378,7 @@ class DataStore:
             r["account_id"]: float(r["amount"])
             for r in self._rows(
                 "SELECT account_id, COALESCE(SUM(amount), 0) AS amount "
-                "FROM transactions WHERE date > ? GROUP BY account_id",
+                "FROM transactions WHERE date > ? AND voided = 0 GROUP BY account_id",
                 (today,),
             )
         }
@@ -417,7 +423,7 @@ class DataStore:
     # --------------------------------------------------------------- reports
     def date_span(self) -> tuple[date, date]:
         """First and last transaction date, or today when the ledger is empty."""
-        row = self.conn.execute("SELECT MIN(date), MAX(date) FROM transactions").fetchone()
+        row = self.conn.execute("SELECT MIN(date), MAX(date) FROM transactions WHERE voided = 0").fetchone()
         if row is None or row[0] is None or row[1] is None:
             today = date.today()
             return today, today
@@ -431,7 +437,7 @@ class DataStore:
         search: str = "",
     ) -> list[sqlite3.Row]:
         params: list = [start.isoformat(), end.isoformat()]
-        clauses = ["t.date BETWEEN ? AND ?"]
+        clauses = ["t.date BETWEEN ? AND ?", "t.voided = 0"]
         if account_id is not None:
             clauses.append("t.account_id = ?")
             params.append(account_id)
@@ -577,6 +583,7 @@ class DataStore:
             FROM transactions t
             JOIN categories c ON c.id = t.category_id
             WHERE t.date BETWEEN ? AND ?
+              AND t.voided = 0
               AND t.amount < 0
               AND c.kind = 'expense'
               {account_sql}
@@ -634,7 +641,7 @@ class DataStore:
                    SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) AS income,
                    SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END) AS expense
             FROM transactions
-            WHERE date >= ? AND category_id IS NOT NULL
+            WHERE date >= ? AND voided = 0 AND category_id IS NOT NULL
               {account_sql}
             GROUP BY ym
             """,
@@ -750,8 +757,8 @@ class DataStore:
         cleared = draft.reconciled or draft.cleared
         cur = self.conn.execute(
             "INSERT INTO transactions(account_id, date, payee, category_id, amount, memo, "
-            "cleared, reconciled, remind, flagged, payment, number, tags, transfer_id) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "cleared, reconciled, remind, flagged, voided, payment, number, tags, transfer_id) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 draft.account_id,
                 draft.date,
@@ -763,6 +770,7 @@ class DataStore:
                 1 if draft.reconciled else 0,
                 1 if draft.remind else 0,
                 1 if draft.flagged else 0,
+                1 if draft.voided else 0,
                 draft.payment.strip(),
                 draft.number.strip(),
                 draft.tags.strip(),
@@ -794,8 +802,8 @@ class DataStore:
         ):
             self.conn.execute(
                 "INSERT INTO transactions(account_id, date, payee, category_id, amount, memo, "
-                "cleared, reconciled, remind, flagged, payment, number, tags, transfer_id) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "cleared, reconciled, remind, flagged, voided, payment, number, tags, transfer_id) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     account_id,
                     draft.date,
@@ -807,6 +815,7 @@ class DataStore:
                     1 if draft.reconciled else 0,
                     1 if draft.remind else 0,
                     1 if draft.flagged else 0,
+                    1 if draft.voided else 0,
                     draft.payment.strip(),
                     draft.number.strip(),
                     draft.tags.strip(),
@@ -824,7 +833,7 @@ class DataStore:
         cleared = draft.reconciled or draft.cleared
         self.conn.execute(
             "UPDATE transactions SET account_id=?, date=?, payee=?, category_id=?, amount=?, "
-            "memo=?, cleared=?, reconciled=?, remind=?, flagged=?, payment=?, number=?, tags=? "
+            "memo=?, cleared=?, reconciled=?, remind=?, flagged=?, voided=?, payment=?, number=?, tags=? "
             "WHERE id=?",
             (
                 draft.account_id,
@@ -837,6 +846,7 @@ class DataStore:
                 1 if draft.reconciled else 0,
                 1 if draft.remind else 0,
                 1 if draft.flagged else 0,
+                1 if draft.voided else 0,
                 draft.payment.strip(),
                 draft.number.strip(),
                 draft.tags.strip(),
@@ -853,6 +863,7 @@ class DataStore:
         reconciled: bool | None = None,
         remind: bool | None = None,
         flagged: bool | None = None,
+        voided: bool | None = None,
     ) -> None:
         if not transaction_ids:
             return
@@ -874,6 +885,9 @@ class DataStore:
         if flagged is not None:
             assignments.append("flagged=?")
             params.append(1 if flagged else 0)
+        if voided is not None:
+            assignments.append("voided=?")
+            params.append(1 if voided else 0)
         if not assignments:
             return
         sql = f"UPDATE transactions SET {', '.join(assignments)} WHERE id=?"
@@ -925,6 +939,7 @@ class DataStore:
             reconciled=bool(r["reconciled"]),
             remind=bool(r["remind"]),
             flagged=bool(r["flagged"]),
+            voided=bool(r["voided"]),
             payment=r["payment"] or "",
             number=r["number"] or "",
             tags=r["tags"] or "",
@@ -940,7 +955,8 @@ class DataStore:
         running = account.opening
         rows: list[TransactionRow] = []
         for raw in self._transaction_query("WHERE t.account_id = ?", (account_id,)):
-            running += float(raw["amount"])
+            if not raw["voided"]:
+                running += float(raw["amount"])
             rows.append(self._to_transaction_row(raw, running))
         return rows
 
@@ -953,11 +969,11 @@ class DataStore:
         today = date.today().isoformat()
         future = [
             self._to_transaction_row(r)
-            for r in self._transaction_query("WHERE t.date > ?", (today,))
+            for r in self._transaction_query("WHERE t.date > ? AND t.voided = 0", (today,))
         ]
         remind = [
             self._to_transaction_row(r)
-            for r in self._transaction_query("WHERE t.remind = 1", ())
+            for r in self._transaction_query("WHERE t.remind = 1 AND t.voided = 0", ())
         ]
         return future, remind
 
@@ -1000,7 +1016,7 @@ class DataStore:
             """
             SELECT t.date, a.name AS account, t.payee, c.name AS category,
                    t.memo, t.amount, t.cleared, t.reconciled, t.remind, t.flagged,
-                   t.payment, t.number, t.tags
+                   t.voided, t.payment, t.number, t.tags
             FROM transactions t
             JOIN accounts a ON a.id = t.account_id
             LEFT JOIN categories c ON c.id = t.category_id
@@ -1011,7 +1027,7 @@ class DataStore:
             writer = csv.writer(handle)
             writer.writerow(
                 ["date", "account", "payee", "category", "memo", "amount",
-                 "cleared", "reconciled", "remind", "flagged",
+                 "cleared", "reconciled", "remind", "flagged", "voided",
                  "payment", "number", "tags"]
             )
             for r in rows:
@@ -1027,6 +1043,7 @@ class DataStore:
                         "yes" if r["reconciled"] else "no",
                         "yes" if r["remind"] else "no",
                         "yes" if r["flagged"] else "no",
+                        "yes" if r["voided"] else "no",
                         r["payment"] or "",
                         r["number"] or "",
                         r["tags"] or "",
@@ -1083,13 +1100,13 @@ class DataStore:
 
     def import_fingerprints(self, account_ids: list[int] | None = None) -> set[ImportFingerprint]:
         """Fingerprints for duplicate detection during CSV import."""
-        sql = "SELECT account_id, date, memo, payee, amount FROM transactions"
+        sql = "SELECT account_id, date, memo, payee, amount FROM transactions WHERE voided = 0"
         params: tuple = ()
         if account_ids is not None:
             ids = list(dict.fromkeys(int(account_id) for account_id in account_ids))
             if not ids:
                 return set()
-            sql += f" WHERE account_id IN ({','.join('?' * len(ids))})"
+            sql += f" AND account_id IN ({','.join('?' * len(ids))})"
             params = tuple(ids)
         return {
             import_fingerprint(
@@ -1157,11 +1174,11 @@ class DataStore:
                     category_id = self._ensure_category(
                         category_name, "income" if amount > 0 else "expense"
                     )
-                cleared, reconciled, remind, flagged = statuses_from_row(plan, row)
+                cleared, reconciled, remind, flagged, voided = statuses_from_row(plan, row)
                 self.conn.execute(
                     "INSERT INTO transactions(account_id, date, payee, category_id, amount, memo, "
-                    "cleared, reconciled, remind, flagged, payment, number, tags) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "cleared, reconciled, remind, flagged, voided, payment, number, tags) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         row_account_id,
                         parsed.isoformat(),
@@ -1173,6 +1190,7 @@ class DataStore:
                         1 if reconciled else 0,
                         1 if remind else 0,
                         1 if flagged else 0,
+                        1 if voided else 0,
                         plan.value(row, "payment"),
                         plan.value(row, "number"),
                         plan.value(row, "tags"),

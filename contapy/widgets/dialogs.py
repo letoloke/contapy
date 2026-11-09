@@ -55,6 +55,7 @@ from .icons import (
     draw_flag,
     draw_info,
     draw_reconciled,
+    draw_void,
 )
 
 
@@ -230,6 +231,7 @@ class TransactionDialog(QDialog):
         self._reconciled = False
         self._remind = False
         self._flagged = False
+        self._voided = False
         self._transfer_id = draft.transfer_id if draft else None
         self.currency_code = store.get_setting("currency_code", "MXN") or "MXN"
 
@@ -378,7 +380,7 @@ class TransactionDialog(QDialog):
         hint = QLabel(
             "Enter saves · Tab moves · Alt+E/I type"
             if scheduled
-            else "Enter saves · Tab moves · Alt+E/I/T type · Ctrl+0–4 status"
+            else "Enter saves · Tab moves · Alt+E/I/T type · Ctrl+0–5 status"
         )
         hint.setFont(font(11, 400))
         hint.setStyleSheet(f"color:{C.MUTED_DARK};")
@@ -551,6 +553,7 @@ class TransactionDialog(QDialog):
             ("cleared", _drawer_icon(draw_check_circle, C.GREEN), "Cleared (Ctrl+2)"),
             ("reconciled", _drawer_icon(draw_reconciled, C.RECONCILED), "Reconciled (Ctrl+3)"),
             ("remind", _drawer_icon(draw_bell, C.WARNING), "Remind (Ctrl+4)"),
+            ("voided", _drawer_icon(draw_void, C.MUTED_DARK), "Voided (Ctrl+5)"),
         ]
         self.status_buttons: dict[str, QToolButton] = {}
         for key, icon, tooltip in definitions:
@@ -586,6 +589,7 @@ class TransactionDialog(QDialog):
             ("cleared", "Ctrl+2"),
             ("reconciled", "Ctrl+3"),
             ("remind", "Ctrl+4"),
+            ("voided", "Ctrl+5"),
         ):
             shortcut = QShortcut(QKeySequence(sequence), self)
             shortcut.activated.connect(lambda k=key: self._shortcut_status(k))
@@ -642,6 +646,7 @@ class TransactionDialog(QDialog):
     def _status_clicked(self, key: str) -> None:
         if key == "none":
             self._cleared = self._reconciled = self._remind = self._flagged = False
+            self._voided = False
         elif key == "flagged":
             self._flagged = self.status_buttons["flagged"].isChecked()
         elif key == "cleared":
@@ -660,11 +665,14 @@ class TransactionDialog(QDialog):
                 self._cleared = False
         elif key == "remind":
             self._remind = self.status_buttons["remind"].isChecked()
+        elif key == "voided":
+            self._voided = self.status_buttons["voided"].isChecked()
         self._sync_status_buttons()
 
     def _shortcut_status(self, key: str) -> None:
         if key == "none":
             self._cleared = self._reconciled = self._remind = self._flagged = False
+            self._voided = False
         elif key == "cleared":
             self._cleared, self._reconciled = True, False
         elif key == "reconciled":
@@ -673,17 +681,26 @@ class TransactionDialog(QDialog):
             self._remind = not self._remind
         elif key == "flagged":
             self._flagged = not self._flagged
+        elif key == "voided":
+            self._voided = not self._voided
         self._sync_status_buttons()
 
     def _sync_status_buttons(self) -> None:
         if not hasattr(self, "status_buttons"):
             return
         states = {
-            "none": not (self._cleared or self._reconciled or self._remind or self._flagged),
+            "none": not (
+                self._cleared
+                or self._reconciled
+                or self._remind
+                or self._flagged
+                or self._voided
+            ),
             "flagged": self._flagged,
             "cleared": self._cleared and not self._reconciled,
             "reconciled": self._reconciled,
             "remind": self._remind,
+            "voided": self._voided,
         }
         for key, state in states.items():
             button = self.status_buttons[key]
@@ -792,6 +809,7 @@ class TransactionDialog(QDialog):
         self._reconciled = draft.reconciled
         self._remind = draft.remind
         self._flagged = draft.flagged
+        self._voided = draft.voided
         self._sync_status_buttons()
         self._normalize_amount_sign()
         self.date_edit.setFocus()
@@ -851,6 +869,7 @@ class TransactionDialog(QDialog):
             reconciled=reconciled,
             remind=self._remind if not self._scheduled else False,
             flagged=self._flagged if not self._scheduled else False,
+            voided=self._voided if not self._scheduled else False,
             payment=self.payment_combo.resolved_text().strip()
             if self.payment_combo.resolved_text().strip() != "(none)"
             else "",
@@ -1178,7 +1197,7 @@ def shortcuts_text() -> str:
         "<b>Delete</b> remove · <b>Esc</b> close<br><br>"
         "<b>In the transaction window</b><br>"
         "<b>Enter</b> saves · <b>Tab</b> moves · <b>Alt+E/I/T</b> type · "
-        "<b>Ctrl+0–4</b> status<br><br>"
+        "<b>Ctrl+0–5</b> status<br><br>"
         "<b>In the reports window</b><br>"
         "<b>Ctrl+1/2/3</b> table, pie, bar · <b>F5</b> refresh · "
         "<b>Esc</b> close<br><br>"

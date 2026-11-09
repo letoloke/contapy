@@ -48,6 +48,7 @@ from .icons import (
     draw_check_circle,
     draw_flag,
     draw_reconciled,
+    draw_void,
 )
 
 ROWS = 9
@@ -176,6 +177,9 @@ class LedgerDelegate(QStyledItemDelegate):
         pad = 8
         text_color = QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.TEXT)
         muted = QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.MUTED)
+        if row.voided and not selected:
+            text_color = QColor(C.MUTED_DARK)
+            muted = QColor(C.MUTED_DARK)
         category_color = (
             QColor(C.CATEGORY_MUTED)
             if row.category_name == "Uncategorized"
@@ -200,17 +204,27 @@ class LedgerDelegate(QStyledItemDelegate):
             self._text(painter, rect, pad, row.category_name, self._value_font, category_color)
         elif col == STATUS:
             x = rect.left() + 7
-            if row.reconciled:
+            if row.voided:
+                draw_void(
+                    painter,
+                    QRectF(x, rect.top() + 7, 14, 14),
+                    QColor(C.MUTED_DARK),
+                )
+                x += 18
+            elif row.reconciled:
                 draw_reconciled(painter, QRectF(x, rect.top() + 7, 14, 14), QColor(C.RECONCILED))
                 x += 18
             elif row.cleared:
                 draw_check_circle(painter, QRectF(x, rect.top() + 7, 14, 14), QColor(C.GREEN))
                 x += 18
-            if row.remind:
+            if row.remind and not row.voided:
                 draw_bell(painter, QRectF(x, rect.top() + 7, 14, 14), QColor(C.WARNING))
         elif col == EXPENSE:
             if row.amount < 0:
-                color = QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.ORANGE)
+                if row.voided and not selected:
+                    color = QColor(C.MUTED_DARK)
+                else:
+                    color = QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.ORANGE)
                 self._text(
                     painter,
                     rect,
@@ -222,7 +236,10 @@ class LedgerDelegate(QStyledItemDelegate):
                 )
         elif col == INCOME:
             if row.amount > 0:
-                color = QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.GREEN)
+                if row.voided and not selected:
+                    color = QColor(C.MUTED_DARK)
+                else:
+                    color = QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.GREEN)
                 self._text(
                     painter,
                     rect,
@@ -233,7 +250,9 @@ class LedgerDelegate(QStyledItemDelegate):
                     Qt.AlignmentFlag.AlignRight,
                 )
         elif col == BALANCE:
-            color = QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.AMOUNT)
+            color = QColor(C.MUTED_DARK) if row.voided and not selected else (
+                QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.AMOUNT)
+            )
             self._text(
                 painter,
                 rect,
@@ -450,6 +469,7 @@ class LedgerWindow(QMainWindow):
         tools_menu.addSeparator()
         tools_menu.addAction(self._action("Toggle Remind", self._toggle_remind))
         tools_menu.addAction(self._action("Toggle Flag", self._toggle_flag))
+        tools_menu.addAction(self._action("Toggle Void", self._toggle_void))
 
     # --------------------------------------------------------------------- ui
     def _build_ui(self) -> None:
@@ -508,6 +528,7 @@ class LedgerWindow(QMainWindow):
         self.status_combo.addItem("Reconciled", "reconciled")
         self.status_combo.addItem("Remind", "remind")
         self.status_combo.addItem("Flagged", "flagged")
+        self.status_combo.addItem("Voided", "voided")
         self.status_combo.setFixedWidth(134)
         filter_layout.addWidget(self.status_combo)
 
@@ -601,7 +622,16 @@ class LedgerWindow(QMainWindow):
         self.flag_btn = IconButton(
             draw_flag, 30, "Toggle flag for selected", color=C.WARNING, parent=self
         )
-        for button in (self.clear_btn, self.reconcile_btn, self.remind_btn, self.flag_btn):
+        self.void_btn = IconButton(
+            draw_void, 30, "Toggle void for selected", color=C.MUTED_DARK, parent=self
+        )
+        for button in (
+            self.clear_btn,
+            self.reconcile_btn,
+            self.remind_btn,
+            self.flag_btn,
+            self.void_btn,
+        ):
             action_layout.addWidget(button)
 
         action_layout.addStretch(1)
@@ -627,6 +657,7 @@ class LedgerWindow(QMainWindow):
         self.reconcile_btn.clicked.connect(lambda: self._set_reconciled(True))
         self.remind_btn.clicked.connect(self._toggle_remind)
         self.flag_btn.clicked.connect(self._toggle_flag)
+        self.void_btn.clicked.connect(self._toggle_void)
 
         self.date_combo.activated.connect(self._date_filter_changed)
         self.payee_combo.currentTextChanged.connect(lambda _v: self._apply_filters())
@@ -757,6 +788,11 @@ class LedgerWindow(QMainWindow):
                 continue
             if type_filter == "income" and row.amount <= 0:
                 continue
+            if status_filter == "voided":
+                if not row.voided:
+                    continue
+            elif status_filter and row.voided:
+                continue
             if status_filter == "unreconciled" and (row.cleared or row.reconciled):
                 continue
             if status_filter == "cleared" and (not row.cleared or row.reconciled):
@@ -826,8 +862,8 @@ class LedgerWindow(QMainWindow):
 
     def _update_summary(self) -> None:
         selected = self._selected_rows()
-        selected_sum = sum(row.amount for row in selected)
-        total_sum = sum(row.amount for row in self.model.rows)
+        selected_sum = sum(row.amount for row in selected if not row.voided)
+        total_sum = sum(row.amount for row in self.model.rows if not row.voided)
         self.summary.set_data(
             len(self.model.rows),
             len(selected),
@@ -847,6 +883,7 @@ class LedgerWindow(QMainWindow):
             self.reconcile_btn,
             self.remind_btn,
             self.flag_btn,
+            self.void_btn,
         ):
             button.setEnabled(has_selection)
         for action in (self.act_edit, self.act_inherit, self.act_delete):
@@ -962,6 +999,7 @@ class LedgerWindow(QMainWindow):
             reconciled=source.reconciled,
             remind=source.remind,
             flagged=source.flagged,
+            voided=source.voided,
             payment=edit_source.payment,
             number=edit_source.number,
             tags=edit_source.tags,
@@ -1050,6 +1088,16 @@ class LedgerWindow(QMainWindow):
             return
         target = not all(row.flagged for row in selected)
         self.store.update_transaction_flags([row.id for row in selected], flagged=target)
+        self.reload()
+        self.changed.emit()
+        QTimer.singleShot(0, self._focus_table)
+
+    def _toggle_void(self) -> None:
+        selected = self._selected_rows()
+        if not selected:
+            return
+        target = not all(row.voided for row in selected)
+        self.store.update_transaction_flags([row.id for row in selected], voided=target)
         self.reload()
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
