@@ -64,6 +64,26 @@ def ledger_date(iso: str) -> str:
     return format_date(iso)
 
 
+def closest_amount_ids(
+    rows: list[TransactionRow],
+    selected_ids: set[int],
+    total: float,
+    tolerance: float = 0.005,
+) -> list[int]:
+    """Ids of unselected, non-voided rows whose amount is closest to ``total``."""
+    candidates = [
+        row for row in rows if row.id not in selected_ids and not row.voided
+    ]
+    if not candidates:
+        return []
+    best = min(abs(row.amount - total) for row in candidates)
+    return [
+        row.id
+        for row in candidates
+        if abs(abs(row.amount - total) - best) <= tolerance
+    ]
+
+
 def date_bounds(
     period: str, custom: tuple[date, date] | None = None
 ) -> tuple[date | None, date | None]:
@@ -154,6 +174,7 @@ class LedgerDelegate(QStyledItemDelegate):
         self._value_font = font(13, 400)
         self._payee_font = font(14, 400)
         self._small_font = font(12, 400)
+        self.highlight_ids: set[int] = set()
 
     def sizeHint(self, option, index):  # noqa: N802
         return QSize(option.rect.width(), 27)
@@ -166,6 +187,7 @@ class LedgerDelegate(QStyledItemDelegate):
         col = index.column()
         rect = option.rect
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
+        highlighted = not selected and row.id in self.highlight_ids
 
         bg = QColor(C.ROW_SELECTED) if selected else QColor(
             C.PANEL if index.row() % 2 == 0 else C.ALT_ROW
@@ -173,6 +195,14 @@ class LedgerDelegate(QStyledItemDelegate):
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.fillRect(rect, bg)
+        if highlighted:
+            tint = QColor(C.ACCENT)
+            tint.setAlpha(52)
+            painter.fillRect(rect, tint)
+            painter.fillRect(
+                QRectF(rect.left(), rect.top(), 3, rect.height()),
+                QColor(C.ACCENT),
+            )
         painter.setClipRect(rect)
 
         pad = 8
@@ -409,6 +439,8 @@ class LedgerWindow(QMainWindow):
         self.balance_snapshot: Balance | None = None
         self._custom_range: tuple[date, date] | None = None
         self._previous_period = "All date"
+        self._highlight_ids: set[int] = set()
+        self._suspend_highlight = False
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.setMinimumSize(1040, 540)
         self.resize(1120, 680)
@@ -468,6 +500,12 @@ class LedgerWindow(QMainWindow):
         tools_menu.addAction(self._action("Toggle Remind", self._toggle_remind))
         tools_menu.addAction(self._action("Toggle Flag", self._toggle_flag))
         tools_menu.addAction(self._action("Toggle Void", self._toggle_void))
+        tools_menu.addSeparator()
+        self.act_void_highlighted = self._action(
+            "Void Highlighted", self._void_highlighted, "Alt+V"
+        )
+        self.act_void_highlighted.setEnabled(False)
+        tools_menu.addAction(self.act_void_highlighted)
 
     # --------------------------------------------------------------------- ui
     def _build_ui(self) -> None:
@@ -552,7 +590,8 @@ class LedgerWindow(QMainWindow):
         self.model = LedgerModel(self)
         self.table = LedgerTable()
         self.table.setModel(self.model)
-        self.table.setItemDelegate(LedgerDelegate(self.table))
+        self.delegate = LedgerDelegate(self.table)
+        self.table.setItemDelegate(self.delegate)
         self.table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableView.SelectionMode.ExtendedSelection)
         self.table.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
@@ -829,6 +868,7 @@ class LedgerWindow(QMainWindow):
         self._restore_selection(selected_ids)
         self._update_summary()
         self._update_buttons()
+        self._refresh_highlight()
 
     def _restore_selection(self, ids: list[int]) -> None:
         if not ids:
@@ -863,6 +903,23 @@ class LedgerWindow(QMainWindow):
     def _selection_changed(self) -> None:
         self._update_summary()
         self._update_buttons()
+        self._refresh_highlight()
+
+    def _refresh_highlight(self) -> None:
+        """Highlight unselected amounts closest to the selected total."""
+        selected = self._selected_rows()
+        if self._suspend_highlight or len(selected) < 2:
+            ids: set[int] = set()
+        else:
+            selected_ids = {row.id for row in selected}
+            selected_sum = sum(row.amount for row in selected if not row.voided)
+            ids = set(
+                closest_amount_ids(self.model.rows, selected_ids, selected_sum)
+            )
+        self._highlight_ids = ids
+        self.delegate.highlight_ids = ids
+        self.table.viewport().update()
+        self.act_void_highlighted.setEnabled(bool(ids))
 
     def _update_summary(self) -> None:
         selected = self._selected_rows()
@@ -1104,6 +1161,23 @@ class LedgerWindow(QMainWindow):
         self.store.update_transaction_flags([row.id for row in selected], voided=target)
         self.reload()
         self.changed.emit()
+        QTimer.singleShot(0, self._focus_table)
+
+    def _void_highlighted(self) -> None:
+        ids = sorted(self._highlight_ids)
+        if not ids:
+            return
+        self._suspend_highlight = True
+        try:
+            self.store.update_transaction_flags(ids, voided=True)
+            self.reload()
+            self.changed.emit()
+        finally:
+            self._suspend_highlight = False
+        self._highlight_ids = set()
+        self.delegate.highlight_ids = set()
+        self.table.viewport().update()
+        self.act_void_highlighted.setEnabled(False)
         QTimer.singleShot(0, self._focus_table)
 
     def _select_ids(self, ids: list[int]) -> None:
