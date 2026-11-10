@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 from ..dates import format_date
 from ..models import Account, ScheduledItem
 from ..money import money
-from ..theme import C, font
+from ..theme import C, CLEARED, font
 from .icons import (
     IconButton,
     draw_bell,
@@ -338,7 +338,7 @@ class _Canvas(QWidget):
             elif item.status == "future":
                 draw_clock(p, QRectF(X_STATUS, y + 7, 13, 13), QColor(C.FUTURE), 1.4)
             else:
-                draw_check_circle(p, QRectF(X_STATUS, y + 7, 13, 13), QColor(C.GREEN), 1.5)
+                draw_check_circle(p, QRectF(X_STATUS, y + 7, 13, 13), QColor(CLEARED), 1.5)
 
             if item.amount < 0:
                 p.setPen(QColor(C.ORANGE))

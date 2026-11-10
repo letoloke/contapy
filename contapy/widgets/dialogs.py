@@ -56,7 +56,7 @@ from ..config import (
 from ..dates import DATE_FORMATS, qt_date_format
 from ..db import DataStore
 from ..models import Account, Category, TransactionDraft
-from ..theme import C, font, theme_options
+from ..theme import C, CLEARED, font, theme_options
 from .icons import (
     IconButton,
     draw_bell,
@@ -559,7 +559,7 @@ class TransactionDialog(QDialog):
         definitions = [
             ("none", QIcon(), "No status (Ctrl+0)"),
             ("flagged", _drawer_icon(draw_flag, C.WARNING), "Flagged (Ctrl+1)"),
-            ("cleared", _drawer_icon(draw_check_circle, C.GREEN), "Cleared (Ctrl+2)"),
+            ("cleared", _drawer_icon(draw_check_circle, CLEARED), "Cleared (Ctrl+2)"),
             ("reconciled", _drawer_icon(draw_reconciled, C.RECONCILED), "Reconciled (Ctrl+3)"),
             ("remind", _drawer_icon(draw_bell, C.WARNING), "Remind (Ctrl+4)"),
             ("voided", _drawer_icon(draw_void, C.MUTED_DARK), "Voided (Ctrl+5)"),

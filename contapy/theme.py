@@ -31,6 +31,9 @@ del _token, _value
 CATEGORY_COLORS = dict(_PALETTE.category_colors)
 DONUT_COLORS = list(_PALETTE.donut_colors)
 
+# Cleared transactions keep a fixed colour regardless of the selected theme.
+CLEARED = "#171b18"
+
 
 def _install_palette(palette) -> None:
     """Refresh the shared colour tokens after a theme change."""

@@ -136,7 +136,7 @@ def draw_check_circle(p: QPainter, rect: QRectF, color: QColor, width: float = 1
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     r = rect.adjusted(1.5, 1.5, -1.5, -1.5)
     p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(QColor(C.GREEN))
+    p.setBrush(QColor(color))
     p.drawEllipse(r)
     pen = QPen(QColor(C.ON_GREEN), 1.7, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
                Qt.PenJoinStyle.RoundJoin)
