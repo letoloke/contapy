@@ -36,6 +36,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..config import ledger_status_choice
+from ..dates import format_date
 from ..db import DataStore
 from ..models import Account, Balance, TransactionRow
 from ..money import money
@@ -59,8 +61,7 @@ CUSTOM_RANGE = "Custom range…"
 
 
 def ledger_date(iso: str) -> str:
-    d = date.fromisoformat(iso)
-    return f"{calendar.month_abbr[d.month]}, {d.day:02d}, {d.year % 100:02d}"
+    return format_date(iso)
 
 
 def date_bounds(
@@ -526,6 +527,12 @@ class LedgerWindow(QMainWindow):
         self.status_combo.addItem("Remind", "remind")
         self.status_combo.addItem("Flagged", "flagged")
         self.status_combo.addItem("Voided", "voided")
+        default_status = ledger_status_choice()
+        status_index = self.status_combo.findData(
+            None if default_status == "any" else default_status
+        )
+        if status_index >= 0:
+            self.status_combo.setCurrentIndex(status_index)
         self.status_combo.setFixedWidth(134)
         filter_layout.addWidget(self.status_combo)
 

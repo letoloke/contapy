@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..dates import format_date
 from ..models import Account, ScheduledItem
 from ..money import money
 from ..theme import C, font
@@ -185,7 +186,7 @@ class _Canvas(QWidget):
                 QToolTip.showText(
                     event.globalPosition().toPoint(),
                     f"{item.payee} · {money(item.amount)}\n"
-                    f"{item.next_date} · {item.account_name}\n"
+                    f"{format_date(item.next_date)} · {item.account_name}\n"
                     "Double-click to edit and post",
                     self,
                 )
@@ -308,13 +309,14 @@ class _Canvas(QWidget):
 
             p.setFont(font(14, 400))
             p.setPen(QColor(C.TEXT if not selected else C.ROW_SELECTED_TEXT))
+            date_label = format_date(item.next_date)
             p.drawText(
                 QRectF(X_DATE, y, 120, ROW_H),
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                item.next_date,
+                date_label,
             )
             metrics = QFontMetrics(font(14, 400))
-            date_w = metrics.horizontalAdvance(item.next_date)
+            date_w = metrics.horizontalAdvance(date_label)
             draw_calendar(p, QRectF(X_DATE + date_w + 8, y + 8, 12, 12), QColor(C.GREEN_BAR), 1.0)
 
             p.setPen(QColor(C.TEXT if not selected else C.ROW_SELECTED_TEXT))

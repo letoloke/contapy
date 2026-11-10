@@ -16,7 +16,19 @@ import json
 import os
 from pathlib import Path
 
+from .dates import DATE_FORMATS, DEFAULT_DATE_FORMAT
 from .omarchy import DEFAULT_THEME
+
+DEFAULT_LEDGER_STATUS = "any"
+LEDGER_STATUSES = (
+    "any",
+    "unreconciled",
+    "cleared",
+    "reconciled",
+    "remind",
+    "flagged",
+    "voided",
+)
 
 
 def config_path(environ: dict[str, str] | None = None) -> Path:
@@ -61,6 +73,35 @@ def remember_theme(choice: str, environ: dict[str, str] | None = None) -> None:
     """Persist the selected theme for the next launch."""
     data = _read(environ)
     data["theme"] = choice.strip()
+    _write(data, environ)
+
+
+def date_format_choice(environ: dict[str, str] | None = None) -> str:
+    """The saved date display format, defaulting to ``yyyy/mmm/dd``."""
+    value = _read(environ).get("date_format")
+    keys = {item.key for item in DATE_FORMATS}
+    if isinstance(value, str) and value in keys:
+        return value
+    return DEFAULT_DATE_FORMAT
+
+
+def remember_date_format(key: str, environ: dict[str, str] | None = None) -> None:
+    data = _read(environ)
+    data["date_format"] = key.strip()
+    _write(data, environ)
+
+
+def ledger_status_choice(environ: dict[str, str] | None = None) -> str:
+    """The status filter applied when an account ledger opens."""
+    value = _read(environ).get("ledger_status")
+    if isinstance(value, str) and value in LEDGER_STATUSES:
+        return value
+    return DEFAULT_LEDGER_STATUS
+
+
+def remember_ledger_status(status: str, environ: dict[str, str] | None = None) -> None:
+    data = _read(environ)
+    data["ledger_status"] = status.strip()
     _write(data, environ)
 
 

@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..csv_io import CsvPlan, parse_amount, parse_date, read_csv_plan
+from ..dates import format_date
 from ..db import DataStore, import_fingerprint
 from ..models import Account
 from ..money import money
@@ -374,7 +375,7 @@ class CsvImportDialog(QDialog):
                 self.preview.setItem(row_index, 0, check)
 
                 status = "Duplicate" if is_duplicate else ""
-                values = (date_text, payee, memo, money(amount), category, status)
+                values = (format_date(date_text), payee, memo, money(amount), category, status)
                 for column, value in enumerate(values, start=1):
                     item = QTableWidgetItem(value)
                     if column == 4:

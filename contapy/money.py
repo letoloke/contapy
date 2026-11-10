@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from .dates import format_date
 
 
 def money(value: float, symbol: str = "$", decimals: int = 2) -> str:
@@ -34,5 +34,4 @@ def initials(name: str) -> str:
 
 
 def friendly_date(iso: str) -> str:
-    d = date.fromisoformat(iso)
-    return d.strftime("%b %-d, %Y")
+    return format_date(iso)

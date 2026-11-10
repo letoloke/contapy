@@ -23,7 +23,8 @@ from PySide6.QtWidgets import (
 from .airbnb import transform as transform_airbnb
 from .banamex import transform as transform_banamex
 from .booking import transform as transform_booking
-from .config import remember_database, theme_choice
+from .config import date_format_choice, remember_database, theme_choice
+from .dates import set_date_format
 from .db import DataStore
 from .models import ScheduledItem
 from .money import money
@@ -632,6 +633,11 @@ class MainWindow(QMainWindow):
         if dialog.was_reset:
             self.refresh_all()
             self.show_toast("Demo data restored")
+        if dialog.changed_date_format:
+            set_date_format(date_format_choice())
+            self.refresh_all()
+            if self.reports_window is not None:
+                self.reports_window.reload()
         if dialog.changed_theme:
             self._rebuild_for_theme()
 

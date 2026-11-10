@@ -45,7 +45,15 @@ from PySide6.QtWidgets import (
 )
 
 from .. import __version__
-from ..config import remember_theme, theme_choice
+from ..config import (
+    date_format_choice,
+    ledger_status_choice,
+    remember_date_format,
+    remember_ledger_status,
+    remember_theme,
+    theme_choice,
+)
+from ..dates import DATE_FORMATS, qt_date_format
 from ..db import DataStore
 from ..models import Account, Category, TransactionDraft
 from ..theme import C, font, theme_options
@@ -255,7 +263,7 @@ class TransactionDialog(QDialog):
 
         self.date_edit = QDateEdit()
         self.date_edit.setCalendarPopup(True)
-        self.date_edit.setDisplayFormat("ddd MM/dd/yyyy")
+        self.date_edit.setDisplayFormat(qt_date_format())
         self.date_edit.setDate(
             QDate.currentDate().addDays(7) if scheduled else QDate.currentDate()
         )
@@ -1002,7 +1010,7 @@ class DateRangeDialog(QDialog):
         self.end_edit = QDateEdit(QDate(end.year, end.month, end.day))
         for editor in (self.start_edit, self.end_edit):
             editor.setCalendarPopup(True)
-            editor.setDisplayFormat("yyyy-MM-dd")
+            editor.setDisplayFormat(qt_date_format())
             editor.setFixedWidth(170)
         form.addRow("From", self.start_edit)
         form.addRow("To", self.end_edit)
@@ -1048,6 +1056,7 @@ class PreferencesDialog(QDialog):
         self.store = store
         self.was_reset = False
         self.changed_theme = False
+        self.changed_date_format = False
         self.setWindowTitle("Preferences")
         self.setModal(True)
         self.setMinimumWidth(520)
@@ -1089,6 +1098,53 @@ class PreferencesDialog(QDialog):
         theme_help.setFont(font(12, 400))
         theme_help.setStyleSheet(f"color:{C.MUTED_DARK};")
         root.addWidget(theme_help)
+
+        date_row = QHBoxLayout()
+        date_row.setSpacing(10)
+        date_label = QLabel("Date format")
+        date_label.setFont(font(13, 400))
+        date_label.setStyleSheet(f"color:{C.TEXT_SOFT};")
+        date_row.addWidget(date_label)
+        self.date_format_combo = QComboBox()
+        self.date_format_combo.setFont(font(13, 400))
+        for item in DATE_FORMATS:
+            self.date_format_combo.addItem(item.label, item.key)
+        date_index = self.date_format_combo.findData(date_format_choice())
+        self.date_format_combo.setCurrentIndex(date_index if date_index >= 0 else 0)
+        date_row.addWidget(self.date_format_combo, 1)
+        root.addLayout(date_row)
+
+        status_row = QHBoxLayout()
+        status_row.setSpacing(10)
+        status_label = QLabel("Ledger status")
+        status_label.setFont(font(13, 400))
+        status_label.setStyleSheet(f"color:{C.TEXT_SOFT};")
+        status_row.addWidget(status_label)
+        self.ledger_status_combo = QComboBox()
+        self.ledger_status_combo.setFont(font(13, 400))
+        for key, label in (
+            ("any", "Any status"),
+            ("unreconciled", "Unreconciled"),
+            ("cleared", "Cleared"),
+            ("reconciled", "Reconciled"),
+            ("remind", "Remind"),
+            ("flagged", "Flagged"),
+            ("voided", "Voided"),
+        ):
+            self.ledger_status_combo.addItem(label, key)
+        status_index = self.ledger_status_combo.findData(ledger_status_choice())
+        self.ledger_status_combo.setCurrentIndex(status_index if status_index >= 0 else 0)
+        status_row.addWidget(self.ledger_status_combo, 1)
+        root.addLayout(status_row)
+
+        display_help = QLabel(
+            "Dates use this format across the dashboard. The ledger opens with "
+            "the selected status filter; Any status shows everything."
+        )
+        display_help.setWordWrap(True)
+        display_help.setFont(font(12, 400))
+        display_help.setStyleSheet(f"color:{C.MUTED_DARK};")
+        root.addWidget(display_help)
 
         path_label = QLabel(str(store.path))
         path_label.setWordWrap(True)
@@ -1138,6 +1194,13 @@ class PreferencesDialog(QDialog):
         if choice and choice != theme_choice():
             remember_theme(choice)
             self.changed_theme = True
+        date_key = self.date_format_combo.currentData()
+        if date_key and date_key != date_format_choice():
+            remember_date_format(date_key)
+            self.changed_date_format = True
+        status = self.ledger_status_combo.currentData()
+        if status and status != ledger_status_choice():
+            remember_ledger_status(status)
         super().accept()
 
     def _open_folder(self) -> None:

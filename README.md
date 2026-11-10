@@ -224,6 +224,22 @@ CONTAPY_THEME=one-dark python3 main.py                   # force a theme slug
 CONTAPY_THEME_FILE=/path/to/colors.toml python3 main.py  # force a palette
 ```
 
+### Date format and ledger status
+
+**Preferences** also controls how dates are displayed and which transactions the
+ledger shows by default.
+
+- **Date format** offers eight styles and defaults to `yyyy/mmm/dd`, rendered
+  like `2026/feb/14`. The choice applies immediately to the dashboard, ledgers,
+  scheduled dates, reports, import previews and date pickers. Dates remain
+  stored and compared as ISO strings, so the setting only changes presentation.
+- **Ledger status** chooses the filter applied whenever an account ledger opens:
+  **Any status**, **Unreconciled**, **Cleared**, **Reconciled**, **Remind**,
+  **Flagged** or **Voided**. The default is **Any status**.
+
+Both choices are remembered in `~/.config/contapy/config.json` alongside the
+theme.
+
 Toolbar and status icons come from the bundled Font Awesome Free 6.6 Solid web
 font, with the original painted shapes as fallbacks. The font is licensed under
 the SIL OFL 1.1; see `contapy/assets/FONT-AWESOME-LICENSE.txt`.
@@ -282,6 +298,7 @@ main.py                     launcher
 contapy/
   app.py                    QApplication, icon, screenshot mode
   config.py                 remembers the last database outside the DB
+  dates.py                  selectable date display formats
   main_window.py            chrome, menus, actions, refresh
   db.py                     SQLite schema, balances, reports, CSV
   seed.py                   deterministic reference-shaped demo data
@@ -314,7 +331,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-Sixty-five tests cover the reference balances, the rolling donut total and income breakdown, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
+Seventy-five tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
 
 ## Notes / limitations
 
