@@ -163,6 +163,10 @@ states as the month fills up, plus a **Remaining** or **Over by** amount.
 
 - **Set budgets…** lists every expense category. Enter a monthly amount and
   save; enter **0** to remove a budget. Budgets repeat every month.
+- **Month starts** in the toolbar chooses the day of the month each budget
+  period starts counting (1–31). A start day of 15 makes the January budget run
+  from 15 January to 14 February; the header shows the exact date span. Short
+  months use their last day, so a start day of 31 becomes 28 February.
 - **← / →** move to the previous or next month; **This month** jumps back.
   Past months use the transactions recorded in that month, so trends and
   remaining amounts update automatically.
@@ -192,7 +196,7 @@ The demo figures are aligned to the reference: last 30 days **$167,248.99**, rec
 - **Booking import** — merges Booking payout and Sabee reservation exports, unpivots the amount columns and adds room names before the standard import preview.
 - **Banamex import** — converts saved Banamex HTML statements (dates, memos and amounts) before the standard import preview.
 - **Reports window** — HomeBank-style Display panel, Category/Payee/Account and monthly grouping, Expense/Income types, date presets and custom ranges, search and account filters, and table, pie and bar views.
-- **Budgets window** — monthly per-category expense budgets with progress bars, remaining/over amounts, month navigation and six-month trend charts that zoom into a larger dialog.
+- **Budgets window** — monthly per-category expense budgets with progress bars, remaining/over amounts, month navigation, a configurable day-of-month period start and six-month trend charts that zoom into a larger dialog.
 - **Subcategories** — a category manager with separate Expense/Income tabs, add/edit/delete, per-category transaction lists with search and subcategory roll-up, two-level `Parent : Child` categories everywhere (editor, ledger, CSV import/export), and roll-ups in the donut, report charts and budgets.
 - Schedule one-off bills; post or skip them from the home strip.
 - Mark posted transactions as cleared, reconciled, remind, flagged or voided; these drive the home balance columns and Future/Remind lists. Voided transactions are kept for the audit trail but ignored by balances and reports.
@@ -331,6 +335,7 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | Open budgets | `Ctrl+B`, the toolbar **Budgets** button, or **Reports → Budgets…** |
 | Set or clear a monthly budget | **Set budgets…** in the budgets window; enter `0` to remove one |
 | Browse budget months | `←` / `→` in the budgets window, or **This month** |
+| Change when a budget period starts | Choose a day in **Month starts** on the budgets toolbar |
 | Add a category or subcategory | **Manage → Categories… → New…**, then pick a parent for a subcategory |
 | Create a category while editing a transaction | Type a new name in the **Category** field and save; type `Parent : Child` to add a subcategory |
 | Rename, retype or move a category | Double-click it in **Manage → Categories…** |
@@ -400,7 +405,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-One hundred and thirty-four tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, closest-amount highlighting for voiding, subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, Delete-key removal and the Expense/Income manager tabs), monthly budgets and six-month budget trends, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
+One hundred and thirty-nine tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, closest-amount highlighting for voiding, subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, Delete-key removal and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
 
 ## Notes / limitations
 

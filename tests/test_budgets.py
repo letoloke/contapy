@@ -133,6 +133,60 @@ class BudgetStoreTests(unittest.TestCase):
         self.assertEqual(_shift_month_start(date(2026, 1, 31), -1), date(2025, 12, 1))
         self.assertEqual(_shift_month_start(date(2025, 12, 15), 1), date(2026, 1, 1))
 
+    def test_budget_start_day_defaults_to_one_and_clamps(self) -> None:
+        self.assertEqual(self.store.budget_start_day(), 1)
+        self.store.set_budget_start_day(15)
+        self.assertEqual(self.store.budget_start_day(), 15)
+        self.store.set_budget_start_day(0)
+        self.assertEqual(self.store.budget_start_day(), 1)
+        self.store.set_budget_start_day(99)
+        self.assertEqual(self.store.budget_start_day(), 31)
+        self.store.set_setting("budget_start_day", "not a day")
+        self.assertEqual(self.store.budget_start_day(), 1)
+
+    def test_budget_periods_follow_the_configured_start_day(self) -> None:
+        self.store.set_budget_start_day(15)
+        self.assertEqual(
+            self.store.budget_period(date(2026, 2, 1)),
+            (date(2026, 2, 15), date(2026, 3, 14)),
+        )
+        # Day 31 is clamped to the last day of short months.
+        self.store.set_budget_start_day(31)
+        self.assertEqual(
+            self.store.budget_period(date(2026, 2, 1)),
+            (date(2026, 2, 28), date(2026, 3, 30)),
+        )
+
+    def test_current_budget_period_uses_todays_place_in_the_cycle(self) -> None:
+        self.store.set_budget_start_day(15)
+        self.assertEqual(
+            self.store.current_budget_period(date(2026, 2, 14)), date(2026, 1, 1)
+        )
+        self.assertEqual(
+            self.store.current_budget_period(date(2026, 2, 15)), date(2026, 2, 1)
+        )
+        self.assertEqual(
+            self.store.current_budget_period(date(2026, 3, 1)), date(2026, 2, 1)
+        )
+
+    def test_report_counts_only_dates_inside_the_budget_period(self) -> None:
+        self.store.set_budget(self.renta, 1_000)
+        self.store.set_budget_start_day(15)
+        insert_transaction(self.store, self.account_id, self.renta, "2026-02-14", -100)
+        insert_transaction(self.store, self.account_id, self.renta, "2026-02-15", -200)
+        insert_transaction(self.store, self.account_id, self.renta, "2026-03-14", -300)
+        insert_transaction(self.store, self.account_id, self.renta, "2026-03-15", -400)
+
+        february = self.store.budget_report(date(2026, 2, 20))[0]
+        self.assertAlmostEqual(february.spent, 500.0, places=2)
+        self.assertEqual(february.trend[-1], ("Feb", 500.0))
+
+        january = self.store.budget_report(date(2026, 1, 20))[0]
+        self.assertAlmostEqual(january.spent, 100.0, places=2)
+
+        march = self.store.budget_report(date(2026, 3, 20))[0]
+        self.assertAlmostEqual(march.spent, 400.0, places=2)
+
 
 class BudgetWidgetTests(unittest.TestCase):
     @classmethod
@@ -212,6 +266,26 @@ class BudgetWidgetTests(unittest.TestCase):
         window._show_this_month()
         self.assertEqual(window.month, today.replace(day=1))
         window.reload()
+
+    def test_window_start_day_selector_persists_and_reloads(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        store = DataStore(Path(tmp.name) / "start_day.db", seed=False)
+        self.addCleanup(store.close)
+        category_id = insert_category(store, "renta")
+        store.set_budget(category_id, 1_000)
+
+        window = BudgetWindow(store)
+        self.addCleanup(window.deleteLater)
+        self.assertEqual(window.start_combo.currentData(), 1)
+
+        window.start_combo.setCurrentIndex(window.start_combo.findData(15))
+        self.assertEqual(store.budget_start_day(), 15)
+        self.assertEqual(window.month, store.current_budget_period())
+        self.assertIn("–", window.span_label.text())
+
+        window._show_this_month()
+        self.assertEqual(window.month, store.current_budget_period())
 
 
 if __name__ == "__main__":

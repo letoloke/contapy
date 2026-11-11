@@ -8,6 +8,7 @@ from datetime import date
 from PySide6.QtCore import QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
@@ -484,7 +485,7 @@ class BudgetWindow(QMainWindow):
     def __init__(self, store: DataStore, parent: QWidget | None = None):
         super().__init__(parent, Qt.WindowType.Window)
         self.store = store
-        self.month = date.today().replace(day=1)
+        self.month = self.store.current_budget_period()
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.setWindowTitle("Budgets — ContaPy")
         self.setMinimumSize(980, 620)
@@ -588,6 +589,24 @@ class BudgetWindow(QMainWindow):
         self.month_title.setFont(font(14, 600))
         self.month_title.setStyleSheet(f"color:{C.TEXT};")
         layout.addWidget(self.month_title)
+
+        layout.addSpacing(14)
+        starts_label = QLabel("Month starts")
+        starts_label.setFont(font(12, 400))
+        starts_label.setStyleSheet(f"color:{C.MUTED};")
+        layout.addWidget(starts_label)
+        self.start_combo = QComboBox()
+        for day in range(1, 32):
+            self.start_combo.addItem(str(day), day)
+        index = self.start_combo.findData(self.store.budget_start_day())
+        self.start_combo.setCurrentIndex(max(0, index))
+        self.start_combo.setFixedWidth(72)
+        self.start_combo.setToolTip(
+            "Day of the month each budget period starts counting. Short "
+            "months use their last day."
+        )
+        self.start_combo.currentIndexChanged.connect(self._start_day_changed)
+        layout.addWidget(self.start_combo)
         layout.addStretch(1)
 
         self.settings_button = QPushButton("Set budgets…")
@@ -605,11 +624,22 @@ class BudgetWindow(QMainWindow):
         spent = sum(status.spent for status in statuses)
         remaining = budgeted - spent
 
-        self.span_label.setText(
-            f"{_month_label(self.month)} · monthly budgets"
-            if statuses
-            else f"{_month_label(self.month)} · no budgets yet"
-        )
+        start_day = self.store.budget_start_day()
+        if start_day == 1:
+            span = (
+                f"{_month_label(self.month)} · monthly budgets"
+                if statuses
+                else f"{_month_label(self.month)} · no budgets yet"
+            )
+        else:
+            first, last = self.store.budget_period(self.month)
+            span = (
+                f"{_month_label(self.month)} · "
+                f"{self._short_date(first)} – {self._short_date(last)}"
+            )
+            if not statuses:
+                span += " · no budgets yet"
+        self.span_label.setText(span)
         self.month_title.setText(_month_label(self.month))
         self.budgeted_block.set_value(money(budgeted))
         self.spent_block.set_value(money(spent))
@@ -625,7 +655,7 @@ class BudgetWindow(QMainWindow):
 
         if not statuses:
             empty = QLabel(
-                "No budgets set for this month.\n"
+                "No budgets set for this period.\n"
                 "Use “Set budgets…” to give your expense categories a monthly limit."
             )
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -661,8 +691,21 @@ class BudgetWindow(QMainWindow):
         self.reload()
 
     def _show_this_month(self) -> None:
-        self.month = date.today().replace(day=1)
+        self.month = self.store.current_budget_period()
         self.reload()
+
+    def _start_day_changed(self, _index: int) -> None:
+        day = self.start_combo.currentData()
+        if day is None or int(day) == self.store.budget_start_day():
+            return
+        self.store.set_budget_start_day(int(day))
+        self.month = self.store.current_budget_period()
+        self.reload()
+        self.changed.emit()
+
+    @staticmethod
+    def _short_date(value: date) -> str:
+        return f"{calendar.month_abbr[value.month]} {value.day}"
 
     def open_settings(self) -> None:
         dialog = BudgetSettingsDialog(self.store, self)
@@ -671,4 +714,12 @@ class BudgetWindow(QMainWindow):
             self.changed.emit()
 
     def open_trend(self, status: BudgetStatus) -> None:
-        BudgetTrendDialog(status, _month_label(self.month), self).exec()
+        if self.store.budget_start_day() == 1:
+            period = _month_label(self.month)
+        else:
+            first, last = self.store.budget_period(self.month)
+            period = (
+                f"{_month_label(self.month)} · "
+                f"{self._short_date(first)} – {self._short_date(last)}"
+            )
+        BudgetTrendDialog(status, period, self).exec()

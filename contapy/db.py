@@ -15,7 +15,7 @@ import shutil
 import sqlite3
 import uuid
 from datetime import datetime
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from .csv_io import (
@@ -171,6 +171,28 @@ def _shift_month_start(day: date, months: int) -> date:
     index = day.year * 12 + day.month - 1 + months
     year, month0 = divmod(index, 12)
     return date(year, month0 + 1, 1)
+
+
+def _period_start(anchor: date, start_day: int) -> date:
+    """First day of the budget period starting in ``anchor``'s month.
+
+    Days that do not exist in a month are clamped to its last day, so a start
+    day of 31 works in February.
+    """
+    last_day = calendar.monthrange(anchor.year, anchor.month)[1]
+    return date(anchor.year, anchor.month, min(max(1, start_day), last_day))
+
+
+def _budget_period(anchor: date, start_day: int) -> tuple[date, date]:
+    """Inclusive ``(first, last)`` day of a budget period.
+
+    The period is anchored to ``anchor``'s calendar month and runs from
+    ``start_day`` to the day before the next month's start day. With the
+    default start day of 1 it is simply the calendar month.
+    """
+    start = _period_start(anchor, start_day)
+    next_start = _period_start(_shift_month_start(start, 1), start_day)
+    return start, next_start - timedelta(days=1)
 
 
 def import_fingerprint(
@@ -604,6 +626,36 @@ class DataStore:
         ).fetchone()
         return float(row["amount"]) if row is not None else 0.0
 
+    def budget_start_day(self) -> int:
+        """Day of the month a budget period starts (1–31, default 1)."""
+        raw = self.get_setting("budget_start_day", "1")
+        try:
+            day = int(raw or 1)
+        except (TypeError, ValueError):
+            day = 1
+        return min(31, max(1, day))
+
+    def set_budget_start_day(self, day: int) -> None:
+        """Remember the day of the month budget periods start."""
+        self.set_setting("budget_start_day", str(min(31, max(1, int(day)))))
+
+    def budget_period(
+        self, anchor: date, start_day: int | None = None
+    ) -> tuple[date, date]:
+        """Inclusive ``(first, last)`` day of the period anchored to ``anchor``."""
+        if start_day is None:
+            start_day = self.budget_start_day()
+        return _budget_period(anchor, start_day)
+
+    def current_budget_period(self, today: date | None = None) -> date:
+        """First day of the calendar month whose budget period contains today."""
+        today = today or date.today()
+        start_day = self.budget_start_day()
+        start = _period_start(today, start_day)
+        if today >= start:
+            return today.replace(day=1)
+        return _shift_month_start(today.replace(day=1), -1)
+
     def set_budget(self, category_id: int, amount: float) -> None:
         """Set or clear one category's monthly budget."""
         amount = round(float(amount), 2)
@@ -627,23 +679,33 @@ class DataStore:
     def budget_report(
         self, month_start: date, months: int = 6
     ) -> list[BudgetStatus]:
-        """Budgeted expense categories with monthly spend and a trend."""
+        """Budgeted expense categories with period spend and a trend.
+
+        ``month_start`` anchors the last period; its first day selects the
+        calendar month. Periods honour :meth:`budget_start_day`, so a start day
+        of 15 reports 15 January – 14 February as January.
+        """
         months = max(1, int(months))
-        month_start = month_start.replace(day=1)
-        last_day = calendar.monthrange(month_start.year, month_start.month)[1]
-        month_end = month_start.replace(day=last_day)
-        trend_start = _shift_month_start(month_start, -(months - 1))
-        month_keys: list[tuple[str, str]] = []
+        start_day = self.budget_start_day()
+        anchor = month_start.replace(day=1)
+        periods: list[tuple[str, str, date, date]] = []
         for index in range(months):
-            current = _shift_month_start(trend_start, index)
-            month_keys.append(
-                (current.strftime("%Y-%m"), calendar.month_abbr[current.month])
+            current = _shift_month_start(anchor, -(months - 1) + index)
+            first, last = _budget_period(current, start_day)
+            periods.append(
+                (
+                    current.strftime("%Y-%m"),
+                    calendar.month_abbr[current.month],
+                    first,
+                    last,
+                )
             )
+        month_keys = [(key, label) for key, label, _first, _last in periods]
 
         rows = self._rows(
             """
             SELECT t.category_id AS category_id,
-                   substr(t.date, 1, 7) AS month_key,
+                   t.date AS date,
                    SUM(-t.amount) AS spent
             FROM transactions t
             JOIN categories c ON c.id = t.category_id
@@ -651,15 +713,19 @@ class DataStore:
               AND t.amount < 0
               AND c.kind = 'expense'
               AND t.date BETWEEN ? AND ?
-            GROUP BY t.category_id, month_key
+            GROUP BY t.category_id, t.date
             """,
-            (trend_start.isoformat(), month_end.isoformat()),
+            (periods[0][2].isoformat(), periods[-1][3].isoformat()),
         )
         by_category: dict[int, dict[str, float]] = {}
         for row in rows:
-            by_category.setdefault(int(row["category_id"]), {})[str(row["month_key"])] = float(
-                row["spent"]
-            )
+            when = date.fromisoformat(str(row["date"]))
+            for key, _label, first, last in periods:
+                if first <= when <= last:
+                    category_id = int(row["category_id"])
+                    bucket = by_category.setdefault(category_id, {})
+                    bucket[key] = bucket.get(key, 0.0) + float(row["spent"])
+                    break
 
         # A budget on a category also covers its subcategories' spending.
         children_of: dict[int, list[int]] = {}
