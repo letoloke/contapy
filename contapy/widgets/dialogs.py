@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QToolButton,
@@ -55,7 +56,7 @@ from ..config import (
 )
 from ..dates import DATE_FORMATS, qt_date_format
 from ..db import DataStore
-from ..models import Account, Category, TransactionDraft
+from ..models import Account, Category, TransactionDraft, ordered_categories
 from ..theme import C, CLEARED, font, theme_options
 from .icons import (
     IconButton,
@@ -635,9 +636,9 @@ class TransactionDialog(QDialog):
     def _rebuild_categories(self, kind: str) -> None:
         current = self.category_combo.currentData()
         choices = [("Uncategorized", None)]
-        for category in sorted(self.categories, key=lambda c: (c.sort_order, c.name)):
+        for category in ordered_categories(self.categories):
             if category.kind == kind:
-                choices.append((category.name, category.id))
+                choices.append((category.full_name, category.id))
         self.category_combo.set_choices(choices, preserve_text=False)
         index = self.category_combo.findData(current)
         if index < 0:
@@ -1219,6 +1220,298 @@ class PreferencesDialog(QDialog):
             self.store.reset_demo_data()
             self.was_reset = True
             self.accept()
+
+
+class CategoryDialog(QDialog):
+    """Create or edit a category, optionally as someone's subcategory."""
+
+    def __init__(
+        self,
+        store: DataStore,
+        category: Category | None = None,
+        parent_id: int | None = None,
+        parent: QWidget | None = None,
+    ):
+        super().__init__(parent)
+        self.store = store
+        self.category = category
+        self.setWindowTitle("Edit Category" if category else "New Category")
+        self.setModal(True)
+        self.setMinimumWidth(430)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(22, 20, 22, 18)
+        root.setSpacing(12)
+
+        heading = QLabel("Edit category" if category else "Add a category")
+        heading.setFont(font(18, 600))
+        root.addWidget(heading)
+
+        intro = QLabel(
+            "Subcategories share their parent's type and roll up into its "
+            "charts, reports and budgets."
+        )
+        intro.setWordWrap(True)
+        intro.setFont(font(13, 400))
+        intro.setStyleSheet(f"color:{C.MUTED};")
+        root.addWidget(intro)
+
+        form = QFormLayout()
+        form.setVerticalSpacing(10)
+        form.setHorizontalSpacing(16)
+
+        self.name_edit = QLineEdit()
+        self.name_edit.setPlaceholderText("Category name")
+        if category is not None:
+            self.name_edit.setText(category.name)
+        self.name_edit.setFocus()
+        form.addRow("Name", self.name_edit)
+
+        self.kind_combo = QComboBox()
+        self.kind_combo.addItem("Expense", "expense")
+        self.kind_combo.addItem("Income", "income")
+        if category is not None and category.kind == "income":
+            self.kind_combo.setCurrentIndex(1)
+        form.addRow("Type", self.kind_combo)
+
+        self.parent_combo = QComboBox()
+        self._rebuild_parents()
+        form.addRow("Parent", self.parent_combo)
+        root.addLayout(form)
+
+        if parent_id is not None:
+            index = self.parent_combo.findData(parent_id)
+            if index >= 0:
+                self.parent_combo.setCurrentIndex(index)
+        elif category is not None and category.parent_id is not None:
+            index = self.parent_combo.findData(category.parent_id)
+            if index >= 0:
+                self.parent_combo.setCurrentIndex(index)
+
+        buttons = QDialogButtonBox()
+        cancel = buttons.addButton("Cancel", QDialogButtonBox.ButtonRole.RejectRole)
+        save = buttons.addButton("Save", QDialogButtonBox.ButtonRole.AcceptRole)
+        for button in (cancel, save):
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel.setAutoDefault(False)
+        save.setProperty("role", "primary")
+        save.setAutoDefault(True)
+        save.setDefault(True)
+        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self.accept)
+        root.addWidget(buttons)
+
+        self.kind_combo.currentIndexChanged.connect(self._rebuild_parents)
+
+    def _rebuild_parents(self) -> None:
+        kind = self.kind_combo.currentData()
+        current = self.parent_combo.currentData()
+        self.parent_combo.blockSignals(True)
+        self.parent_combo.clear()
+        self.parent_combo.addItem("None — top level", None)
+        for category in ordered_categories(self.store.categories()):
+            if category.kind != kind or category.parent_id is not None:
+                continue
+            if self.category is not None and category.id == self.category.id:
+                continue
+            self.parent_combo.addItem(category.name, category.id)
+        index = self.parent_combo.findData(current)
+        self.parent_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.parent_combo.blockSignals(False)
+
+    def values(self) -> tuple[str, str, int | None]:
+        """(name, kind, parent id) as entered."""
+        return (
+            self.name_edit.text().strip(),
+            self.kind_combo.currentData(),
+            self.parent_combo.currentData(),
+        )
+
+
+class CategoriesDialog(QDialog):
+    """Manage categories and their subcategories."""
+
+    def __init__(self, store: DataStore, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.store = store
+        self.changed = False
+        self.setWindowTitle("Categories")
+        self.setModal(True)
+        self.setMinimumSize(500, 560)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(20, 18, 20, 16)
+        root.setSpacing(10)
+
+        heading = QLabel("Categories")
+        heading.setFont(font(18, 600))
+        root.addWidget(heading)
+
+        sub = QLabel(
+            "Categories group transactions for the charts, reports, budgets and "
+            "the ledger. Subcategories appear as “Parent : Child” and roll up "
+            "into their parent."
+        )
+        sub.setWordWrap(True)
+        sub.setFont(font(13, 400))
+        sub.setStyleSheet(f"color:{C.MUTED};")
+        root.addWidget(sub)
+
+        self.listing = QListWidget()
+        self.listing.setFont(font(13, 400))
+        self.listing.setSpacing(2)
+        self.listing.setIconSize(QSize(12, 12))
+        self.listing.itemDoubleClicked.connect(lambda _item: self.edit_category())
+        self.listing.itemSelectionChanged.connect(self._update_buttons)
+        root.addWidget(self.listing, 1)
+
+        button_row = QHBoxLayout()
+        button_row.setSpacing(8)
+        self.new_button = QPushButton("New…")
+        self.edit_button = QPushButton("Edit…")
+        self.delete_button = QPushButton("Delete")
+        close = QPushButton("Close")
+        for button in (self.new_button, self.edit_button, self.delete_button, close):
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setFont(font(13, 400))
+        self.new_button.setProperty("role", "primary")
+        self.new_button.clicked.connect(self.new_category)
+        self.edit_button.clicked.connect(self.edit_category)
+        self.delete_button.clicked.connect(self.delete_category)
+        close.setAutoDefault(False)
+        close.clicked.connect(self.accept)
+        button_row.addWidget(self.new_button)
+        button_row.addWidget(self.edit_button)
+        button_row.addWidget(self.delete_button)
+        button_row.addStretch(1)
+        button_row.addWidget(close)
+        root.addLayout(button_row)
+
+        self._reload_list()
+
+    # ------------------------------------------------------------------ rows
+    def _reload_list(self, select_id: int | None = None) -> None:
+        categories = ordered_categories(self.store.categories())
+        subs_by_parent: dict[int, int] = {}
+        for category in categories:
+            if category.parent_id is not None:
+                subs_by_parent[category.parent_id] = (
+                    subs_by_parent.get(category.parent_id, 0) + 1
+                )
+
+        self.listing.clear()
+        for category in categories:
+            detail = (
+                "Income category"
+                if category.kind == "income"
+                else "Spending category"
+            )
+            if category.parent_id is None and subs_by_parent.get(category.id):
+                detail += f" · {subs_by_parent[category.id]} subcategories"
+            self.listing.addItem(self._item(category, detail))
+        if select_id is not None:
+            for row in range(self.listing.count()):
+                item = self.listing.item(row)
+                if item.data(Qt.ItemDataRole.UserRole) == select_id:
+                    self.listing.setCurrentRow(row)
+                    break
+        self._update_buttons()
+
+    @staticmethod
+    def _item(category: Category, detail: str) -> QListWidgetItem:
+        item = QListWidgetItem()
+        pixmap = QPixmap(12, 12)
+        pixmap.fill(QColor(category.color))
+        item.setIcon(QIcon(pixmap))
+        item.setText(f"{category.full_name}\n{detail}")
+        item.setData(Qt.ItemDataRole.UserRole, category.id)
+        return item
+
+    def _selected_category(self) -> Category | None:
+        item = self.listing.currentItem()
+        if item is None:
+            return None
+        return self.store.category(item.data(Qt.ItemDataRole.UserRole))
+
+    def _update_buttons(self) -> None:
+        selected = self._selected_category() is not None
+        self.edit_button.setEnabled(selected)
+        self.delete_button.setEnabled(selected)
+
+    def _default_parent_id(self) -> int | None:
+        """Parent to offer first when adding from the current selection."""
+        selected = self._selected_category()
+        if selected is None:
+            return None
+        return selected.parent_id if selected.parent_id is not None else selected.id
+
+    # --------------------------------------------------------------- actions
+    def new_category(self) -> None:
+        dialog = CategoryDialog(
+            self.store, None, self._default_parent_id(), self
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        name, kind, parent_id = dialog.values()
+        try:
+            category_id = self.store.add_category(name, kind, parent_id)
+        except ValueError as error:
+            self._warn(error)
+            return
+        self.changed = True
+        self._reload_list(select_id=category_id)
+
+    def edit_category(self) -> None:
+        category = self._selected_category()
+        if category is None:
+            return
+        dialog = CategoryDialog(self.store, category, parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        name, kind, parent_id = dialog.values()
+        try:
+            self.store.update_category(category.id, name, kind, parent_id)
+        except ValueError as error:
+            self._warn(error)
+            return
+        self.changed = True
+        self._reload_list(select_id=category.id)
+
+    def delete_category(self) -> None:
+        category = self._selected_category()
+        if category is None:
+            return
+        if category.parent_id is not None:
+            question = (
+                f"Delete “{category.full_name}”?\n\n"
+                f"Its transactions move to “{category.parent_name}”."
+            )
+        else:
+            question = (
+                f"Delete “{category.name}”?\n\n"
+                "Its transactions become uncategorized and its subcategories "
+                "become top-level categories."
+            )
+        box = QMessageBox(self)
+        box.setWindowTitle("Delete category")
+        box.setText(question)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setStandardButtons(
+            QMessageBox.StandardButton.Delete | QMessageBox.StandardButton.Cancel
+        )
+        box.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        if box.exec() != QMessageBox.StandardButton.Delete:
+            return
+        self.store.delete_category(category.id)
+        self.changed = True
+        self._reload_list()
+
+    def _warn(self, error: Exception) -> None:
+        box = QMessageBox(self)
+        box.setWindowTitle("Cannot save category")
+        box.setText(str(error))
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.exec()
 
 
 class ListDialog(QDialog):

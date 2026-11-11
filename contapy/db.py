@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS categories (
     name        TEXT NOT NULL,
     kind        TEXT NOT NULL DEFAULT 'expense',
     color       TEXT NOT NULL DEFAULT '#888888',
-    sort_order  INTEGER NOT NULL DEFAULT 0
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    parent_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS budgets (
@@ -210,6 +211,14 @@ class DataStore:
 
     def _migrate(self) -> None:
         """Add ledger state columns to databases created before they existed."""
+        category_columns = {
+            row[1] for row in self.conn.execute("PRAGMA table_info(categories)")
+        }
+        if "parent_id" not in category_columns:
+            self.conn.execute(
+                "ALTER TABLE categories ADD COLUMN parent_id INTEGER "
+                "REFERENCES categories(id) ON DELETE SET NULL"
+            )
         columns = {row[1] for row in self.conn.execute("PRAGMA table_info(transactions)")}
         if "reconciled" not in columns:
             self.conn.execute(
@@ -415,7 +424,15 @@ class DataStore:
 
     # ------------------------------------------------------------ categories
     def categories(self) -> list[Category]:
-        rows = self._rows("SELECT * FROM categories ORDER BY kind DESC, sort_order, id")
+        rows = self._rows(
+            """
+            SELECT c.id, c.name, c.kind, c.color, c.sort_order, c.parent_id,
+                   p.name AS parent_name
+            FROM categories c
+            LEFT JOIN categories p ON p.id = c.parent_id
+            ORDER BY c.kind DESC, c.sort_order, c.id
+            """
+        )
         return [
             Category(
                 id=r["id"],
@@ -423,6 +440,8 @@ class DataStore:
                 kind=r["kind"],
                 color=r["color"],
                 sort_order=r["sort_order"],
+                parent_id=r["parent_id"],
+                parent_name=r["parent_name"] or "",
             )
             for r in rows
         ]
@@ -434,6 +453,145 @@ class DataStore:
             if category.id == category_id:
                 return category
         return None
+
+    def _next_category_order(self) -> int:
+        row = self.conn.execute(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM categories"
+        ).fetchone()
+        return int(row[0])
+
+    def _validate_category(
+        self,
+        name: str,
+        kind: str,
+        parent_id: int | None,
+        *,
+        exclude_id: int | None = None,
+    ) -> Category | None:
+        """Check a category's name/kind/parent, returning its parent."""
+        if not name:
+            raise ValueError("Category names cannot be empty")
+        if kind not in ("expense", "income"):
+            raise ValueError(f"unknown category kind: {kind}")
+        parent = self.category(parent_id) if parent_id is not None else None
+        if parent is not None:
+            if parent.parent_id is not None:
+                raise ValueError(
+                    "Subcategories cannot have subcategories of their own"
+                )
+            if parent.kind != kind:
+                raise ValueError("A subcategory must share its parent's type")
+        duplicate = self.conn.execute(
+            """
+            SELECT id FROM categories
+            WHERE name = ?
+              AND parent_id IS ?
+              AND id <> COALESCE(?, -1)
+            """,
+            (name, parent_id, exclude_id),
+        ).fetchone()
+        if duplicate is not None:
+            raise ValueError(f"A category named “{name}” already exists")
+        return parent
+
+    def add_category(
+        self,
+        name: str,
+        kind: str = "expense",
+        parent_id: int | None = None,
+        color: str | None = None,
+    ) -> int:
+        """Create a category, or a subcategory when ``parent_id`` is given."""
+        name = name.strip()
+        parent = self._validate_category(name, kind, parent_id)
+        if color is None:
+            color = parent.color if parent is not None else theme_category_color(
+                name, "#8a8a8a"
+            )
+        # Subcategories share their parent's sort order so reports list them
+        # directly under the parent they belong to.
+        sort_order = (
+            parent.sort_order
+            if parent is not None
+            else self._next_category_order()
+        )
+        cur = self.conn.execute(
+            "INSERT INTO categories(name, kind, color, sort_order, parent_id) "
+            "VALUES (?,?,?,?,?)",
+            (name, kind, color, sort_order, parent_id),
+        )
+        self.conn.commit()
+        return int(cur.lastrowid)
+
+    def update_category(
+        self,
+        category_id: int,
+        name: str,
+        kind: str,
+        parent_id: int | None,
+        color: str | None = None,
+    ) -> None:
+        """Rename, retype or move a category; children follow its type."""
+        category = self.category(category_id)
+        if category is None:
+            raise ValueError("That category no longer exists")
+        if parent_id == category_id:
+            raise ValueError("A category cannot be its own subcategory")
+        name = name.strip()
+        parent = self._validate_category(
+            name, kind, parent_id, exclude_id=category_id
+        )
+        if color is None:
+            color = parent.color if parent is not None else category.color
+        sort_order = (
+            parent.sort_order
+            if parent is not None
+            else self._next_category_order()
+        )
+        self.conn.execute(
+            """
+            UPDATE categories
+            SET name=?, kind=?, parent_id=?, color=?, sort_order=?
+            WHERE id=?
+            """,
+            (name, kind, parent_id, color, sort_order, category_id),
+        )
+        # Children always share their parent's type.
+        self.conn.execute(
+            "UPDATE categories SET kind=? WHERE parent_id=?", (kind, category_id)
+        )
+        self.conn.commit()
+
+    def delete_category(self, category_id: int) -> int:
+        """Remove a category, moving its transactions to the parent.
+
+        Subcategories of a deleted parent become top-level categories; a
+        deleted subcategory's transactions move to its parent. Returns how
+        many posted transactions were reassigned.
+        """
+        category = self.category(category_id)
+        if category is None:
+            return 0
+        target = category.parent_id
+        moved = self.conn.execute(
+            "SELECT COUNT(*) FROM transactions WHERE category_id=?", (category_id,)
+        ).fetchone()[0]
+        self.conn.execute(
+            "UPDATE transactions SET category_id=? WHERE category_id=?",
+            (target, category_id),
+        )
+        self.conn.execute(
+            "UPDATE scheduled SET category_id=? WHERE category_id=?",
+            (target, category_id),
+        )
+        self.conn.execute(
+            "UPDATE categories SET parent_id=NULL WHERE parent_id=?", (category_id,)
+        )
+        self.conn.execute("DELETE FROM budgets WHERE category_id=?", (category_id,))
+        self.conn.execute("DELETE FROM categories WHERE id=?", (category_id,))
+        self.conn.commit()
+        return int(moved)
+
 
     # ---------------------------------------------------------------- budgets
     def budgets(self) -> dict[int, float]:
@@ -506,19 +664,32 @@ class DataStore:
                 row["spent"]
             )
 
+        # A budget on a category also covers its subcategories' spending.
+        children_of: dict[int, list[int]] = {}
+        for category in self.categories():
+            if category.parent_id is not None:
+                children_of.setdefault(category.parent_id, []).append(category.id)
+
         budgets = self.budgets()
         statuses: list[BudgetStatus] = []
         for category in self.categories():
             if category.kind != "expense" or category.id not in budgets:
                 continue
-            monthly = by_category.get(category.id, {})
+            covered = [category.id, *children_of.get(category.id, [])]
+            monthly = {
+                key: sum(
+                    by_category.get(child_id, {}).get(key, 0.0)
+                    for child_id in covered
+                )
+                for key, _ in month_keys
+            }
             trend = [
                 (label, monthly.get(key, 0.0)) for key, label in month_keys
             ]
             statuses.append(
                 BudgetStatus(
                     category_id=category.id,
-                    category_name=category.name,
+                    category_name=category.full_name,
                     color=category.color,
                     budget=budgets[category.id],
                     spent=trend[-1][1],
@@ -552,19 +723,26 @@ class DataStore:
         if text:
             like = f"%{text}%"
             clauses.append(
-                "(t.payee LIKE ? OR t.memo LIKE ? OR t.tags LIKE ? OR c.name LIKE ?)"
+                "(t.payee LIKE ? OR t.memo LIKE ? OR t.tags LIKE ? "
+                "OR c.name LIKE ? OR p.name LIKE ?)"
             )
-            params.extend([like, like, like, like])
+            params.extend([like, like, like, like, like])
         return self._rows(
             f"""
             SELECT t.date, t.amount, t.payee,
                    a.id AS account_id, a.name AS account_name,
                    c.id AS category_id, c.name AS category_name,
                    c.kind AS category_kind, c.color AS category_color,
-                   c.sort_order AS category_sort
+                   c.sort_order AS category_sort,
+                   p.name AS parent_name,
+                   COALESCE(p.id, c.id) AS top_id,
+                   COALESCE(p.name, c.name) AS top_name,
+                   COALESCE(p.color, c.color) AS top_color,
+                   COALESCE(p.sort_order, c.sort_order) AS top_sort
             FROM transactions t
             JOIN accounts a ON a.id = t.account_id
             LEFT JOIN categories c ON c.id = t.category_id
+            LEFT JOIN categories p ON p.id = c.parent_id
             WHERE {' AND '.join(clauses)}
             """,
             tuple(params),
@@ -586,8 +764,13 @@ class DataStore:
         account_id: int | None = None,
         search: str = "",
         sort_by_amount: bool = False,
+        rollup: bool = False,
     ) -> list[ReportRow]:
-        """Aggregate a date range into report rows (category, payee or account)."""
+        """Aggregate a date range into report rows (category, payee or account).
+
+        Category views can either list every subcategory (``rollup=False``)
+        or fold subcategories into their parent (``rollup=True``).
+        """
         groups: dict[str, ReportRow] = {}
         for row in self._report_transactions(start, end, account_id, search):
             if not self._report_includes(row, kind):
@@ -600,9 +783,23 @@ class DataStore:
                 label = str(row["account_name"] or "(no account)")
                 key = f"account:{row['account_id']}"
                 color, sort_order = "", 0
+            elif rollup:
+                name = row["top_name"]
+                label = str(name or "(no category)")
+                key = f"category:{row['top_id'] or 'none'}"
+                color = (
+                    theme_category_color(str(name), str(row["top_color"]))
+                    if name
+                    else theme_category_color("", None)
+                )
+                sort_order = int(row["top_sort"] or 0)
             else:
                 name = row["category_name"]
-                label = str(name or "(no category)")
+                parent_name = row["parent_name"]
+                if name and parent_name:
+                    label = f"{parent_name} : {name}"
+                else:
+                    label = str(name or "(no category)")
                 key = f"category:{row['category_id'] or 'none'}"
                 color = (
                     theme_category_color(str(name), str(row["category_color"]))
@@ -701,15 +898,19 @@ class DataStore:
             params.append(account_id)
         rows = self._rows(
             f"""
-            SELECT c.id, c.name, c.color, SUM({sign}t.amount) AS total_amount
+            SELECT COALESCE(p.id, c.id) AS top_id,
+                   COALESCE(p.name, c.name) AS name,
+                   COALESCE(p.color, c.color) AS color,
+                   SUM({sign}t.amount) AS total_amount
             FROM transactions t
             JOIN categories c ON c.id = t.category_id
+            LEFT JOIN categories p ON p.id = c.parent_id
             WHERE t.date BETWEEN ? AND ?
               AND t.voided = 0
               AND t.amount {comparison} 0
               AND c.kind = ?
               {account_sql}
-            GROUP BY c.id
+            GROUP BY top_id
             HAVING total_amount > 0
             ORDER BY total_amount DESC
             """,
@@ -800,10 +1001,14 @@ class DataStore:
         rows = self._rows(
             f"""
             SELECT s.*, a.name AS account_name,
-                   c.name AS category_name, c.color AS category_color, c.kind AS category_kind
+                   CASE WHEN p.name IS NOT NULL AND p.name <> ''
+                        THEN p.name || ' : ' || c.name ELSE c.name END
+                       AS category_name,
+                   c.color AS category_color, c.kind AS category_kind
             FROM scheduled s
             JOIN accounts a ON a.id = s.account_id
             LEFT JOIN categories c ON c.id = s.category_id
+            LEFT JOIN categories p ON p.id = c.parent_id
             {where}
             ORDER BY s.next_date, s.id
             """,
@@ -1033,10 +1238,14 @@ class DataStore:
         return self._rows(
             f"""
             SELECT t.*, a.name AS account_name,
-                   c.name AS category_name, c.color AS category_color, c.kind AS category_kind
+                   CASE WHEN p.name IS NOT NULL AND p.name <> ''
+                        THEN p.name || ' : ' || c.name ELSE c.name END
+                       AS category_name,
+                   c.color AS category_color, c.kind AS category_kind
             FROM transactions t
             JOIN accounts a ON a.id = t.account_id
             LEFT JOIN categories c ON c.id = t.category_id
+            LEFT JOIN categories p ON p.id = c.parent_id
             {where}
             ORDER BY t.date, t.id
             """,
@@ -1136,12 +1345,16 @@ class DataStore:
     def export_csv(self, path: str | Path) -> int:
         rows = self._rows(
             """
-            SELECT t.date, a.name AS account, t.payee, c.name AS category,
+            SELECT t.date, a.name AS account, t.payee,
+                   CASE WHEN p.name IS NOT NULL AND p.name <> ''
+                        THEN p.name || ' : ' || c.name ELSE c.name END
+                       AS category,
                    t.memo, t.amount, t.cleared, t.reconciled, t.remind, t.flagged,
                    t.voided, t.payment, t.number, t.tags
             FROM transactions t
             JOIN accounts a ON a.id = t.account_id
             LEFT JOIN categories c ON c.id = t.category_id
+            LEFT JOIN categories p ON p.id = c.parent_id
             ORDER BY t.date, t.id
             """
         )
@@ -1331,14 +1544,45 @@ class DataStore:
         return self.add_account(name.strip() or "Imported", "Bank", 0.0)
 
     def _ensure_category(self, name: str, kind: str) -> int:
-        row = self.conn.execute("SELECT id FROM categories WHERE name=?", (name.strip(),)).fetchone()
+        """Find or create a category, parsing ``parent : child`` labels."""
+        label = name.strip()
+        if not label:
+            raise ValueError("empty category name")
+        parent_name, child_name = None, label
+        if ":" in label:
+            head, _, tail = label.partition(":")
+            if tail.strip():
+                parent_name, child_name = head.strip(), tail.strip()
+        parent_id = None
+        if parent_name:
+            parent_id = self._ensure_category(parent_name, kind)
+        if parent_id is None:
+            row = self.conn.execute(
+                "SELECT id FROM categories WHERE name=? AND parent_id IS NULL",
+                (child_name,),
+            ).fetchone()
+        else:
+            row = self.conn.execute(
+                "SELECT id FROM categories WHERE name=? AND parent_id=?",
+                (child_name, parent_id),
+            ).fetchone()
         if row:
             return int(row[0])
-        color = theme_category_color(name, "#8a8a8a")
+        parent = self.category(parent_id)
+        color = parent.color if parent is not None else theme_category_color(
+            child_name, "#8a8a8a"
+        )
         cur = self.conn.execute(
-            "INSERT INTO categories(name, kind, color, sort_order) VALUES (?,?,?, "
-            "(SELECT COALESCE(MAX(sort_order), -1) + 1 FROM categories))",
-            (name.strip(), kind, color),
+            "INSERT INTO categories(name, kind, color, sort_order, parent_id) "
+            "VALUES (?,?,?,?,?)",
+            (
+                child_name,
+                kind,
+                color,
+                parent.sort_order if parent is not None
+                else self._next_category_order(),
+                parent_id,
+            ),
         )
         return int(cur.lastrowid)
 

@@ -83,6 +83,28 @@ The ledger opens focused on the newest transaction:
 - **Enter** in the search box jumps focus to the filtered results.
 - **Tab / Shift+Tab** return to the filters when needed.
 
+## Subcategories
+
+**Manage → Categories…** now opens a category manager instead of a read-only
+list. Add, edit and delete categories, and give any of them subcategories —
+HomeBank style, two levels deep. Subcategories show everywhere as
+**Parent : Child** (the transaction editor's category field, the ledger, CSV
+export), inherit their parent's colour, and must share its type.
+
+- **New…** adds a category; picking a parent makes it a subcategory. Selecting
+  a row first pre-fills that row as the parent, so adding a subcategory is one
+  click.
+- Deleting a subcategory moves its transactions to the parent; deleting a
+  parent turns its subcategories into top-level categories and leaves its own
+  transactions uncategorized.
+- Reports list each **Parent : Child** as its own row in the table view, while
+  the pie and bar charts and the dashboard donut fold subcategories into their
+  parent's total.
+- A budget on a category covers its subcategories' spending too; you can also
+  budget a subcategory on its own.
+- CSV import accepts `parent : child` category text and creates the hierarchy
+  automatically; CSV export writes the same format back out.
+
 ## Reports
 
 ![ContaPy reports window](screenshots/reports.png)
@@ -106,8 +128,8 @@ The header always shows the **Expense**, **Income** and **Total** for the
 filtered rows. Switch between the three views from the toolbar or with
 `Ctrl+1` / `Ctrl+2` / `Ctrl+3`:
 
-- **Table** — one row per category/payee/account or month, with amounts and a
-  totals row.
+- **Table** — one row per category/subcategory (`Parent : Child`), payee,
+  account or month, with amounts and a totals row.
 - **Pie chart** — donut with a legend showing the exact amount and share.
 - **Bar chart** — horizontal amount bars in Total mode, or a monthly
   income/spending chart in Time mode.
@@ -131,6 +153,8 @@ states as the month fills up, plus a **Remaining** or **Over by** amount.
   larger per-category trend dialog with the exact monthly amounts.
 - The header summarises the total **Budgeted**, **Spent** and **Remaining** for
   the selected month. Voided transactions and income categories are excluded.
+  A budget on a category also counts its subcategories' spending, and
+  subcategories can carry their own budget.
 
 ## What the welcome page includes
 
@@ -152,6 +176,7 @@ The demo figures are aligned to the reference: last 30 days **$167,248.99**, rec
 - **Banamex import** — converts saved Banamex HTML statements (dates, memos and amounts) before the standard import preview.
 - **Reports window** — HomeBank-style Display panel, Category/Payee/Account and monthly grouping, Expense/Income types, date presets and custom ranges, search and account filters, and table, pie and bar views.
 - **Budgets window** — monthly per-category expense budgets with progress bars, remaining/over amounts, month navigation and six-month trend charts that zoom into a larger dialog.
+- **Subcategories** — a category manager with add/edit/delete, two-level `Parent : Child` categories everywhere (editor, ledger, CSV import/export), and roll-ups in the donut, report charts and budgets.
 - Schedule one-off bills; post or skip them from the home strip.
 - Mark posted transactions as cleared, reconciled, remind, flagged or voided; these drive the home balance columns and Future/Remind lists. Voided transactions are kept for the audit trail but ignored by balances and reports.
 - SQLite persistence (no server, no account, no telemetry).
@@ -289,6 +314,8 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | Open budgets | `Ctrl+B`, the toolbar **Budgets** button, or **Reports → Budgets…** |
 | Set or clear a monthly budget | **Set budgets…** in the budgets window; enter `0` to remove one |
 | Browse budget months | `←` / `→` in the budgets window, or **This month** |
+| Add a category or subcategory | **Manage → Categories… → New…**, then pick a parent for a subcategory |
+| Rename, retype or move a category | Double-click it in **Manage → Categories…** |
 | Navigate ledger rows | `↑` / `↓`; **Home/End** for newest/oldest |
 | Open a ledger transaction | `Enter` on the selected row |
 | Delete a ledger transaction | `Delete` on the selected row |
@@ -311,7 +338,7 @@ date,account,payee,category,memo,amount,cleared,reconciled,remind,flagged,voided
 2026-11-07,Banamex,Client payment,Ingresos,Invoice 104,12000.00,yes,yes,no,no,,1042,work
 ```
 
-`date` and `amount` are required; missing accounts/categories are created during import. Dates may be `YYYY-MM-DD`, `MM/DD/YYYY` or `DD/MM/YYYY`. Status, payment, number and tags columns are optional for older CSVs. Imports also accept HomeBank-style headers (`Fecha`, `Importe`, `Beneficiario`, `Memo`, `Pago`, `Número`, `Categoría`, `Etiquetas`), and a file without an Account column is imported into the account selected in the import dialog. Header mappings can be edited in the dialog and are remembered per header set.
+`date` and `amount` are required; missing accounts/categories are created during import, and category text may be a `parent : child` label, which builds the subcategory automatically. Dates may be `YYYY-MM-DD`, `MM/DD/YYYY` or `DD/MM/YYYY`. Status, payment, number and tags columns are optional for older CSVs. Imports also accept HomeBank-style headers (`Fecha`, `Importe`, `Beneficiario`, `Memo`, `Pago`, `Número`, `Categoría`, `Etiquetas`), and a file without an Account column is imported into the account selected in the import dialog. Header mappings can be edited in the dialog and are remembered per header set.
 
 ## How it works
 
@@ -353,7 +380,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-Ninety tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, closest-amount highlighting for voiding, monthly budgets and six-month budget trends, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
+One hundred and eight tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, closest-amount highlighting for voiding, subcategories (storage, reports, budgets, imports and the manager dialog), monthly budgets and six-month budget trends, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
 
 ## Notes / limitations
 

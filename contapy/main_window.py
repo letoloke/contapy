@@ -37,6 +37,7 @@ from .widgets.ledger import LedgerWindow
 from .widgets.reports import ReportsWindow
 from .widgets.dialogs import (
     AccountDialog,
+    CategoriesDialog,
     ListDialog,
     PreferencesDialog,
     TransactionDialog,
@@ -686,20 +687,10 @@ class MainWindow(QMainWindow):
         self.close()
 
     def show_categories(self) -> None:
-        categories = self.store.categories()
-        rows = [
-            (
-                category.name,
-                "Income category" if category.kind == "income" else "Spending category",
-            )
-            for category in sorted(categories, key=lambda c: (c.kind != "expense", c.sort_order))
-        ]
-        ListDialog(
-            "Categories",
-            "Categories group transactions for the spending report and the ledger.",
-            rows,
-            self,
-        ).exec()
+        dialog = CategoriesDialog(self.store, self)
+        dialog.exec()
+        if dialog.changed:
+            self.refresh_all()
 
     def show_payees(self) -> None:
         payees = self.store.payees()

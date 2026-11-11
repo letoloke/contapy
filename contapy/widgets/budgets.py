@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..db import DataStore
-from ..models import BudgetStatus
+from ..models import BudgetStatus, ordered_categories
 from ..money import money, money_short
 from ..theme import C, font
 from .icons import IconButton, draw_chevron
@@ -388,7 +388,8 @@ class BudgetSettingsDialog(QDialog):
 
         intro = QLabel(
             "Set a monthly amount for each expense category. Zero removes the "
-            "budget. Amounts repeat every month."
+            "budget. Amounts repeat every month, and a budget on a category "
+            "also counts its subcategories' spending."
         )
         intro.setWordWrap(True)
         intro.setFont(font(13, 400))
@@ -410,13 +411,13 @@ class BudgetSettingsDialog(QDialog):
         grid.addWidget(self._header("Monthly budget"), 0, 2)
         self.spins: dict[int, QDoubleSpinBox] = {}
         row = 1
-        for category in self.store.categories():
+        for category in ordered_categories(self.store.categories()):
             if category.kind != "expense":
                 continue
             dot = QLabel()
             dot.setFixedSize(10, 10)
             dot.setStyleSheet(f"background:{category.color}; border-radius:5px;")
-            name = QLabel(category.name)
+            name = QLabel(category.full_name)
             name.setFont(font(13, 400))
             name.setStyleSheet(f"color:{C.TEXT};")
             wrap = QWidget()

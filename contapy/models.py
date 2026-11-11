@@ -27,6 +27,37 @@ class Category:
     kind: str = "expense"
     color: str = "#888888"
     sort_order: int = 0
+    parent_id: int | None = None
+    parent_name: str = ""
+
+    @property
+    def full_name(self) -> str:
+        """HomeBank-style label, e.g. ``Bills : Electricity``."""
+        return f"{self.parent_name} : {self.name}" if self.parent_name else self.name
+
+
+def ordered_categories(categories: list[Category]) -> list[Category]:
+    """Parents in list order, each followed by its subcategories."""
+    by_parent: dict[int | None, list[Category]] = {}
+    for category in categories:
+        by_parent.setdefault(category.parent_id, []).append(category)
+    ordered: list[Category] = []
+
+    def emit(parent_id: int | None) -> None:
+        for category in sorted(
+            by_parent.pop(parent_id, []),
+            key=lambda item: (item.sort_order, item.name.lower()),
+        ):
+            ordered.append(category)
+            if parent_id is None:
+                emit(category.id)
+
+    emit(None)
+    # Anything left over belongs to a category that no longer exists; keep it
+    # visible at the end rather than dropping rows from the UI.
+    for remaining in by_parent.values():
+        ordered.extend(sorted(remaining, key=lambda item: item.name.lower()))
+    return ordered
 
 
 @dataclass(slots=True)

@@ -1,0 +1,280 @@
+"""Tests for subcategories: storage, reports, budgets and the manager dialog."""
+
+from __future__ import annotations
+
+import os
+import tempfile
+import unittest
+from datetime import date, timedelta
+from pathlib import Path
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtWidgets import QApplication
+
+from contapy.db import DataStore
+from contapy.models import Category, ordered_categories
+from contapy.widgets.dialogs import CategoriesDialog, CategoryDialog
+
+
+def insert_transaction(
+    store: DataStore, account_id: int, category_id: int | None, amount: float
+) -> None:
+    store.conn.execute(
+        "INSERT INTO transactions(account_id, date, payee, category_id, amount, "
+        "cleared, reconciled, remind, flagged, voided) VALUES (?,?,?,?,?,1,0,0,0,0)",
+        (account_id, date.today().isoformat(), "Payee", category_id, amount),
+    )
+    store.conn.commit()
+
+
+class SubcategoryStoreTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = DataStore(Path(self.tmp.name) / "subs.db", seed=False)
+        cur = self.store.conn.execute(
+            "INSERT INTO accounts(name, kind, opening, sort_order) VALUES ('Bank','Bank',0,0)"
+        )
+        self.account_id = int(cur.lastrowid)
+
+    def tearDown(self) -> None:
+        self.store.close()
+        self.tmp.cleanup()
+
+    # ------------------------------------------------------------- hierarchy
+    def test_full_name_and_ordering(self) -> None:
+        parent = Category(id=1, name="Bills", kind="expense", sort_order=3)
+        child = Category(
+            id=2, name="Electricity", kind="expense", sort_order=3, parent_id=1,
+            parent_name="Bills",
+        )
+        other = Category(id=3, name="renta", kind="expense", sort_order=0)
+        self.assertEqual(child.full_name, "Bills : Electricity")
+        self.assertEqual(parent.full_name, "Bills")
+        ordered = ordered_categories([child, other, parent])
+        self.assertEqual([c.id for c in ordered], [3, 1, 2])
+
+    def test_add_category_creates_a_subcategory(self) -> None:
+        parent_id = self.store.add_category("Bills", "expense")
+        child_id = self.store.add_category("Electricity", "expense", parent_id)
+        parent, child = self.store.category(parent_id), self.store.category(child_id)
+        self.assertIsNone(parent.parent_id)
+        self.assertEqual(child.parent_id, parent_id)
+        self.assertEqual(child.parent_name, "Bills")
+        self.assertEqual(child.full_name, "Bills : Electricity")
+        self.assertEqual(child.color, parent.color)
+        self.assertEqual(child.sort_order, parent.sort_order)
+
+    def test_subcategory_rules_are_enforced(self) -> None:
+        parent_id = self.store.add_category("Bills", "expense")
+        child_id = self.store.add_category("Electricity", "expense", parent_id)
+        with self.assertRaises(ValueError):
+            self.store.add_category("Voltage", "expense", child_id)
+        income_id = self.store.add_category("Salary", "income")
+        with self.assertRaises(ValueError):
+            self.store.add_category("Bonus", "expense", income_id)
+        with self.assertRaises(ValueError):
+            self.store.add_category("", "expense")
+        with self.assertRaises(ValueError):
+            self.store.add_category("Bills", "expense")
+
+    def test_update_category_renames_and_reparents(self) -> None:
+        first = self.store.add_category("First", "expense")
+        second = self.store.add_category("Second", "expense")
+        child = self.store.add_category("Child", "expense", first)
+        self.store.update_category(child, "Renamed", "expense", second)
+        updated = self.store.category(child)
+        self.assertEqual(updated.name, "Renamed")
+        self.assertEqual(updated.parent_id, second)
+        self.assertEqual(updated.full_name, "Second : Renamed")
+
+    def test_update_category_syncs_children_types(self) -> None:
+        parent = self.store.add_category("Bills", "expense")
+        child = self.store.add_category("Electricity", "expense", parent)
+        self.store.update_category(parent, "Bills", "income", None)
+        self.assertEqual(self.store.category(child).kind, "income")
+
+    def test_delete_subcategory_moves_transactions_to_its_parent(self) -> None:
+        parent = self.store.add_category("Bills", "expense")
+        child = self.store.add_category("Electricity", "expense", parent)
+        insert_transaction(self.store, self.account_id, child, -100)
+        insert_transaction(self.store, self.account_id, child, -50)
+
+        moved = self.store.delete_category(child)
+        self.assertEqual(moved, 2)
+        rows = self.store.ledger_rows(self.account_id)
+        self.assertTrue(rows)
+        self.assertTrue(all(row.category_id == parent for row in rows))
+        self.assertTrue(all(row.category_name == "Bills" for row in rows))
+
+    def test_delete_parent_promotes_children_and_uncategorizes(self) -> None:
+        parent = self.store.add_category("Bills", "expense")
+        child = self.store.add_category("Electricity", "expense", parent)
+        insert_transaction(self.store, self.account_id, parent, -100)
+
+        self.store.delete_category(parent)
+        promoted = self.store.category(child)
+        self.assertIsNone(promoted.parent_id)
+        self.assertEqual(promoted.full_name, "Electricity")
+        rows = self.store.ledger_rows(self.account_id)
+        self.assertTrue(rows)
+        self.assertTrue(all(row.category_id is None for row in rows))
+
+    # ---------------------------------------------------------------- reports
+    def _seed_reports(self) -> tuple[int, int]:
+        parent = self.store.add_category("alimentos", "expense")
+        child = self.store.add_category("despensa", "expense", parent)
+        insert_transaction(self.store, self.account_id, parent, -300)
+        insert_transaction(self.store, self.account_id, child, -200)
+        return parent, child
+
+    def test_report_detail_lists_subcategories_with_full_names(self) -> None:
+        _parent, _child = self._seed_reports()
+        start = date.today() - timedelta(days=1)
+        rows = self.store.report_rows(start, date.today(), kind="expense")
+        self.assertEqual(
+            [row.label for row in rows], ["alimentos", "alimentos : despensa"]
+        )
+        self.assertAlmostEqual(sum(-row.expense for row in rows), 500.0, places=2)
+
+    def test_report_rollup_folds_subcategories_into_their_parent(self) -> None:
+        _parent, _child = self._seed_reports()
+        start = date.today() - timedelta(days=1)
+        rows = self.store.report_rows(start, date.today(), kind="expense", rollup=True)
+        self.assertEqual([row.label for row in rows], ["alimentos"])
+        self.assertAlmostEqual(-rows[0].expense, 500.0, places=2)
+
+    def test_report_search_matches_a_parent_for_subcategory_rows(self) -> None:
+        _parent, _child = self._seed_reports()
+        start = date.today() - timedelta(days=1)
+        rows = self.store.report_rows(
+            start, date.today(), kind="expense", search="alimentos"
+        )
+        self.assertEqual(len(rows), 2)
+
+    def test_donut_rolls_subcategories_into_their_parent(self) -> None:
+        _parent, _child = self._seed_reports()
+        start = date.today() - timedelta(days=1)
+        slices, total = self.store.spend_by_category(start, date.today())
+        self.assertEqual([slice_.name for slice_ in slices], ["alimentos"])
+        self.assertAlmostEqual(total, 500.0, places=2)
+
+    def test_budget_on_a_parent_includes_subcategory_spending(self) -> None:
+        parent, child = self._seed_reports()
+        self.store.set_budget(parent, 1_000)
+        status = self.store.budget_report(date.today().replace(day=1))[0]
+        self.assertEqual(status.category_name, "alimentos")
+        self.assertAlmostEqual(status.spent, 500.0, places=2)
+
+        self.store.set_budget(child, 250)
+        statuses = {
+            status.category_name: status
+            for status in self.store.budget_report(date.today().replace(day=1))
+        }
+        self.assertAlmostEqual(statuses["alimentos"].spent, 500.0, places=2)
+        self.assertAlmostEqual(statuses["alimentos : despensa"].spent, 200.0, places=2)
+
+    # ---------------------------------------------------------------- imports
+    def test_ensure_category_parses_parent_child_labels(self) -> None:
+        first = self.store._ensure_category("Bills : Electricity", "expense")
+        again = self.store._ensure_category("Bills : Electricity", "expense")
+        category = self.store.category(first)
+        self.assertEqual(first, again)
+        self.assertEqual(category.full_name, "Bills : Electricity")
+        self.assertEqual(category.parent_name, "Bills")
+
+        plain = self.store._ensure_category("renta", "expense")
+        self.assertIsNone(self.store.category(plain).parent_id)
+
+    def test_export_and_import_preserves_subcategories(self) -> None:
+        parent, child = self._seed_reports()
+        path = Path(self.tmp.name) / "export.csv"
+        exported = self.store.export_csv(path)
+
+        second = DataStore(Path(self.tmp.name) / "second.db", seed=False)
+        try:
+            added, _skipped, _duplicates = second.import_csv(path)
+            self.assertEqual(added, exported)
+            names = {c.full_name for c in second.categories()}
+            self.assertIn("alimentos", names)
+            self.assertIn("alimentos : despensa", names)
+        finally:
+            second.close()
+
+    # ------------------------------------------------------------------- seed
+    def test_demo_data_includes_subcategories(self) -> None:
+        demo = DataStore(Path(self.tmp.name) / "demo.db")
+        try:
+            categories = demo.categories()
+            subs = [c for c in categories if c.parent_id is not None]
+            self.assertEqual(len(subs), 3)
+            self.assertTrue(all(c.parent_name for c in subs))
+            parents = {c.id: c for c in categories if c.parent_id is None}
+            self.assertTrue(
+                all(c.parent_id in parents and parents[c.parent_id].kind == "expense"
+                    for c in subs)
+            )
+        finally:
+            demo.close()
+
+
+class CategoryDialogTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _store(self) -> DataStore:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        store = DataStore(Path(tmp.name) / "dialog.db", seed=False)
+        self.addCleanup(store.close)
+        return store
+
+    def test_values_and_parent_preselection(self) -> None:
+        store = self._store()
+        parent = store.add_category("Bills", "expense")
+        dialog = CategoryDialog(store, parent_id=parent)
+        dialog.name_edit.setText("Electricity")
+        name, kind, parent_id = dialog.values()
+        self.assertEqual((name, kind, parent_id), ("Electricity", "expense", parent))
+        dialog.deleteLater()
+
+    def test_parent_combo_follows_the_selected_type(self) -> None:
+        store = self._store()
+        store.add_category("Bills", "expense")
+        salary = store.add_category("Salary", "income")
+        dialog = CategoryDialog(store)
+        texts = [dialog.parent_combo.itemText(i) for i in range(dialog.parent_combo.count())]
+        self.assertIn("Bills", texts)
+        self.assertNotIn("Salary", texts)
+
+        dialog.kind_combo.setCurrentIndex(1)
+        texts = [dialog.parent_combo.itemText(i) for i in range(dialog.parent_combo.count())]
+        self.assertIn("Salary", texts)
+        self.assertNotIn("Bills", texts)
+        self.assertEqual(dialog.parent_combo.currentData(), None)
+        self.assertIn(salary, [
+            dialog.parent_combo.itemData(i) for i in range(dialog.parent_combo.count())
+        ])
+        dialog.deleteLater()
+
+    def test_categories_dialog_lists_and_tracks_changes(self) -> None:
+        store = self._store()
+        parent = store.add_category("Bills", "expense")
+        store.add_category("Electricity", "expense", parent)
+        dialog = CategoriesDialog(store)
+        self.addCleanup(dialog.deleteLater)
+        texts = [dialog.listing.item(i).text().split("\n")[0] for i in range(dialog.listing.count())]
+        self.assertEqual(texts, ["Bills", "Bills : Electricity"])
+
+        dialog.listing.setCurrentRow(1)
+        self.assertEqual(dialog._selected_category().full_name, "Bills : Electricity")
+        self.assertEqual(dialog._default_parent_id(), parent)
+
+        child = store.add_category("Water", "expense", parent)
+        dialog._reload_list(select_id=child)
+        self.assertEqual(dialog._selected_category().full_name, "Bills : Water")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -30,6 +30,15 @@ CATEGORY_SEED = [
     ("Other", 0.054, "MercadoRM", "Varios"),
 ]
 
+# Parent category -> subcategory. Part of the parent's rolling 30-day spend
+# is posted to the subcategory so the hierarchy is visible in the demo data,
+# while each parent's total (and every reference figure) stays the same.
+SUBCATEGORY_SEED = {
+    "alimentos": "despensa",
+    "suscripciones": "streaming",
+    "servicios": "internet",
+}
+
 # name, kind, reconciled, today
 ACCOUNT_SEED = [
     ("Banamex", "Bank", 97_611.82, 126_658.10),
@@ -79,6 +88,7 @@ def seed_if_empty(conn: sqlite3.Connection, force: bool = False) -> bool:
                 "('transactions','scheduled','accounts','categories')")
 
     category_ids: dict[str, int] = {}
+    category_orders: dict[str, int] = {}
     for order, (name, _share, _account, _payee) in enumerate(CATEGORY_SEED):
         kind = "expense"
         color = theme_category_color(name, "#8a8a8a")
@@ -87,6 +97,21 @@ def seed_if_empty(conn: sqlite3.Connection, force: bool = False) -> bool:
             (name, kind, color, order),
         )
         category_ids[name] = int(cur.lastrowid)
+        category_orders[name] = order
+    for parent_name, sub_name in SUBCATEGORY_SEED.items():
+        parent_id = category_ids[parent_name]
+        cur.execute(
+            "INSERT INTO categories(name, kind, color, sort_order, parent_id) "
+            "VALUES (?,?,?,?,?)",
+            (
+                sub_name,
+                "expense",
+                theme_category_color(parent_name, "#8a8a8a"),
+                category_orders[parent_name],
+                parent_id,
+            ),
+        )
+        category_ids[sub_name] = int(cur.lastrowid)
     cur.execute(
         "INSERT INTO categories(name, kind, color, sort_order) VALUES (?,?,?,?)",
         ("Ingresos", "income", theme_category_color("Ingresos", "#5c9736"), 99),
@@ -213,7 +238,9 @@ def seed_if_empty(conn: sqlite3.Connection, force: bool = False) -> bool:
             account,
             today - timedelta(days=3),
             payee,
-            name,
+            # Part of the spend lands on the subcategory so the demo shows
+            # the hierarchy without changing any category total.
+            SUBCATEGORY_SEED.get(name, name),
             -(amount - first_cut),
             "Recurring",
         )

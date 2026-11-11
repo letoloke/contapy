@@ -684,6 +684,20 @@ class ReportsWindow(QMainWindow):
             search=search,
             sort_by_amount=sort_by_amount,
         )
+        # Charts fold subcategories into their parent; the table keeps the
+        # detail rows so each "Parent : Child" stays visible.
+        chart_rows = rows
+        if self.group() == "category":
+            chart_rows = self.store.report_rows(
+                start,
+                end,
+                kind=kind,
+                view_by="category",
+                account_id=account_id,
+                search=search,
+                sort_by_amount=sort_by_amount,
+                rollup=True,
+            )
         months = self.store.report_months(
             start,
             end,
@@ -709,7 +723,12 @@ class ReportsWindow(QMainWindow):
             f"{friendly_date(start.isoformat())} – {friendly_date(end.isoformat())}"
         )
 
-        display_rows = self._display_rows(rows, kind, sort_by_amount)
+        table_rows = self._display_rows(rows, kind, sort_by_amount)
+        chart_display = (
+            self._display_rows(chart_rows, kind, sort_by_amount)
+            if chart_rows is not rows
+            else table_rows
+        )
         if mode == "time":
             self._populate_time_table(months)
             self._populate_pie(
@@ -721,15 +740,15 @@ class ReportsWindow(QMainWindow):
             )
             self._populate_time_bars(months, kind)
         else:
-            self._populate_group_table(display_rows)
+            self._populate_group_table(table_rows)
             self._populate_pie(
                 [
                     (label, amount, color)
-                    for label, color, amount, _expense, _income, _net in display_rows
+                    for label, color, amount, _expense, _income, _net in chart_display
                 ],
                 f"No {kind} in this period",
             )
-            self._populate_group_bars(display_rows, kind)
+            self._populate_group_bars(chart_display, kind)
         self._update_hint()
 
     @staticmethod
