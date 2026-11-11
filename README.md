@@ -12,7 +12,7 @@ This is totally vibe coding, using first DeepSeek-Harness and then (while on Oma
 
 The layout, terminology and dark chrome follow HomeBank: grouped accounts with **Reconciled / Cleared / Today / Future** columns, the total and time charts, the Scheduled / Future / Remind strip at the bottom, and a separate **account ledger** window with filters, running balances and status icons. Everything is implemented independently in Python/PySide6; this is not the HomeBank codebase and is not affiliated with the HomeBank project.
 
-The account **Ledger**, the **Transaction editor** and the **Reports** window are implemented as separate windows, like HomeBank's own windows. The current build uses its own SQLite store; opening HomeBank `.xhb` files or importing QIF/OFX/QFX is not implemented yet.
+The account **Ledger**, the **Transaction editor**, the **Reports** window and the **Budgets** window are implemented as separate windows, like HomeBank's own windows. The current build uses its own SQLite store; opening HomeBank `.xhb` files or importing QIF/OFX/QFX is not implemented yet.
 
 ## Transaction editor
 
@@ -115,6 +115,23 @@ filtered rows. Switch between the three views from the toolbar or with
 Every change applies immediately, and open report windows refresh when the
 ledger changes or `F5` is pressed.
 
+## Budgets
+
+**Reports → Budgets…** (`Ctrl+B`), or the toolbar's **Budgets** button, opens a
+monthly budget window for expense categories. Each category gets a progress bar
+comparing this month's spending with its budget, with green, amber and red
+states as the month fills up, plus a **Remaining** or **Over by** amount.
+
+- **Set budgets…** lists every expense category. Enter a monthly amount and
+  save; enter **0** to remove a budget. Budgets repeat every month.
+- **← / →** move to the previous or next month; **This month** jumps back.
+  Past months use the transactions recorded in that month, so trends and
+  remaining amounts update automatically.
+- Each row shows a **six-month spending trend**. Click the mini chart to open a
+  larger per-category trend dialog with the exact monthly amounts.
+- The header summarises the total **Budgeted**, **Spent** and **Remaining** for
+  the selected month. Voided transactions and income categories are excluded.
+
 ## What the welcome page includes
 
 - **Account tree** — Bank, Cash, Credit card and Savings groups with collapsible rows, alert markers for accounts with unreconciled transactions, and the four reference columns: **Reconciled, Cleared, Today, Future**. Group totals and the grand total update from the ledger. The list opens focused: **↑/↓** walk the accounts, **Home/End** jump, and **Enter** opens the selected account's ledger.
@@ -134,6 +151,7 @@ The demo figures are aligned to the reference: last 30 days **$167,248.99**, rec
 - **Booking import** — merges Booking payout and Sabee reservation exports, unpivots the amount columns and adds room names before the standard import preview.
 - **Banamex import** — converts saved Banamex HTML statements (dates, memos and amounts) before the standard import preview.
 - **Reports window** — HomeBank-style Display panel, Category/Payee/Account and monthly grouping, Expense/Income types, date presets and custom ranges, search and account filters, and table, pie and bar views.
+- **Budgets window** — monthly per-category expense budgets with progress bars, remaining/over amounts, month navigation and six-month trend charts that zoom into a larger dialog.
 - Schedule one-off bills; post or skip them from the home strip.
 - Mark posted transactions as cleared, reconciled, remind, flagged or voided; these drive the home balance columns and Future/Remind lists. Voided transactions are kept for the audit trail but ignored by balances and reports.
 - SQLite persistence (no server, no account, no telemetry).
@@ -268,6 +286,9 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | Edit a ledger row | Select it in the strip and click **Open Ledger**, or double-click it |
 | Reconcile / remind / flag / void | Select rows in the ledger, then use the icons in the bottom bar |
 | Void the closest highlighted rows | `Alt+V` with two or more ledger rows selected |
+| Open budgets | `Ctrl+B`, the toolbar **Budgets** button, or **Reports → Budgets…** |
+| Set or clear a monthly budget | **Set budgets…** in the budgets window; enter `0` to remove one |
+| Browse budget months | `←` / `→` in the budgets window, or **This month** |
 | Navigate ledger rows | `↑` / `↓`; **Home/End** for newest/oldest |
 | Open a ledger transaction | `Enter` on the selected row |
 | Delete a ledger transaction | `Delete` on the selected row |
@@ -332,7 +353,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-Seventy-nine tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, closest-amount highlighting for voiding, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
+Ninety tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, closest-amount highlighting for voiding, monthly budgets and six-month budget trends, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
 
 ## Notes / limitations
 

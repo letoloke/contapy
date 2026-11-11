@@ -7,6 +7,7 @@ as display-only snapshots.
 
 from __future__ import annotations
 
+import calendar
 import csv
 import json
 import os
@@ -28,6 +29,7 @@ from .csv_io import (
 from .models import (
     Account,
     Balance,
+    BudgetStatus,
     Category,
     MonthFlow,
     ReportRow,
@@ -57,6 +59,12 @@ CREATE TABLE IF NOT EXISTS categories (
     kind        TEXT NOT NULL DEFAULT 'expense',
     color       TEXT NOT NULL DEFAULT '#888888',
     sort_order  INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS budgets (
+    category_id INTEGER PRIMARY KEY REFERENCES categories(id) ON DELETE CASCADE,
+    amount      REAL NOT NULL DEFAULT 0,
+    updated_at  TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS transactions (
@@ -155,6 +163,13 @@ ImportFingerprint = tuple[int, str, str, str, float]
 def daily_backup_dir(db_path: str | Path) -> Path:
     """Folder for the automatic daily copies, beside the active database."""
     return Path(db_path).expanduser().parent / BACKUP_DIR_NAME
+
+
+def _shift_month_start(day: date, months: int) -> date:
+    """First day of the month ``months`` away from ``day``."""
+    index = day.year * 12 + day.month - 1 + months
+    year, month0 = divmod(index, 12)
+    return date(year, month0 + 1, 1)
 
 
 def import_fingerprint(
@@ -419,6 +434,98 @@ class DataStore:
             if category.id == category_id:
                 return category
         return None
+
+    # ---------------------------------------------------------------- budgets
+    def budgets(self) -> dict[int, float]:
+        """Monthly budget amount per category, ignoring removed/zero budgets."""
+        rows = self._rows(
+            "SELECT category_id, amount FROM budgets WHERE amount > 0 ORDER BY category_id"
+        )
+        return {int(row["category_id"]): float(row["amount"]) for row in rows}
+
+    def budget_amount(self, category_id: int) -> float:
+        row = self.conn.execute(
+            "SELECT amount FROM budgets WHERE category_id = ?", (category_id,)
+        ).fetchone()
+        return float(row["amount"]) if row is not None else 0.0
+
+    def set_budget(self, category_id: int, amount: float) -> None:
+        """Set or clear one category's monthly budget."""
+        amount = round(float(amount), 2)
+        if amount <= 0:
+            self.conn.execute(
+                "DELETE FROM budgets WHERE category_id = ?", (category_id,)
+            )
+        else:
+            self.conn.execute(
+                """
+                INSERT INTO budgets(category_id, amount, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(category_id) DO UPDATE SET
+                    amount = excluded.amount,
+                    updated_at = excluded.updated_at
+                """,
+                (category_id, amount, datetime.now().isoformat(timespec="seconds")),
+            )
+        self.conn.commit()
+
+    def budget_report(
+        self, month_start: date, months: int = 6
+    ) -> list[BudgetStatus]:
+        """Budgeted expense categories with monthly spend and a trend."""
+        months = max(1, int(months))
+        month_start = month_start.replace(day=1)
+        last_day = calendar.monthrange(month_start.year, month_start.month)[1]
+        month_end = month_start.replace(day=last_day)
+        trend_start = _shift_month_start(month_start, -(months - 1))
+        month_keys: list[tuple[str, str]] = []
+        for index in range(months):
+            current = _shift_month_start(trend_start, index)
+            month_keys.append(
+                (current.strftime("%Y-%m"), calendar.month_abbr[current.month])
+            )
+
+        rows = self._rows(
+            """
+            SELECT t.category_id AS category_id,
+                   substr(t.date, 1, 7) AS month_key,
+                   SUM(-t.amount) AS spent
+            FROM transactions t
+            JOIN categories c ON c.id = t.category_id
+            WHERE t.voided = 0
+              AND t.amount < 0
+              AND c.kind = 'expense'
+              AND t.date BETWEEN ? AND ?
+            GROUP BY t.category_id, month_key
+            """,
+            (trend_start.isoformat(), month_end.isoformat()),
+        )
+        by_category: dict[int, dict[str, float]] = {}
+        for row in rows:
+            by_category.setdefault(int(row["category_id"]), {})[str(row["month_key"])] = float(
+                row["spent"]
+            )
+
+        budgets = self.budgets()
+        statuses: list[BudgetStatus] = []
+        for category in self.categories():
+            if category.kind != "expense" or category.id not in budgets:
+                continue
+            monthly = by_category.get(category.id, {})
+            trend = [
+                (label, monthly.get(key, 0.0)) for key, label in month_keys
+            ]
+            statuses.append(
+                BudgetStatus(
+                    category_id=category.id,
+                    category_name=category.name,
+                    color=category.color,
+                    budget=budgets[category.id],
+                    spent=trend[-1][1],
+                    trend=trend,
+                )
+            )
+        return statuses
 
     # --------------------------------------------------------------- reports
     def date_span(self) -> tuple[date, date]:

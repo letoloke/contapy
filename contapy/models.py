@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(slots=True)
@@ -27,6 +27,30 @@ class Category:
     kind: str = "expense"
     color: str = "#888888"
     sort_order: int = 0
+
+
+@dataclass(slots=True)
+class BudgetStatus:
+    """Monthly budget progress for one category."""
+
+    category_id: int
+    category_name: str
+    color: str
+    budget: float
+    spent: float
+    trend: list[tuple[str, float]] = field(default_factory=list)
+
+    @property
+    def remaining(self) -> float:
+        return self.budget - self.spent
+
+    @property
+    def ratio(self) -> float:
+        return self.spent / self.budget if self.budget > 0 else 0.0
+
+    @property
+    def over(self) -> bool:
+        return self.budget > 0 and self.spent > self.budget + 0.005
 
 
 @dataclass(slots=True)

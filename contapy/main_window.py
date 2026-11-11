@@ -30,6 +30,7 @@ from .models import ScheduledItem
 from .money import money
 from .theme import C, font, select_theme
 from .widgets.accounts import AccountsPanel
+from .widgets.budgets import BudgetWindow
 from .widgets.charts import ChartCard, DonutChart, SpendingRevenueChart
 from .widgets.import_dialog import CsvImportDialog
 from .widgets.ledger import LedgerWindow
@@ -52,6 +53,7 @@ class MainWindow(QMainWindow):
         self.store = store
         self.ledgers: dict[int, LedgerWindow] = {}
         self.reports_window: ReportsWindow | None = None
+        self.budget_window: BudgetWindow | None = None
         self._initial_focus_done = False
         self._closing = False
         self._keep_store = False
@@ -158,8 +160,10 @@ class MainWindow(QMainWindow):
         self.act_focus_spending = self._action("Spending by Category", self.focus_spending)
         self.act_focus_cashflow = self._action("Spending & Revenue", self.focus_cashflow)
         self.act_reports = self._action("Reports Window…", self.open_reports, "Ctrl+R")
+        self.act_budgets = self._action("Budgets…", self.open_budgets, "Ctrl+B")
         reports_menu = bar.addMenu("Reports")
         reports_menu.addAction(self.act_reports)
+        reports_menu.addAction(self.act_budgets)
         reports_menu.addSeparator()
         reports_menu.addAction(self.act_focus_spending)
         reports_menu.addAction(self.act_focus_cashflow)
@@ -288,6 +292,7 @@ class MainWindow(QMainWindow):
         self.toolbar.spendingFocus.connect(self.focus_spending)
         self.toolbar.cashflowFocus.connect(self.focus_cashflow)
         self.toolbar.reportsRequested.connect(self.open_reports)
+        self.toolbar.budgetsRequested.connect(self.open_budgets)
 
         self.accounts_panel.accountSelected.connect(lambda _id: self._update_actions())
         self.accounts_panel.openRequested.connect(self.open_ledger)
@@ -338,6 +343,11 @@ class MainWindow(QMainWindow):
                 self.reports_window.reload()
             except RuntimeError:
                 self.reports_window = None
+        if self.budget_window is not None:
+            try:
+                self.budget_window.reload()
+            except RuntimeError:
+                self.budget_window = None
         self._update_actions()
 
     @staticmethod
@@ -371,6 +381,20 @@ class MainWindow(QMainWindow):
         window = ReportsWindow(self.store, self)
         self.reports_window = window
         window.destroyed.connect(lambda _obj=None: setattr(self, "reports_window", None))
+        window.show()
+        window.raise_()
+        window.activateWindow()
+
+    def open_budgets(self) -> None:
+        if self.budget_window is not None and self.budget_window.isVisible():
+            self.budget_window.show()
+            self.budget_window.raise_()
+            self.budget_window.activateWindow()
+            return
+        window = BudgetWindow(self.store, self)
+        self.budget_window = window
+        window.destroyed.connect(lambda _obj=None: setattr(self, "budget_window", None))
+        window.changed.connect(self.refresh_all)
         window.show()
         window.raise_()
         window.activateWindow()
@@ -754,6 +778,12 @@ class MainWindow(QMainWindow):
                 except RuntimeError:
                     pass
                 self.reports_window = None
+            if self.budget_window is not None:
+                try:
+                    self.budget_window.close()
+                except RuntimeError:
+                    pass
+                self.budget_window = None
             for ledger in list(self.ledgers.values()):
                 try:
                     ledger.close()
@@ -993,6 +1023,12 @@ class MainWindow(QMainWindow):
             except RuntimeError:
                 pass
             self.reports_window = None
+        if self.budget_window is not None:
+            try:
+                self.budget_window.close()
+            except RuntimeError:
+                pass
+            self.budget_window = None
         for ledger in list(self.ledgers.values()):
             try:
                 ledger.close()
