@@ -41,9 +41,9 @@ from .widgets.dialogs import (
     CategoriesDialog,
     ListDialog,
     PreferencesDialog,
+    ShortcutsDialog,
     TransactionDialog,
     about_text,
-    shortcuts_text,
 )
 from .widgets.scheduled import ScheduledPanel
 from .widgets.toolbar import AppToolbar
@@ -185,7 +185,11 @@ class MainWindow(QMainWindow):
         tools_menu.addAction(self.act_export)
 
         help_menu = bar.addMenu("Help")
-        help_menu.addAction(self._action("Keyboard Shortcuts", self.show_shortcuts))
+        self.act_shortcuts = self._action(
+            "Keyboard Shortcuts", self.show_shortcuts, "Ctrl+K"
+        )
+        self.act_shortcuts.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+        help_menu.addAction(self.act_shortcuts)
         help_menu.addAction(self._action("About ContaPy", self.show_about))
 
     def _action(self, text: str, slot, shortcut: str | None = None) -> QAction:
@@ -961,11 +965,7 @@ class MainWindow(QMainWindow):
         self.show_toast(f"Exported {count} transactions")
 
     def show_shortcuts(self) -> None:
-        box = QMessageBox(self)
-        box.setWindowTitle("Keyboard Shortcuts")
-        box.setTextFormat(Qt.TextFormat.RichText)
-        box.setText(shortcuts_text())
-        box.exec()
+        ShortcutsDialog(self).exec()
 
     def show_about(self) -> None:
         box = QMessageBox(self)

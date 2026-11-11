@@ -1903,35 +1903,185 @@ def about_text() -> str:
     )
 
 
+SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
+    (
+        "Global",
+        [
+            ("Ctrl+K", "Show this shortcut list"),
+            ("Ctrl+N", "New transaction"),
+            ("Ctrl+Shift+N", "New account"),
+            ("Ctrl+I", "Import CSV"),
+            ("Ctrl+E", "Export CSV"),
+            ("Ctrl+O", "Open database"),
+            ("Ctrl+Shift+S", "Save database as"),
+            ("Ctrl+L", "Open the selected account's ledger"),
+            ("Ctrl+R", "Open the reports window"),
+            ("Ctrl+B", "Open the budgets window"),
+            ("F5", "Refresh the dashboard"),
+            ("Ctrl+,", "Preferences"),
+            ("Ctrl+Q", "Quit"),
+        ],
+    ),
+    (
+        "Accounts list",
+        [
+            ("↑ / ↓", "Move between accounts"),
+            ("Home / End", "Jump to the first or last account"),
+            ("Enter", "Open the selected account's ledger"),
+        ],
+    ),
+    (
+        "Account ledger",
+        [
+            ("↑ / ↓", "Move between transactions"),
+            ("Home / End", "Jump to the newest or oldest transaction"),
+            ("Enter", "Open the selected transaction"),
+            ("Delete", "Delete the selected transaction"),
+            ("Ctrl+N", "New transaction"),
+            ("Ctrl+D", "Inherit a new transaction from the selection"),
+            ("Alt+V", "Void the highlighted closest amounts (2+ rows selected)"),
+            ("Ctrl+W / Esc", "Close the ledger"),
+        ],
+    ),
+    (
+        "Transaction window",
+        [
+            ("Enter", "Save the transaction"),
+            ("Tab", "Move to the next field"),
+            ("Alt+E / Alt+I / Alt+T", "Expense, Income or Transfer"),
+            ("Ctrl+0–5", "No status, Flagged, Cleared, Reconciled, Remind, Voided"),
+            ("Esc", "Cancel"),
+        ],
+    ),
+    (
+        "Categories",
+        [
+            ("Enter", "Edit the selected category"),
+            ("Delete", "Delete the selected category"),
+        ],
+    ),
+    (
+        "Reports window",
+        [
+            ("Ctrl+1 / Ctrl+2 / Ctrl+3", "Table, Pie chart or Bar chart"),
+            ("F5", "Refresh the report"),
+            ("Ctrl+W / Esc", "Close the reports window"),
+        ],
+    ),
+    (
+        "Budgets window",
+        [
+            ("← / →", "Previous or next budget period"),
+            ("Esc", "Close the budgets window"),
+        ],
+    ),
+]
+
+
+def _shortcut_rows() -> list[tuple[str, str, str]]:
+    return [
+        (group, shortcut, description)
+        for group, items in SHORTCUT_GROUPS
+        for shortcut, description in items
+    ]
+
+
 def shortcuts_text() -> str:
-    return (
-        "<b>Ctrl+N</b> &nbsp; New transaction<br>"
-        "<b>Ctrl+Shift+N</b> &nbsp; New account<br>"
-        "<b>Ctrl+I</b> &nbsp; Import CSV<br>"
-        "<b>Ctrl+E</b> &nbsp; Export CSV<br>"
-        "<b>Ctrl+O</b> &nbsp; Open database<br>"
-        "<b>Ctrl+Shift+S</b> &nbsp; Save database as<br>"
-        "<b>Ctrl+L</b> &nbsp; Open account ledger<br>"
-        "<b>Ctrl+R</b> &nbsp; Open reports<br>"
-        "<b>Ctrl+B</b> &nbsp; Open budgets<br>"
-        "<b>F5</b> &nbsp; Refresh dashboard<br>"
-        "<b>Ctrl+,</b> &nbsp; Preferences<br>"
-        "<b>Ctrl+Q</b> &nbsp; Quit<br><br>"
-        "<b>In the accounts list</b><br>"
-        "<b>↑/↓</b> move · <b>Home/End</b> jump · <b>Enter</b> open ledger<br><br>"
-        "<b>In the ledger</b><br>"
-        "<b>↑/↓</b> move · <b>Home/End</b> jump · <b>Enter</b> open · "
-        "<b>Delete</b> remove · <b>Esc</b> close<br>"
-        "<b>Alt+V</b> with 2+ rows selected voids the highlighted closest amounts<br><br>"
-        "<b>In the transaction window</b><br>"
-        "<b>Enter</b> saves · <b>Tab</b> moves · <b>Alt+E/I/T</b> type · "
-        "<b>Ctrl+0–5</b> status<br><br>"
-        "<b>In the reports window</b><br>"
-        "<b>Ctrl+1/2/3</b> table, pie, bar · <b>F5</b> refresh · "
-        "<b>Esc</b> close<br><br>"
-        "<b>In the budgets window</b><br>"
-        "<b>←/→</b> previous/next month · click a trend to zoom in · "
-        "<b>Esc</b> close<br><br>"
-        f"<span style='color:{C.MUTED};'>Double-click an account to open its ledger, or a "
-        "scheduled transaction to edit and post it.</span>"
+    """Rich-text fallback listing every shortcut by context."""
+    parts: list[str] = []
+    for group, items in SHORTCUT_GROUPS:
+        parts.append(f"<b>{group}</b><br>")
+        for shortcut, description in items:
+            parts.append(f"<b>{shortcut}</b> &nbsp; {description}<br>")
+        parts.append("<br>")
+    parts.append(
+        f"<span style='color:{C.MUTED};'>Press Ctrl+K anywhere in ContaPy to "
+        "open this list.</span>"
     )
+    return "".join(parts)
+
+
+class ShortcutsDialog(QDialog):
+    """Searchable list of every keyboard shortcut, opened with Ctrl+K."""
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle("Keyboard Shortcuts")
+        self.setModal(True)
+        self.setMinimumSize(680, 620)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(20, 18, 20, 16)
+        root.setSpacing(10)
+
+        heading = QLabel("Keyboard shortcuts")
+        heading.setFont(font(18, 600))
+        root.addWidget(heading)
+
+        subtitle = QLabel(
+            "Press Ctrl+K anywhere in ContaPy to open this list. Type below to "
+            "filter by context, key or action; Esc closes."
+        )
+        subtitle.setWordWrap(True)
+        subtitle.setFont(font(13, 400))
+        subtitle.setStyleSheet(f"color:{C.MUTED};")
+        root.addWidget(subtitle)
+
+        self.search_edit = QLineEdit()
+        self.search_edit.setPlaceholderText("Filter shortcuts…")
+        self.search_edit.setClearButtonEnabled(True)
+        root.addWidget(self.search_edit)
+
+        self.table = QTableWidget()
+        self.table.setColumnCount(3)
+        self.table.setHorizontalHeaderLabels(["Where", "Shortcut", "Action"])
+        self.table.verticalHeader().setVisible(False)
+        self.table.setShowGrid(False)
+        self.table.setWordWrap(False)
+        self.table.setFont(font(13, 400))
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+
+        rows = _shortcut_rows()
+        self.table.setRowCount(len(rows))
+        for row, (group, shortcut, description) in enumerate(rows):
+            for column, text in enumerate((group, shortcut, description)):
+                item = QTableWidgetItem(text)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                if column == 1:
+                    item.setFont(font(13, 600))
+                    item.setForeground(QColor(C.TITLE))
+                self.table.setItem(row, column, item)
+        root.addWidget(self.table, 1)
+
+        self.search_edit.textChanged.connect(self._filter)
+        self.search_edit.setFocus()
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        close = QPushButton("Close")
+        close.setAutoDefault(False)
+        close.setCursor(Qt.CursorShape.PointingHandCursor)
+        close.clicked.connect(self.accept)
+        buttons.addWidget(close)
+        root.addLayout(buttons)
+
+    def _filter(self, text: str) -> None:
+        needle = text.strip().casefold()
+        for row in range(self.table.rowCount()):
+            match = not needle or any(
+                needle in (self.table.item(row, column).text().casefold())
+                for column in range(self.table.columnCount())
+            )
+            self.table.setRowHidden(row, not match)
+
+    def visible_rows(self) -> int:
+        """Number of shortcut rows currently shown (tests and future search)."""
+        return sum(
+            not self.table.isRowHidden(row) for row in range(self.table.rowCount())
+        )
