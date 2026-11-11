@@ -92,6 +92,9 @@ of them subcategories — HomeBank style, two levels deep. Subcategories show
 everywhere as **Parent : Child** (the transaction editor's category field, the
 ledger, CSV export), inherit their parent's colour, and must share its type.
 
+- Categories and their subcategories are listed **alphabetically** (case
+  insensitive) in the manager, every category picker, the budgets window and
+  the reports. Subcategories stay grouped under their parent.
 - **New…** adds a category of the active tab's type; picking a parent makes it a
   subcategory. Selecting a row first pre-fills that row as the parent, so adding
   a subcategory is one click. Editing a category moves it to the matching tab if

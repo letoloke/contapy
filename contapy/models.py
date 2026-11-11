@@ -38,7 +38,7 @@ class Category:
 
 
 def ordered_categories(categories: list[Category]) -> list[Category]:
-    """Parents in list order, each followed by its subcategories."""
+    """Parents alphabetically, each followed by its alphabetically sorted subs."""
     by_parent: dict[int | None, list[Category]] = {}
     for category in categories:
         by_parent.setdefault(category.parent_id, []).append(category)
@@ -47,7 +47,7 @@ def ordered_categories(categories: list[Category]) -> list[Category]:
     def emit(parent_id: int | None) -> None:
         for category in sorted(
             by_parent.pop(parent_id, []),
-            key=lambda item: (item.sort_order, item.name.lower()),
+            key=lambda item: (item.name.casefold(), item.id),
         ):
             ordered.append(category)
             if parent_id is None:
@@ -57,7 +57,7 @@ def ordered_categories(categories: list[Category]) -> list[Category]:
     # Anything left over belongs to a category that no longer exists; keep it
     # visible at the end rather than dropping rows from the UI.
     for remaining in by_parent.values():
-        ordered.extend(sorted(remaining, key=lambda item: item.name.lower()))
+        ordered.extend(sorted(remaining, key=lambda item: item.name.casefold()))
     return ordered
 
 

@@ -479,7 +479,7 @@ class DataStore:
                    p.name AS parent_name
             FROM categories c
             LEFT JOIN categories p ON p.id = c.parent_id
-            ORDER BY c.kind DESC, c.sort_order, c.id
+            ORDER BY c.kind DESC, c.name COLLATE NOCASE, c.id
             """
         )
         return [
@@ -912,9 +912,9 @@ class DataStore:
 
         rows = list(groups.values())
         if sort_by_amount:
-            rows.sort(key=lambda item: (-item.magnitude, item.label.lower()))
+            rows.sort(key=lambda item: (-item.magnitude, item.label.casefold()))
         else:
-            rows.sort(key=lambda item: (item.sort_order, item.label.lower()))
+            rows.sort(key=lambda item: item.label.casefold())
         return rows
 
     def report_months(

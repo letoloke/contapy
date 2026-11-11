@@ -61,17 +61,18 @@ class SubcategoryStoreTests(unittest.TestCase):
         self.tmp.cleanup()
 
     # ------------------------------------------------------------- hierarchy
-    def test_full_name_and_ordering(self) -> None:
+    def test_full_name_and_alphabetical_ordering(self) -> None:
         parent = Category(id=1, name="Bills", kind="expense", sort_order=3)
         child = Category(
             id=2, name="Electricity", kind="expense", sort_order=3, parent_id=1,
             parent_name="Bills",
         )
         other = Category(id=3, name="renta", kind="expense", sort_order=0)
+        coffee = Category(id=4, name="Coffee", kind="expense", sort_order=1)
         self.assertEqual(child.full_name, "Bills : Electricity")
         self.assertEqual(parent.full_name, "Bills")
-        ordered = ordered_categories([child, other, parent])
-        self.assertEqual([c.id for c in ordered], [3, 1, 2])
+        ordered = ordered_categories([child, other, parent, coffee])
+        self.assertEqual([c.id for c in ordered], [1, 2, 4, 3])
 
     def test_add_category_creates_a_subcategory(self) -> None:
         parent_id = self.store.add_category("Bills", "expense")
