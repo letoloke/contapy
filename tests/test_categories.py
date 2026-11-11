@@ -20,17 +20,29 @@ from contapy.models import Category, ordered_categories
 from contapy.widgets.dialogs import (
     CategoriesDialog,
     CategoryDialog,
+    CategoryTransactionsDialog,
     TransactionDialog,
 )
 
 
 def insert_transaction(
-    store: DataStore, account_id: int, category_id: int | None, amount: float
+    store: DataStore,
+    account_id: int,
+    category_id: int | None,
+    amount: float,
+    when: date | None = None,
+    payee: str = "Payee",
 ) -> None:
     store.conn.execute(
         "INSERT INTO transactions(account_id, date, payee, category_id, amount, "
         "cleared, reconciled, remind, flagged, voided) VALUES (?,?,?,?,?,1,0,0,0,0)",
-        (account_id, date.today().isoformat(), "Payee", category_id, amount),
+        (
+            account_id,
+            (when or date.today()).isoformat(),
+            payee,
+            category_id,
+            amount,
+        ),
     )
     store.conn.commit()
 
@@ -180,6 +192,58 @@ class SubcategoryStoreTests(unittest.TestCase):
         }
         self.assertAlmostEqual(statuses["alimentos"].spent, 500.0, places=2)
         self.assertAlmostEqual(statuses["alimentos : despensa"].spent, 200.0, places=2)
+
+    # ---------------------------------------------------------- transactions
+    def test_category_transactions_filters_by_category(self) -> None:
+        parent, child = self._seed_reports()
+        other = self.store.add_category("renta", "expense")
+        insert_transaction(self.store, self.account_id, other, -50)
+
+        rows = self.store.category_transactions(parent)
+        self.assertEqual({row.category_id for row in rows}, {parent, child})
+        self.assertAlmostEqual(sum(row.amount for row in rows), -500.0, places=2)
+
+        only_parent = self.store.category_transactions(
+            parent, include_subcategories=False
+        )
+        self.assertEqual([row.category_id for row in only_parent], [parent])
+
+        child_rows = self.store.category_transactions(child)
+        self.assertEqual([row.category_id for row in child_rows], [child])
+        self.assertEqual(self.store.category_transactions(99_999), [])
+
+    def test_category_transactions_are_newest_first(self) -> None:
+        category = self.store.add_category("Food", "expense")
+        today = date.today()
+        insert_transaction(
+            self.store, self.account_id, category, -10, today - timedelta(days=3)
+        )
+        insert_transaction(
+            self.store, self.account_id, category, -20, today - timedelta(days=1)
+        )
+        insert_transaction(self.store, self.account_id, category, -30, today)
+
+        rows = self.store.category_transactions(category)
+        self.assertEqual([row.amount for row in rows], [-30.0, -20.0, -10.0])
+        self.assertEqual(
+            [row.date for row in rows],
+            [
+                today.isoformat(),
+                (today - timedelta(days=1)).isoformat(),
+                (today - timedelta(days=3)).isoformat(),
+            ],
+        )
+
+    def test_category_transactions_include_voided_rows(self) -> None:
+        category = self.store.add_category("Food", "expense")
+        insert_transaction(self.store, self.account_id, category, -10)
+        self.store.conn.execute(
+            "UPDATE transactions SET voided=1 WHERE category_id=?", (category,)
+        )
+        self.store.conn.commit()
+        rows = self.store.category_transactions(category)
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0].voided)
 
     # ---------------------------------------------------------------- imports
     def test_ensure_category_parses_parent_child_labels(self) -> None:
@@ -472,6 +536,79 @@ class CategoryDialogTests(unittest.TestCase):
         self.assertIn("Delete", captured["text"])
         self.assertIn("cannot be undone", captured["info"])
         self.assertEqual(captured["icon"], QMessageBox.Icon.Warning)
+
+    # ------------------------------------------------- category transactions
+    def _food_store(self):
+        store = self._store()
+        store.add_account("Checking", "Bank")
+        account_id = store.accounts()[0].id
+        food = store.add_category("Food", "expense")
+        return store, account_id, food
+
+    def test_category_transactions_dialog_lists_and_summarises(self) -> None:
+        store, account_id, food = self._food_store()
+        insert_transaction(store, account_id, food, -12.5, payee="Cafe")
+        insert_transaction(store, account_id, food, -7.25, payee="Bakery")
+
+        dialog = CategoryTransactionsDialog(store, store.category(food))
+        self.addCleanup(dialog.deleteLater)
+
+        self.assertEqual(dialog.table.rowCount(), 2)
+        payees = {
+            dialog.table.item(row, 2).text()
+            for row in range(dialog.table.rowCount())
+        }
+        self.assertEqual(payees, {"Cafe", "Bakery"})
+        self.assertIn("2 transactions", dialog.summary.text())
+        self.assertIn("$ -19.75", dialog.summary.text())
+
+    def test_category_transactions_dialog_includes_subcategories_by_default(self) -> None:
+        store, account_id, food = self._food_store()
+        groceries = store.add_category("Groceries", "expense", food)
+        insert_transaction(store, account_id, food, -30, payee="Restaurant")
+        insert_transaction(store, account_id, groceries, -20, payee="Market")
+
+        dialog = CategoryTransactionsDialog(store, store.category(food))
+        self.addCleanup(dialog.deleteLater)
+        self.assertFalse(dialog.sub_check.isHidden())
+        self.assertEqual(dialog.table.rowCount(), 2)
+
+        dialog.sub_check.setChecked(False)
+        self.assertEqual(dialog.table.rowCount(), 1)
+        self.assertEqual(dialog.table.item(0, 2).text(), "Restaurant")
+
+    def test_category_transactions_dialog_hides_the_subcategory_toggle_for_a_child(self) -> None:
+        store, account_id, food = self._food_store()
+        groceries = store.add_category("Groceries", "expense", food)
+        insert_transaction(store, account_id, groceries, -20)
+
+        dialog = CategoryTransactionsDialog(store, store.category(groceries))
+        self.addCleanup(dialog.deleteLater)
+        self.assertTrue(dialog.sub_check.isHidden())
+        self.assertEqual(dialog.table.rowCount(), 1)
+        self.assertEqual(dialog.table.item(0, 3).text(), "Food : Groceries")
+
+    def test_category_transactions_dialog_filters_with_search(self) -> None:
+        store, account_id, food = self._food_store()
+        insert_transaction(store, account_id, food, -12.5, payee="Coffee shop")
+        insert_transaction(store, account_id, food, -7.25, payee="Bakery")
+
+        dialog = CategoryTransactionsDialog(store, store.category(food))
+        self.addCleanup(dialog.deleteLater)
+        dialog.search_edit.setText("coffee")
+
+        self.assertEqual(dialog.table.rowCount(), 1)
+        self.assertEqual(dialog.table.item(0, 2).text(), "Coffee shop")
+        self.assertIn("1 transaction", dialog.summary.text())
+
+    def test_categories_dialog_transactions_button_requires_a_selection(self) -> None:
+        store, _account_id, _food = self._food_store()
+        dialog = CategoriesDialog(store)
+        self.addCleanup(dialog.deleteLater)
+        self.assertFalse(dialog.transactions_button.isEnabled())
+
+        dialog.listing.setCurrentRow(0)
+        self.assertTrue(dialog.transactions_button.isEnabled())
 
     # ------------------------------------------------------- typed categories
     def _transaction_dialog(self, store: DataStore) -> TransactionDialog:

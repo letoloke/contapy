@@ -105,6 +105,12 @@ ledger, CSV export), inherit their parent's colour, and must share its type.
 - Select a category and press **Delete** (or use the **Delete** button) to
   remove it. A warning asks for confirmation and states that the deletion
   cannot be undone; the safe **Cancel** button is the default.
+- **Transactions…** shows every posted transaction filed under the selected
+  category in a modal, newest first, with date, account, payee, category,
+  status and amount. A parent also includes its subcategories' transactions by
+  default (toggle **Include subcategories**), and the search box filters by
+  payee, memo, account or tags. A summary line shows the count and net total,
+  excluding voided rows.
 - Deleting a subcategory moves its transactions to the parent; deleting a
   parent turns its subcategories into top-level categories and leaves its own
   transactions uncategorized.
@@ -187,7 +193,7 @@ The demo figures are aligned to the reference: last 30 days **$167,248.99**, rec
 - **Banamex import** — converts saved Banamex HTML statements (dates, memos and amounts) before the standard import preview.
 - **Reports window** — HomeBank-style Display panel, Category/Payee/Account and monthly grouping, Expense/Income types, date presets and custom ranges, search and account filters, and table, pie and bar views.
 - **Budgets window** — monthly per-category expense budgets with progress bars, remaining/over amounts, month navigation and six-month trend charts that zoom into a larger dialog.
-- **Subcategories** — a category manager with separate Expense/Income tabs, add/edit/delete, two-level `Parent : Child` categories everywhere (editor, ledger, CSV import/export), and roll-ups in the donut, report charts and budgets.
+- **Subcategories** — a category manager with separate Expense/Income tabs, add/edit/delete, per-category transaction lists with search and subcategory roll-up, two-level `Parent : Child` categories everywhere (editor, ledger, CSV import/export), and roll-ups in the donut, report charts and budgets.
 - Schedule one-off bills; post or skip them from the home strip.
 - Mark posted transactions as cleared, reconciled, remind, flagged or voided; these drive the home balance columns and Future/Remind lists. Voided transactions are kept for the audit trail but ignored by balances and reports.
 - SQLite persistence (no server, no account, no telemetry).
@@ -329,6 +335,7 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | Create a category while editing a transaction | Type a new name in the **Category** field and save; type `Parent : Child` to add a subcategory |
 | Rename, retype or move a category | Double-click it in **Manage → Categories…** |
 | Delete a category | Select it in **Manage → Categories…** and press `Delete`, then confirm the irreversible warning |
+| Show a category's transactions | Select it in **Manage → Categories…** and press **Transactions…** |
 | Navigate ledger rows | `↑` / `↓`; **Home/End** for newest/oldest |
 | Open a ledger transaction | `Enter` on the selected row |
 | Delete a ledger transaction | `Delete` on the selected row |
@@ -393,7 +400,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-One hundred and twenty-six tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, closest-amount highlighting for voiding, subcategories (typed creation in the editor and imports, storage, reports, budgets, Delete-key removal and the Expense/Income manager tabs), monthly budgets and six-month budget trends, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
+One hundred and thirty-four tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, closest-amount highlighting for voiding, subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, Delete-key removal and the Expense/Income manager tabs), monthly budgets and six-month budget trends, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
 
 ## Notes / limitations
 

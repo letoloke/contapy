@@ -24,8 +24,10 @@ from PySide6.QtGui import (
     QShortcut,
 )
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QAbstractSpinBox,
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QCompleter,
     QDateEdit,
@@ -34,6 +36,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -41,6 +44,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QTabWidget,
+    QTableWidget,
+    QTableWidgetItem,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -57,7 +62,14 @@ from ..config import (
 )
 from ..dates import DATE_FORMATS, qt_date_format
 from ..db import DataStore
-from ..models import Account, Category, TransactionDraft, ordered_categories
+from ..models import (
+    Account,
+    Category,
+    TransactionDraft,
+    TransactionRow,
+    ordered_categories,
+)
+from ..money import friendly_date, money
 from ..theme import C, CLEARED, font, theme_options
 from .icons import (
     IconButton,
@@ -1355,6 +1367,200 @@ class CategoryDialog(QDialog):
         )
 
 
+class CategoryTransactionsDialog(QDialog):
+    """All transactions filed under one category, newest first."""
+
+    def __init__(
+        self,
+        store: DataStore,
+        category: Category,
+        parent: QWidget | None = None,
+    ):
+        super().__init__(parent)
+        self.store = store
+        self.category = category
+        self._rows = []
+        self._has_children = category.parent_id is None and any(
+            child.parent_id == category.id for child in store.categories()
+        )
+        self.setWindowTitle(f"Transactions — {category.full_name}")
+        self.setModal(True)
+        self.setMinimumSize(860, 560)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(20, 18, 20, 16)
+        root.setSpacing(10)
+
+        heading = QLabel("Transactions")
+        heading.setFont(font(18, 600))
+        root.addWidget(heading)
+
+        subtitle = QLabel(
+            f"Posted transactions in “{category.full_name}”, newest first."
+        )
+        subtitle.setWordWrap(True)
+        subtitle.setFont(font(13, 400))
+        subtitle.setStyleSheet(f"color:{C.MUTED};")
+        root.addWidget(subtitle)
+
+        controls = QHBoxLayout()
+        controls.setSpacing(12)
+        self.search_edit = QLineEdit()
+        self.search_edit.setPlaceholderText("Search payee, memo, account or tags…")
+        self.search_edit.setClearButtonEnabled(True)
+        self.search_edit.setFixedWidth(300)
+        controls.addWidget(self.search_edit)
+        controls.addStretch(1)
+        self.sub_check = QCheckBox("Include subcategories")
+        self.sub_check.setChecked(True)
+        self.sub_check.setVisible(self._has_children)
+        self.sub_check.setToolTip(
+            "Also show transactions filed under this category's subcategories."
+        )
+        controls.addWidget(self.sub_check)
+        root.addLayout(controls)
+
+        self.summary = QLabel("")
+        self.summary.setFont(font(13, 500))
+        self.summary.setStyleSheet(f"color:{C.MUTED};")
+        root.addWidget(self.summary)
+
+        self.table = QTableWidget(0, 6)
+        self.table.setHorizontalHeaderLabels(
+            ["Date", "Account", "Payee", "Category", "Status", "Amount"]
+        )
+        self.table.verticalHeader().setVisible(False)
+        self.table.setShowGrid(False)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self.table.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection
+        )
+        self.table.setAlternatingRowColors(True)
+        self.table.verticalHeader().setDefaultSectionSize(30)
+        header = self.table.horizontalHeader()
+        header.setHighlightSections(False)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(0, 105)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(1, 140)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(3, 190)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(4, 100)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(5, 120)
+        root.addWidget(self.table, 1)
+
+        close = QPushButton("Close")
+        close.setAutoDefault(False)
+        close.setCursor(Qt.CursorShape.PointingHandCursor)
+        close.clicked.connect(self.accept)
+        close_row = QHBoxLayout()
+        close_row.addStretch(1)
+        close_row.addWidget(close)
+        root.addLayout(close_row)
+
+        self.search_edit.textChanged.connect(self._refresh)
+        self.sub_check.toggled.connect(self._reload)
+        self._reload()
+
+    # ------------------------------------------------------------------- data
+    def _reload(self) -> None:
+        include = self._has_children and self.sub_check.isChecked()
+        self._rows = self.store.category_transactions(
+            self.category.id, include_subcategories=include
+        )
+        self._refresh()
+
+    def _refresh(self) -> None:
+        text = self.search_edit.text().strip().casefold()
+        rows = self._rows
+        if text:
+            rows = [
+                row
+                for row in rows
+                if text
+                in " ".join(
+                    (
+                        row.payee,
+                        row.account_name,
+                        row.category_name,
+                        row.memo,
+                        row.tags,
+                    )
+                ).casefold()
+            ]
+        self._populate(rows)
+
+    def _populate(self, rows: list[TransactionRow]) -> None:
+        self.table.setRowCount(len(rows))
+        for index, row in enumerate(rows):
+            date_item = QTableWidgetItem(friendly_date(row.date))
+            date_item.setForeground(QColor(C.TEXT))
+            self.table.setItem(index, 0, date_item)
+
+            account_item = QTableWidgetItem(row.account_name)
+            account_item.setForeground(QColor(C.TEXT))
+            self.table.setItem(index, 1, account_item)
+
+            payee_item = QTableWidgetItem(row.payee or "")
+            payee_item.setForeground(QColor(C.TEXT))
+            self.table.setItem(index, 2, payee_item)
+
+            category_item = QTableWidgetItem(row.category_name)
+            category_item.setForeground(QColor(C.TEXT))
+            pixmap = QPixmap(10, 10)
+            pixmap.fill(QColor(row.category_color))
+            category_item.setIcon(QIcon(pixmap))
+            self.table.setItem(index, 3, category_item)
+
+            status_item = QTableWidgetItem(self._status(row))
+            status_item.setForeground(
+                QColor(C.MUTED if row.voided else C.TEXT)
+            )
+            self.table.setItem(index, 4, status_item)
+
+            amount = QTableWidgetItem(money(row.amount))
+            amount.setTextAlignment(
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            )
+            if row.voided:
+                strike = font(13, 400)
+                strike.setStrikeOut(True)
+                amount.setFont(strike)
+                amount.setForeground(QColor(C.MUTED))
+            else:
+                amount.setForeground(
+                    QColor(C.ORANGE if row.amount < 0 else C.GREEN)
+                )
+            self.table.setItem(index, 5, amount)
+
+        total = sum(row.amount for row in rows if not row.voided)
+        voided = sum(1 for row in rows if row.voided)
+        count = len(rows)
+        parts = [
+            f"{count} transaction{'s' if count != 1 else ''}",
+            f"net {money(total)}",
+        ]
+        if voided:
+            parts.append(f"{voided} voided excluded")
+        self.summary.setText("  ·  ".join(parts))
+
+    @staticmethod
+    def _status(row: TransactionRow) -> str:
+        if row.voided:
+            return "Void"
+        if row.reconciled:
+            return "Reconciled"
+        if row.cleared:
+            return "Cleared"
+        return "Open"
+
+
 class CategoriesDialog(QDialog):
     """Manage categories and their subcategories."""
 
@@ -1399,20 +1605,32 @@ class CategoriesDialog(QDialog):
         button_row.setSpacing(8)
         self.new_button = QPushButton("New…")
         self.edit_button = QPushButton("Edit…")
+        self.transactions_button = QPushButton("Transactions…")
+        self.transactions_button.setToolTip(
+            "Show the transactions filed under the selected category"
+        )
         self.delete_button = QPushButton("Delete")
         self.delete_button.setToolTip("Delete the selected category (Del)")
         close = QPushButton("Close")
-        for button in (self.new_button, self.edit_button, self.delete_button, close):
+        for button in (
+            self.new_button,
+            self.edit_button,
+            self.transactions_button,
+            self.delete_button,
+            close,
+        ):
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setFont(font(13, 400))
         self.new_button.setProperty("role", "primary")
         self.new_button.clicked.connect(self.new_category)
         self.edit_button.clicked.connect(self.edit_category)
+        self.transactions_button.clicked.connect(self.show_transactions)
         self.delete_button.clicked.connect(self.delete_category)
         close.setAutoDefault(False)
         close.clicked.connect(self.accept)
         button_row.addWidget(self.new_button)
         button_row.addWidget(self.edit_button)
+        button_row.addWidget(self.transactions_button)
         button_row.addWidget(self.delete_button)
         button_row.addStretch(1)
         button_row.addWidget(close)
@@ -1503,6 +1721,7 @@ class CategoriesDialog(QDialog):
     def _update_buttons(self, *_args) -> None:
         selected = self._selected_category() is not None
         self.edit_button.setEnabled(selected)
+        self.transactions_button.setEnabled(selected)
         self.delete_button.setEnabled(selected)
 
     # ------------------------------------------------------------ keyboard
@@ -1536,6 +1755,12 @@ class CategoriesDialog(QDialog):
         return selected.parent_id if selected.parent_id is not None else selected.id
 
     # --------------------------------------------------------------- actions
+    def show_transactions(self) -> None:
+        category = self._selected_category()
+        if category is None:
+            return
+        CategoryTransactionsDialog(self.store, category, self).exec()
+
     def new_category(self) -> None:
         dialog = CategoryDialog(
             self.store,

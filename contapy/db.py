@@ -1288,6 +1288,34 @@ class DataStore:
             rows.append(self._to_transaction_row(raw, running))
         return rows
 
+    def category_transactions(
+        self,
+        category_id: int,
+        include_subcategories: bool = True,
+    ) -> list[TransactionRow]:
+        """Transactions filed under a category, newest first.
+
+        For a top-level category ``include_subcategories`` also returns its
+        children's transactions; a subcategory only ever returns its own rows.
+        """
+        category = self.category(category_id)
+        if category is None:
+            return []
+        ids = [category_id]
+        if include_subcategories and category.parent_id is None:
+            ids.extend(
+                child.id
+                for child in self.categories()
+                if child.parent_id == category_id
+            )
+        placeholders = ",".join("?" for _ in ids)
+        rows = self._transaction_query(
+            f"WHERE t.category_id IN ({placeholders})", tuple(ids)
+        )
+        transactions = [self._to_transaction_row(row) for row in rows]
+        transactions.sort(key=lambda row: (row.date, row.id), reverse=True)
+        return transactions
+
     def transaction(self, transaction_id: int) -> TransactionRow | None:
         rows = self._transaction_query("WHERE t.id = ?", (transaction_id,))
         return self._to_transaction_row(rows[0]) if rows else None
