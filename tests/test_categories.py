@@ -485,6 +485,20 @@ class CategoryDialogTests(unittest.TestCase):
         self.assertIsNone(store.category(category))
         self.assertTrue(dialog.changed)
 
+    def test_enter_key_opens_the_selected_category_for_editing(self) -> None:
+        store = self._store()
+        store.add_category("Bills", "expense")
+        dialog = CategoriesDialog(store)
+        self.addCleanup(dialog.deleteLater)
+        dialog.listing.setCurrentRow(0)
+
+        with mock.patch.object(
+            CategoryDialog, "exec", return_value=CategoryDialog.DialogCode.Rejected
+        ) as edit_dialog:
+            QTest.keyClick(dialog.listing, Qt.Key.Key_Return)
+
+        self.assertEqual(edit_dialog.call_count, 1)
+
     def test_delete_key_deletes_the_selected_category(self) -> None:
         store = self._store()
         category = store.add_category("Bills", "expense")

@@ -1731,14 +1731,28 @@ class CategoriesDialog(QDialog):
             and event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace)
         )
 
+    @staticmethod
+    def _is_edit_key(event) -> bool:
+        return (
+            event.type() == QEvent.Type.KeyPress
+            and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+            and event.modifiers()
+            in (
+                Qt.KeyboardModifier.NoModifier,
+                Qt.KeyboardModifier.KeypadModifier,
+            )
+        )
+
     def eventFilter(self, watched, event):  # noqa: N802
-        if (
-            watched in (self.expense_listing, self.income_listing)
-            and self._is_delete_key(event)
-        ):
-            self.tabs.setCurrentWidget(watched)
-            self.delete_category()
-            return True
+        if watched in (self.expense_listing, self.income_listing):
+            if self._is_edit_key(event):
+                self.tabs.setCurrentWidget(watched)
+                self.edit_category()
+                return True
+            if self._is_delete_key(event):
+                self.tabs.setCurrentWidget(watched)
+                self.delete_category()
+                return True
         return super().eventFilter(watched, event)
 
     def keyPressEvent(self, event):  # noqa: N802
