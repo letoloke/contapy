@@ -481,16 +481,13 @@ class DataStore:
                 )
             if parent.kind != kind:
                 raise ValueError("A subcategory must share its parent's type")
-        duplicate = self.conn.execute(
-            """
-            SELECT id FROM categories
-            WHERE name = ?
-              AND parent_id IS ?
-              AND id <> COALESCE(?, -1)
-            """,
-            (name, parent_id, exclude_id),
-        ).fetchone()
-        if duplicate is not None:
+        duplicate = any(
+            category.id != exclude_id
+            and category.parent_id == parent_id
+            and category.name.casefold() == name.casefold()
+            for category in self.categories()
+        )
+        if duplicate:
             raise ValueError(f"A category named “{name}” already exists")
         return parent
 
@@ -1506,9 +1503,14 @@ class DataStore:
                 category_name = plan.value(row, "category")
                 category_id = None
                 if category_name:
-                    category_id = self._ensure_category(
-                        category_name, "income" if amount > 0 else "expense"
-                    )
+                    try:
+                        category_id = self.ensure_category(
+                            category_name, "income" if amount > 0 else "expense"
+                        )
+                    except ValueError:
+                        # Unreadable category text should not abort the import;
+                        # keep the row and leave it uncategorized.
+                        category_id = None
                 cleared, reconciled, remind, flagged, voided = statuses_from_row(plan, row)
                 self.conn.execute(
                     "INSERT INTO transactions(account_id, date, payee, category_id, amount, memo, "
@@ -1543,34 +1545,48 @@ class DataStore:
             return int(row[0])
         return self.add_account(name.strip() or "Imported", "Bank", 0.0)
 
-    def _ensure_category(self, name: str, kind: str) -> int:
-        """Find or create a category, parsing ``parent : child`` labels."""
+    def ensure_category(self, name: str, kind: str = "expense") -> int:
+        """Find or create a category from typed text.
+
+        A plain name creates a top-level category; ``parent:child`` (with or
+        without spaces around the colon) creates the parent when needed and
+        returns the child. Matching is case-insensitive, so typing an existing
+        name reuses that category instead of creating a duplicate.
+        """
         label = name.strip()
         if not label:
-            raise ValueError("empty category name")
-        parent_name, child_name = None, label
+            raise ValueError("Category names cannot be empty")
+
+        parent_name, child_name = "", label
         if ":" in label:
             head, _, tail = label.partition(":")
-            if tail.strip():
-                parent_name, child_name = head.strip(), tail.strip()
+            head, tail = head.strip(), tail.strip()
+            if head and tail:
+                parent_name, child_name = head, tail
+            elif head:
+                # A trailing colon is harmless while typing: keep the name.
+                child_name = head
+            elif tail:
+                child_name = tail
+            else:
+                raise ValueError("Category names cannot be empty")
+
         parent_id = None
         if parent_name:
-            parent_id = self._ensure_category(parent_name, kind)
-        if parent_id is None:
-            row = self.conn.execute(
-                "SELECT id FROM categories WHERE name=? AND parent_id IS NULL",
-                (child_name,),
-            ).fetchone()
-        else:
-            row = self.conn.execute(
-                "SELECT id FROM categories WHERE name=? AND parent_id=?",
-                (child_name, parent_id),
-            ).fetchone()
-        if row:
-            return int(row[0])
+            parent_id = self.ensure_category(parent_name, kind)
+
+        folded = child_name.casefold()
+        for category in self.categories():
+            if category.parent_id == parent_id and category.name.casefold() == folded:
+                return category.id
+
         parent = self.category(parent_id)
-        color = parent.color if parent is not None else theme_category_color(
-            child_name, "#8a8a8a"
+        if parent is not None:
+            kind = parent.kind
+        color = (
+            parent.color
+            if parent is not None
+            else theme_category_color(child_name, "#8a8a8a")
         )
         cur = self.conn.execute(
             "INSERT INTO categories(name, kind, color, sort_order, parent_id) "
@@ -1579,7 +1595,8 @@ class DataStore:
                 child_name,
                 kind,
                 color,
-                parent.sort_order if parent is not None
+                parent.sort_order
+                if parent is not None
                 else self._next_category_order(),
                 parent_id,
             ),

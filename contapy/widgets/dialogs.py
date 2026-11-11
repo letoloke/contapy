@@ -357,12 +357,16 @@ class TransactionDialog(QDialog):
         )
         root.addWidget(self.payee_row)
 
-        self.category_combo = SearchCombo("Type to search categories")
+        self.category_combo = SearchCombo(
+            "Type a category, or Parent : Child to add one"
+        )
         self._rebuild_categories("expense")
         self.category_row = self._field_row(
             "Category",
             self.category_combo,
-            "Start typing to filter. Use the arrow keys to choose a match.",
+            "Start typing to filter and choose a match. Text that is not in the "
+            "list becomes a new category when you save; type Parent : Child to "
+            "create a subcategory.",
         )
         root.addWidget(self.category_row)
 
@@ -861,6 +865,25 @@ class TransactionDialog(QDialog):
         else:
             payee = self.payee_combo.resolved_text()
             category_id = self.category_combo.resolved_data()
+            typed_category = self.category_combo.resolved_text()
+            if (
+                category_id is None
+                and typed_category
+                and typed_category.casefold() != "uncategorized"
+            ):
+                try:
+                    category_id = self.store.ensure_category(
+                        typed_category, self._type
+                    )
+                except ValueError as error:
+                    QMessageBox.warning(self, "Invalid category", str(error))
+                    return
+                # Pick up the new category so the combo reflects it now.
+                self.categories = self.store.categories()
+                self._rebuild_categories(self._type)
+                index = self.category_combo.findData(category_id)
+                if index >= 0:
+                    self.category_combo.setCurrentIndex(index)
             signed_amount = -abs(amount) if self._type == "expense" else abs(amount)
 
         cleared = self._cleared

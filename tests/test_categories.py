@@ -17,7 +17,11 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 
 from contapy.db import DataStore
 from contapy.models import Category, ordered_categories
-from contapy.widgets.dialogs import CategoriesDialog, CategoryDialog
+from contapy.widgets.dialogs import (
+    CategoriesDialog,
+    CategoryDialog,
+    TransactionDialog,
+)
 
 
 def insert_transaction(
@@ -179,15 +183,87 @@ class SubcategoryStoreTests(unittest.TestCase):
 
     # ---------------------------------------------------------------- imports
     def test_ensure_category_parses_parent_child_labels(self) -> None:
-        first = self.store._ensure_category("Bills : Electricity", "expense")
-        again = self.store._ensure_category("Bills : Electricity", "expense")
+        first = self.store.ensure_category("Bills : Electricity", "expense")
+        again = self.store.ensure_category("Bills : Electricity", "expense")
         category = self.store.category(first)
         self.assertEqual(first, again)
         self.assertEqual(category.full_name, "Bills : Electricity")
         self.assertEqual(category.parent_name, "Bills")
 
-        plain = self.store._ensure_category("renta", "expense")
+        plain = self.store.ensure_category("renta", "expense")
         self.assertIsNone(self.store.category(plain).parent_id)
+
+    def test_ensure_category_accepts_colon_variants(self) -> None:
+        no_spaces = self.store.ensure_category("Bills:Electricity", "expense")
+        self.assertEqual(
+            self.store.category(no_spaces).full_name, "Bills : Electricity"
+        )
+        padded = self.store.ensure_category("  Bills  :  Electricity  ", "expense")
+        self.assertEqual(no_spaces, padded)
+
+        # A half-finished label still creates a usable category.
+        trailing = self.store.ensure_category("Water:", "expense")
+        self.assertEqual(self.store.category(trailing).name, "Water")
+        leading = self.store.ensure_category(":Gas", "expense")
+        self.assertEqual(self.store.category(leading).name, "Gas")
+
+        with self.assertRaises(ValueError):
+            self.store.ensure_category("   ", "expense")
+        with self.assertRaises(ValueError):
+            self.store.ensure_category(":", "expense")
+
+    def test_ensure_category_reuses_names_case_insensitively(self) -> None:
+        first = self.store.ensure_category("comida", "expense")
+        self.assertEqual(self.store.ensure_category("Comida", "expense"), first)
+        self.assertEqual(self.store.ensure_category("COMIDA", "expense"), first)
+
+        child = self.store.ensure_category("comida:despensa", "expense")
+        self.assertEqual(
+            self.store.ensure_category("Comida : Despensa", "expense"), child
+        )
+        self.assertEqual(len([c for c in self.store.categories() if c.name == "comida"]), 1)
+
+    def test_ensure_category_inherits_the_parent_type(self) -> None:
+        parent = self.store.ensure_category("Salary", "income")
+        child = self.store.ensure_category("Salary:Bonus", "income")
+        self.assertEqual(self.store.category(child).kind, "income")
+        self.assertEqual(self.store.category(child).parent_id, parent)
+
+    def test_import_creates_categories_from_typed_text(self) -> None:
+        path = Path(self.tmp.name) / "typed.csv"
+        path.write_text(
+            "date,amount,payee,category\n"
+            "2026-11-06,-50.00,Store,comida:despensa\n"
+            "2026-11-06,-12.00,Cafe,comida\n",
+            encoding="utf-8",
+        )
+        added, _skipped, _duplicates = self.store.import_csv(
+            path, account_id=self.account_id
+        )
+        self.assertEqual(added, 2)
+        names = {c.full_name for c in self.store.categories()}
+        self.assertIn("comida", names)
+        self.assertIn("comida : despensa", names)
+
+        rows = self.store.ledger_rows(self.account_id)
+        labels = {row.payee: row.category_name for row in rows}
+        self.assertEqual(labels["Store"], "comida : despensa")
+        self.assertEqual(labels["Cafe"], "comida")
+
+    def test_import_leaves_invalid_category_text_uncategorized(self) -> None:
+        path = Path(self.tmp.name) / "invalid.csv"
+        path.write_text(
+            "date,amount,payee,category\n"
+            "2026-11-06,-9.00,Store,:\n",
+            encoding="utf-8",
+        )
+        added, _skipped, _duplicates = self.store.import_csv(
+            path, account_id=self.account_id
+        )
+        self.assertEqual(added, 1)
+        rows = self.store.ledger_rows(self.account_id)
+        self.assertTrue(rows)
+        self.assertIsNone(rows[0].category_id)
 
     def test_export_and_import_preserves_subcategories(self) -> None:
         parent, child = self._seed_reports()
@@ -330,6 +406,79 @@ class CategoryDialogTests(unittest.TestCase):
         self.assertIn("Delete", captured["text"])
         self.assertIn("cannot be undone", captured["info"])
         self.assertEqual(captured["icon"], QMessageBox.Icon.Warning)
+
+    # ------------------------------------------------------- typed categories
+    def _transaction_dialog(self, store: DataStore) -> TransactionDialog:
+        store.add_account("Checking", "Bank")
+        dialog = TransactionDialog(store, store.accounts(), store.categories())
+        self.addCleanup(dialog.deleteLater)
+        dialog.amount_spin.setValue(42.0)
+        return dialog
+
+    def test_transaction_dialog_creates_a_category_from_typed_text(self) -> None:
+        store = self._store()
+        dialog = self._transaction_dialog(store)
+        dialog.category_combo.setEditText("comida")
+        dialog._save()
+
+        draft = dialog.draft()
+        self.assertIsNotNone(draft)
+        category = store.category(draft.category_id)
+        self.assertEqual(category.name, "comida")
+        self.assertIsNone(category.parent_id)
+        self.assertEqual(category.kind, "expense")
+        self.assertAlmostEqual(draft.amount, -42.0)
+
+    def test_transaction_dialog_creates_a_subcategory_from_typed_text(self) -> None:
+        store = self._store()
+        dialog = self._transaction_dialog(store)
+        dialog.category_combo.setEditText("comida:despensa")
+        dialog._save()
+
+        draft = dialog.draft()
+        self.assertIsNotNone(draft)
+        self.assertEqual(
+            store.category(draft.category_id).full_name, "comida : despensa"
+        )
+        self.assertIn(
+            "comida : despensa",
+            [c.full_name for c in store.categories()],
+        )
+
+    def test_transaction_dialog_reuses_an_existing_typed_category(self) -> None:
+        store = self._store()
+        existing = store.add_category("comida", "expense")
+        dialog = self._transaction_dialog(store)
+        dialog.category_combo.setEditText("Comida")
+        dialog._save()
+
+        draft = dialog.draft()
+        self.assertIsNotNone(draft)
+        self.assertEqual(draft.category_id, existing)
+        self.assertEqual(len([c for c in store.categories() if c.name == "comida"]), 1)
+
+    def test_transaction_dialog_uncategorized_creates_nothing(self) -> None:
+        store = self._store()
+        dialog = self._transaction_dialog(store)
+        dialog.category_combo.setEditText("Uncategorized")
+        dialog._save()
+
+        draft = dialog.draft()
+        self.assertIsNotNone(draft)
+        self.assertIsNone(draft.category_id)
+        self.assertEqual(store.categories(), [])
+
+    def test_transaction_dialog_warns_and_keeps_open_for_invalid_category(self) -> None:
+        store = self._store()
+        dialog = self._transaction_dialog(store)
+        dialog.category_combo.setEditText(":")
+        with mock.patch(
+            "contapy.widgets.dialogs.QMessageBox.warning"
+        ) as warning:
+            dialog._save()
+        warning.assert_called_once()
+        self.assertIsNone(dialog.draft())
+        self.assertEqual(store.categories(), [])
 
     def test_delete_key_on_a_subcategory_moves_transactions_to_the_parent(self) -> None:
         store = self._store()
