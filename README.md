@@ -94,6 +94,9 @@ export), inherit their parent's colour, and must share its type.
 - **New…** adds a category; picking a parent makes it a subcategory. Selecting
   a row first pre-fills that row as the parent, so adding a subcategory is one
   click.
+- Select a category and press **Delete** (or use the **Delete** button) to
+  remove it. A warning asks for confirmation and states that the deletion
+  cannot be undone; the safe **Cancel** button is the default.
 - Deleting a subcategory moves its transactions to the parent; deleting a
   parent turns its subcategories into top-level categories and leaves its own
   transactions uncategorized.
@@ -316,6 +319,7 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | Browse budget months | `←` / `→` in the budgets window, or **This month** |
 | Add a category or subcategory | **Manage → Categories… → New…**, then pick a parent for a subcategory |
 | Rename, retype or move a category | Double-click it in **Manage → Categories…** |
+| Delete a category | Select it in **Manage → Categories…** and press `Delete`, then confirm the irreversible warning |
 | Navigate ledger rows | `↑` / `↓`; **Home/End** for newest/oldest |
 | Open a ledger transaction | `Enter` on the selected row |
 | Delete a ledger transaction | `Delete` on the selected row |
@@ -380,7 +384,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-One hundred and eight tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, closest-amount highlighting for voiding, subcategories (storage, reports, budgets, imports and the manager dialog), monthly budgets and six-month budget trends, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
+One hundred and twelve tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, closest-amount highlighting for voiding, subcategories (storage, reports, budgets, imports, Delete-key removal and the manager dialog), monthly budgets and six-month budget trends, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
 
 ## Notes / limitations
 

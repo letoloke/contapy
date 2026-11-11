@@ -1350,7 +1350,7 @@ class CategoriesDialog(QDialog):
         sub = QLabel(
             "Categories group transactions for the charts, reports, budgets and "
             "the ledger. Subcategories appear as “Parent : Child” and roll up "
-            "into their parent."
+            "into their parent. Select a category and press Delete to remove it."
         )
         sub.setWordWrap(True)
         sub.setFont(font(13, 400))
@@ -1363,6 +1363,7 @@ class CategoriesDialog(QDialog):
         self.listing.setIconSize(QSize(12, 12))
         self.listing.itemDoubleClicked.connect(lambda _item: self.edit_category())
         self.listing.itemSelectionChanged.connect(self._update_buttons)
+        self.listing.installEventFilter(self)
         root.addWidget(self.listing, 1)
 
         button_row = QHBoxLayout()
@@ -1370,6 +1371,7 @@ class CategoriesDialog(QDialog):
         self.new_button = QPushButton("New…")
         self.edit_button = QPushButton("Edit…")
         self.delete_button = QPushButton("Delete")
+        self.delete_button.setToolTip("Delete the selected category (Del)")
         close = QPushButton("Close")
         for button in (self.new_button, self.edit_button, self.delete_button, close):
             button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1438,6 +1440,25 @@ class CategoriesDialog(QDialog):
         self.edit_button.setEnabled(selected)
         self.delete_button.setEnabled(selected)
 
+    # ------------------------------------------------------------ keyboard
+    def _is_delete_key(self, event) -> bool:
+        return (
+            event.type() == QEvent.Type.KeyPress
+            and event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace)
+        )
+
+    def eventFilter(self, watched, event):  # noqa: N802
+        if watched is self.listing and self._is_delete_key(event):
+            self.delete_category()
+            return True
+        return super().eventFilter(watched, event)
+
+    def keyPressEvent(self, event):  # noqa: N802
+        if self._is_delete_key(event):
+            self.delete_category()
+            return
+        super().keyPressEvent(event)
+
     def _default_parent_id(self) -> int | None:
         """Parent to offer first when adding from the current selection."""
         selected = self._selected_category()
@@ -1495,12 +1516,16 @@ class CategoriesDialog(QDialog):
         box = QMessageBox(self)
         box.setWindowTitle("Delete category")
         box.setText(question)
-        box.setIcon(QMessageBox.Icon.Question)
+        box.setInformativeText("This action cannot be undone.")
+        box.setIcon(QMessageBox.Icon.Warning)
         box.setStandardButtons(
-            QMessageBox.StandardButton.Delete | QMessageBox.StandardButton.Cancel
+            QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel
         )
+        delete_button = box.button(QMessageBox.StandardButton.Discard)
+        if delete_button is not None:
+            delete_button.setText("Delete")
         box.setDefaultButton(QMessageBox.StandardButton.Cancel)
-        if box.exec() != QMessageBox.StandardButton.Delete:
+        if box.exec() != QMessageBox.StandardButton.Discard:
             return
         self.store.delete_category(category.id)
         self.changed = True

@@ -7,10 +7,13 @@ import tempfile
 import unittest
 from datetime import date, timedelta
 from pathlib import Path
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from contapy.db import DataStore
 from contapy.models import Category, ordered_categories
@@ -274,6 +277,81 @@ class CategoryDialogTests(unittest.TestCase):
         child = store.add_category("Water", "expense", parent)
         dialog._reload_list(select_id=child)
         self.assertEqual(dialog._selected_category().full_name, "Bills : Water")
+
+    def test_delete_key_deletes_the_selected_category(self) -> None:
+        store = self._store()
+        category = store.add_category("Bills", "expense")
+        dialog = CategoriesDialog(store)
+        self.addCleanup(dialog.deleteLater)
+        dialog.listing.setCurrentRow(0)
+
+        with mock.patch.object(
+            QMessageBox, "exec", return_value=QMessageBox.StandardButton.Discard
+        ):
+            QTest.keyClick(dialog.listing, Qt.Key.Key_Delete)
+
+        self.assertIsNone(store.category(category))
+        self.assertTrue(dialog.changed)
+        self.assertEqual(dialog.listing.count(), 0)
+
+    def test_delete_key_cancel_keeps_the_category(self) -> None:
+        store = self._store()
+        category = store.add_category("Bills", "expense")
+        dialog = CategoriesDialog(store)
+        self.addCleanup(dialog.deleteLater)
+        dialog.listing.setCurrentRow(0)
+
+        with mock.patch.object(
+            QMessageBox, "exec", return_value=QMessageBox.StandardButton.Cancel
+        ):
+            QTest.keyClick(dialog.listing, Qt.Key.Key_Delete)
+
+        self.assertIsNotNone(store.category(category))
+        self.assertFalse(dialog.changed)
+        self.assertEqual(dialog.listing.count(), 1)
+
+    def test_delete_confirmation_warns_that_it_cannot_be_undone(self) -> None:
+        store = self._store()
+        store.add_category("Bills", "expense")
+        dialog = CategoriesDialog(store)
+        self.addCleanup(dialog.deleteLater)
+        dialog.listing.setCurrentRow(0)
+        captured: dict[str, str] = {}
+
+        def fake_exec(box):
+            captured["text"] = box.text()
+            captured["info"] = box.informativeText()
+            captured["icon"] = box.icon()
+            return QMessageBox.StandardButton.Cancel
+
+        with mock.patch.object(QMessageBox, "exec", fake_exec):
+            dialog.delete_category()
+
+        self.assertIn("Delete", captured["text"])
+        self.assertIn("cannot be undone", captured["info"])
+        self.assertEqual(captured["icon"], QMessageBox.Icon.Warning)
+
+    def test_delete_key_on_a_subcategory_moves_transactions_to_the_parent(self) -> None:
+        store = self._store()
+        parent = store.add_category("Bills", "expense")
+        child = store.add_category("Electricity", "expense", parent)
+        cur = store.conn.execute(
+            "INSERT INTO accounts(name, kind, opening, sort_order) VALUES ('Bank','Bank',0,0)"
+        )
+        account_id = int(cur.lastrowid)
+        insert_transaction(store, account_id, child, -75)
+        dialog = CategoriesDialog(store)
+        self.addCleanup(dialog.deleteLater)
+        dialog.listing.setCurrentRow(1)
+
+        with mock.patch.object(
+            QMessageBox, "exec", return_value=QMessageBox.StandardButton.Discard
+        ):
+            QTest.keyClick(dialog.listing, Qt.Key.Key_Delete)
+
+        self.assertIsNone(store.category(child))
+        rows = store.ledger_rows(account_id)
+        self.assertEqual(rows[0].category_id, parent)
 
 
 if __name__ == "__main__":
