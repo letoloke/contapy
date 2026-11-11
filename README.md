@@ -122,6 +122,31 @@ ledger, CSV export), inherit their parent's colour, and must share its type.
 - CSV import accepts `parent : child` category text and creates the hierarchy
   automatically; CSV export writes the same format back out.
 
+## Automatic assignment rules
+
+**Manage → Rules…** opens a list of assignment rules. Rules run automatically
+when a transaction is **added or imported**, filling in fields for transactions
+that match their condition. Existing transactions are not rewritten.
+
+Each rule has two sections:
+
+- **Condition** — search text plus checkboxes choosing whether to look in the
+  **Memo**, the **Payee**, or both; **Case sensitive** and **Regular
+  expression** options; and an optional **amount filter** with `=` exactly,
+  `-` at most and `+` at least. The **AND** box requires both the text and the
+  amount to match; unchecked, matching either one is enough. Expenses are
+  negative, so “at most −100” finds expenses of 100 or more.
+- **Assignments** — **Payee**, **Category**, **Payment**, **Tags** and
+  **Notes**. Each has an **Overwrite** box. Checked, the rule replaces the
+  existing value; unchecked, it only fills a field that is still empty. Blank
+  assignments are skipped, so a rule can set just a category or just tags.
+
+The manager lists each rule's condition and assignments, lets you **New…**,
+**Edit…** and **Delete**, and unticking a rule disables it without deleting it.
+Rules run from top to bottom, so a later overwrite rule wins. A Category typed
+into the rule that does not exist yet is created when you save, including
+`Parent : Child` subcategories.
+
 ## Reports
 
 ![ContaPy reports window](screenshots/reports.png)
@@ -197,6 +222,7 @@ The demo figures are aligned to the reference: last 30 days **$167,248.99**, rec
 - **Banamex import** — converts saved Banamex HTML statements (dates, memos and amounts) before the standard import preview.
 - **Reports window** — HomeBank-style Display panel, Category/Payee/Account and monthly grouping, Expense/Income types, date presets and custom ranges, search and account filters, and table, pie and bar views.
 - **Budgets window** — monthly per-category expense budgets with progress bars, remaining/over amounts, month navigation, a configurable day-of-month period start and six-month trend charts that zoom into a larger dialog.
+- **Automatic assignment rules** — a rules manager with Condition (memo/payee search, case-sensitive and regex matching, optional amount filter with AND/OR) and Assignments (payee, category, payment, tags and notes, each with overwrite-or-fill-empty behavior); rules run on newly added and imported transactions.
 - **Subcategories** — a category manager with separate Expense/Income tabs, add/edit/delete, per-category transaction lists with search and subcategory roll-up, two-level `Parent : Child` categories everywhere (editor, ledger, CSV import/export), and roll-ups in the donut, report charts and budgets.
 - Schedule one-off bills; post or skip them from the home strip.
 - Mark posted transactions as cleared, reconciled, remind, flagged or voided; these drive the home balance columns and Future/Remind lists. Voided transactions are kept for the audit trail but ignored by balances and reports.
@@ -341,6 +367,8 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | Rename, retype or move a category | Double-click it in **Manage → Categories…** |
 | Delete a category | Select it in **Manage → Categories…** and press `Delete`, then confirm the irreversible warning |
 | Show a category's transactions | Select it in **Manage → Categories…** and press **Transactions…** |
+| Create or edit assignment rules | **Manage → Rules…**, then **New…** or **Edit…** |
+| Disable a rule temporarily | Untick it in **Manage → Rules…** |
 | Navigate ledger rows | `↑` / `↓`; **Home/End** for newest/oldest |
 | Open a ledger transaction | `Enter` on the selected row |
 | Delete a ledger transaction | `Delete` on the selected row |
@@ -405,7 +433,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-One hundred and thirty-nine tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, closest-amount highlighting for voiding, subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, Delete-key removal and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
+One hundred and fifty-one tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, closest-amount highlighting for voiding, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, Delete-key removal and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
 
 ## Notes / limitations
 

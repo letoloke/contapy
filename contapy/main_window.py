@@ -35,6 +35,7 @@ from .widgets.charts import ChartCard, DonutChart, SpendingRevenueChart
 from .widgets.import_dialog import CsvImportDialog
 from .widgets.ledger import LedgerWindow
 from .widgets.reports import ReportsWindow
+from .widgets.rules import RulesDialog
 from .widgets.dialogs import (
     AccountDialog,
     CategoriesDialog,
@@ -139,6 +140,7 @@ class MainWindow(QMainWindow):
         self.act_delete_account = self._action("Delete Account…", self.delete_selected_account)
         self.act_categories = self._action("Categories…", self.show_categories)
         self.act_payees = self._action("Payees…", self.show_payees)
+        self.act_rules = self._action("Rules…", self.show_rules)
         manage_menu = bar.addMenu("Manage")
         manage_menu.addAction(self.act_new_account)
         manage_menu.addAction(self.act_edit_account)
@@ -146,6 +148,7 @@ class MainWindow(QMainWindow):
         manage_menu.addSeparator()
         manage_menu.addAction(self.act_categories)
         manage_menu.addAction(self.act_payees)
+        manage_menu.addAction(self.act_rules)
 
         self.act_open_ledger = self._action(
             "Open Account Ledger", self.open_selected_ledger, "Ctrl+L"
@@ -688,6 +691,12 @@ class MainWindow(QMainWindow):
 
     def show_categories(self) -> None:
         dialog = CategoriesDialog(self.store, self)
+        dialog.exec()
+        if dialog.changed:
+            self.refresh_all()
+
+    def show_rules(self) -> None:
+        dialog = RulesDialog(self.store, self)
         dialog.exec()
         if dialog.changed:
             self.refresh_all()

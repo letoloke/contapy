@@ -33,6 +33,7 @@ from .models import (
     Category,
     MonthFlow,
     ReportRow,
+    Rule,
     ScheduledItem,
     Slice,
     TransactionDraft,
@@ -101,6 +102,32 @@ CREATE TABLE IF NOT EXISTS scheduled (
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT
+);
+
+CREATE TABLE IF NOT EXISTS rules (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    name              TEXT NOT NULL DEFAULT '',
+    enabled           INTEGER NOT NULL DEFAULT 1,
+    sort_order        INTEGER NOT NULL DEFAULT 0,
+    search            TEXT NOT NULL DEFAULT '',
+    match_memo        INTEGER NOT NULL DEFAULT 1,
+    match_payee       INTEGER NOT NULL DEFAULT 0,
+    case_sensitive    INTEGER NOT NULL DEFAULT 0,
+    regex             INTEGER NOT NULL DEFAULT 0,
+    amount_enabled    INTEGER NOT NULL DEFAULT 0,
+    amount_and        INTEGER NOT NULL DEFAULT 1,
+    amount_op         TEXT NOT NULL DEFAULT '=',
+    amount            REAL NOT NULL DEFAULT 0,
+    assign_payee      TEXT NOT NULL DEFAULT '',
+    payee_overwrite   INTEGER NOT NULL DEFAULT 0,
+    category_id       INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+    category_overwrite INTEGER NOT NULL DEFAULT 0,
+    assign_payment    TEXT NOT NULL DEFAULT '',
+    payment_overwrite INTEGER NOT NULL DEFAULT 0,
+    assign_tags       TEXT NOT NULL DEFAULT '',
+    tags_overwrite    INTEGER NOT NULL DEFAULT 0,
+    assign_memo       TEXT NOT NULL DEFAULT '',
+    memo_overwrite    INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS import_profiles (
@@ -1144,6 +1171,7 @@ class DataStore:
 
     # ----------------------------------------------------------- transactions
     def add_transaction(self, draft: TransactionDraft) -> int:
+        draft = self.apply_rules(draft)
         cleared = draft.reconciled or draft.cleared
         cur = self.conn.execute(
             "INSERT INTO transactions(account_id, date, payee, category_id, amount, memo, "
@@ -1419,6 +1447,162 @@ class DataStore:
         )
         return [r[0] for r in rows]
 
+    # ----------------------------------------------------------------- rules
+    @staticmethod
+    def _rule_from_row(row: sqlite3.Row) -> Rule:
+        return Rule(
+            id=int(row["id"]),
+            name=row["name"],
+            enabled=bool(row["enabled"]),
+            sort_order=int(row["sort_order"]),
+            search=row["search"],
+            match_memo=bool(row["match_memo"]),
+            match_payee=bool(row["match_payee"]),
+            case_sensitive=bool(row["case_sensitive"]),
+            regex=bool(row["regex"]),
+            amount_enabled=bool(row["amount_enabled"]),
+            amount_and=bool(row["amount_and"]),
+            amount_op=row["amount_op"],
+            amount=float(row["amount"]),
+            assign_payee=row["assign_payee"],
+            payee_overwrite=bool(row["payee_overwrite"]),
+            category_id=row["category_id"],
+            category_overwrite=bool(row["category_overwrite"]),
+            assign_payment=row["assign_payment"],
+            payment_overwrite=bool(row["payment_overwrite"]),
+            assign_tags=row["assign_tags"],
+            tags_overwrite=bool(row["tags_overwrite"]),
+            assign_memo=row["assign_memo"],
+            memo_overwrite=bool(row["memo_overwrite"]),
+        )
+
+    def rules(self) -> list[Rule]:
+        """All assignment rules in the order they are applied."""
+        rows = self._rows("SELECT * FROM rules ORDER BY sort_order, id")
+        return [self._rule_from_row(row) for row in rows]
+
+    def rule(self, rule_id: int) -> Rule | None:
+        row = self.conn.execute("SELECT * FROM rules WHERE id=?", (rule_id,)).fetchone()
+        return self._rule_from_row(row) if row is not None else None
+
+    def add_rule(self, rule: Rule) -> int:
+        rule.validate()
+        order = rule.sort_order
+        if not order:
+            row = self.conn.execute(
+                "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM rules"
+            ).fetchone()
+            order = int(row[0])
+        cur = self.conn.execute(
+            "INSERT INTO rules(name, enabled, sort_order, search, match_memo, "
+            "match_payee, case_sensitive, regex, amount_enabled, amount_and, "
+            "amount_op, amount, assign_payee, payee_overwrite, category_id, "
+            "category_overwrite, assign_payment, payment_overwrite, assign_tags, "
+            "tags_overwrite, assign_memo, memo_overwrite) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                rule.name,
+                1 if rule.enabled else 0,
+                order,
+                rule.search,
+                1 if rule.match_memo else 0,
+                1 if rule.match_payee else 0,
+                1 if rule.case_sensitive else 0,
+                1 if rule.regex else 0,
+                1 if rule.amount_enabled else 0,
+                1 if rule.amount_and else 0,
+                rule.amount_op,
+                float(rule.amount),
+                rule.assign_payee,
+                1 if rule.payee_overwrite else 0,
+                rule.category_id,
+                1 if rule.category_overwrite else 0,
+                rule.assign_payment,
+                1 if rule.payment_overwrite else 0,
+                rule.assign_tags,
+                1 if rule.tags_overwrite else 0,
+                rule.assign_memo,
+                1 if rule.memo_overwrite else 0,
+            ),
+        )
+        self.conn.commit()
+        return int(cur.lastrowid)
+
+    def update_rule(self, rule: Rule) -> None:
+        rule.validate()
+        self.conn.execute(
+            "UPDATE rules SET name=?, enabled=?, search=?, match_memo=?, "
+            "match_payee=?, case_sensitive=?, regex=?, amount_enabled=?, "
+            "amount_and=?, amount_op=?, amount=?, assign_payee=?, "
+            "payee_overwrite=?, category_id=?, category_overwrite=?, "
+            "assign_payment=?, payment_overwrite=?, assign_tags=?, "
+            "tags_overwrite=?, assign_memo=?, memo_overwrite=? WHERE id=?",
+            (
+                rule.name,
+                1 if rule.enabled else 0,
+                rule.search,
+                1 if rule.match_memo else 0,
+                1 if rule.match_payee else 0,
+                1 if rule.case_sensitive else 0,
+                1 if rule.regex else 0,
+                1 if rule.amount_enabled else 0,
+                1 if rule.amount_and else 0,
+                rule.amount_op,
+                float(rule.amount),
+                rule.assign_payee,
+                1 if rule.payee_overwrite else 0,
+                rule.category_id,
+                1 if rule.category_overwrite else 0,
+                rule.assign_payment,
+                1 if rule.payment_overwrite else 0,
+                rule.assign_tags,
+                1 if rule.tags_overwrite else 0,
+                rule.assign_memo,
+                1 if rule.memo_overwrite else 0,
+                rule.id,
+            ),
+        )
+        self.conn.commit()
+
+    def delete_rule(self, rule_id: int) -> None:
+        self.conn.execute("DELETE FROM rules WHERE id=?", (rule_id,))
+        self.conn.commit()
+
+    def set_rule_enabled(self, rule_id: int, enabled: bool) -> None:
+        self.conn.execute(
+            "UPDATE rules SET enabled=? WHERE id=?", (1 if enabled else 0, rule_id)
+        )
+        self.conn.commit()
+
+    def _apply_rule(self, rule: Rule, draft: TransactionDraft) -> None:
+        """Apply one matching rule's assignments, honouring overwrite flags."""
+        if rule.assign_payee and (rule.payee_overwrite or not draft.payee.strip()):
+            draft.payee = rule.assign_payee
+        if rule.category_id is not None and self.category(rule.category_id) is not None:
+            if rule.category_overwrite or draft.category_id is None:
+                draft.category_id = rule.category_id
+        if rule.assign_payment and (
+            rule.payment_overwrite or not draft.payment.strip()
+        ):
+            draft.payment = rule.assign_payment
+        if rule.assign_tags and (rule.tags_overwrite or not draft.tags.strip()):
+            draft.tags = rule.assign_tags
+        if rule.assign_memo and (rule.memo_overwrite or not draft.memo.strip()):
+            draft.memo = rule.assign_memo
+
+    def apply_rules(self, draft: TransactionDraft) -> TransactionDraft:
+        """Run every enabled rule against a new transaction and assign fields.
+
+        Rules run in sort order, so a later overwrite rule wins. The draft is
+        changed in place and returned for convenience.
+        """
+        for rule in self.rules():
+            if not rule.enabled:
+                continue
+            if rule.matches(draft.payee, draft.memo, draft.amount):
+                self._apply_rule(rule, draft)
+        return draft
+
     # ------------------------------------------------------------------ meta
     def get_setting(self, key: str, default: str | None = None) -> str | None:
         row = self.conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
@@ -1606,25 +1790,43 @@ class DataStore:
                         # keep the row and leave it uncategorized.
                         category_id = None
                 cleared, reconciled, remind, flagged, voided = statuses_from_row(plan, row)
+                draft = self.apply_rules(
+                    TransactionDraft(
+                        date=parsed.isoformat(),
+                        account_id=row_account_id,
+                        payee=payee,
+                        category_id=category_id,
+                        amount=amount,
+                        memo=memo,
+                        cleared=cleared,
+                        reconciled=reconciled,
+                        remind=remind,
+                        flagged=flagged,
+                        voided=voided,
+                        payment=plan.value(row, "payment"),
+                        number=plan.value(row, "number"),
+                        tags=plan.value(row, "tags"),
+                    )
+                )
                 self.conn.execute(
                     "INSERT INTO transactions(account_id, date, payee, category_id, amount, memo, "
                     "cleared, reconciled, remind, flagged, voided, payment, number, tags) "
                     "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
-                        row_account_id,
-                        parsed.isoformat(),
-                        payee,
-                        category_id,
-                        amount,
-                        memo,
-                        1 if cleared else 0,
-                        1 if reconciled else 0,
-                        1 if remind else 0,
-                        1 if flagged else 0,
-                        1 if voided else 0,
-                        plan.value(row, "payment"),
-                        plan.value(row, "number"),
-                        plan.value(row, "tags"),
+                        draft.account_id,
+                        draft.date,
+                        draft.payee.strip(),
+                        draft.category_id,
+                        float(draft.amount),
+                        draft.memo.strip(),
+                        1 if draft.reconciled or draft.cleared else 0,
+                        1 if draft.reconciled else 0,
+                        1 if draft.remind else 0,
+                        1 if draft.flagged else 0,
+                        1 if draft.voided else 0,
+                        draft.payment.strip(),
+                        draft.number.strip(),
+                        draft.tags.strip(),
                     ),
                 )
                 added += 1
