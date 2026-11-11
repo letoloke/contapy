@@ -920,6 +920,18 @@ class LedgerWindow(QMainWindow):
         self.delegate.highlight_ids = ids
         self.table.viewport().update()
         self.act_void_highlighted.setEnabled(bool(ids))
+        if ids:
+            count = len(ids)
+            rows = "row" if count == 1 else "rows"
+            self.keyboard_hint.setText(
+                f"Alt+V voids {count} highlighted {rows}"
+            )
+            self.keyboard_hint.setStyleSheet(
+                f"color:{C.WARNING}; font-weight:600;"
+            )
+        else:
+            self.keyboard_hint.setText("↑↓ move · Enter open · Del delete")
+            self.keyboard_hint.setStyleSheet(f"color:{C.MUTED_DARK};")
 
     def _update_summary(self) -> None:
         selected = self._selected_rows()

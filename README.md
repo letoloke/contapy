@@ -73,7 +73,7 @@ Every row has an **Import** checkbox. Rows that are not duplicates start checked
 
 ![ContaPy account ledger](screenshots/ledger.png)
 
-Double-click an account (or press `Ctrl+L`) to open its ledger. It follows HomeBank's account window: date/payee/type/status filters, a search box, newest activity first with a running balance per row, status icons for cleared/reconciled/remind/flag/void, reconciled–cleared–today–future balances, and Add / Inherit / Edit / Delete actions. Select rows to mark them cleared or reconciled, or to toggle remind, flag and void. Select two or more rows and the ledger highlights the unselected transaction whose amount is closest to their total; press **Alt+V** to void the highlighted rows. Voided rows stay visible in the ledger but are excluded from balances, reports, charts, future/remind lists and unreconciled alerts. The date filter offers **All date**, **This month**, **Last month**, **This year**, **Last year** and **Custom range…**, which asks for an inclusive start and end date.
+Double-click an account (or press `Ctrl+L`) to open its ledger. It follows HomeBank's account window: date/payee/type/status filters, a search box, newest activity first with a running balance per row, status icons for cleared/reconciled/remind/flag/void, reconciled–cleared–today–future balances, and Add / Inherit / Edit / Delete actions. Select rows to mark them cleared or reconciled, or to toggle remind, flag and void. Select two or more rows and the ledger highlights the unselected transaction whose amount is closest to their total, and the action bar shows an amber **“Alt+V voids N highlighted rows”** note; press **Alt+V** to void them. Voided rows stay visible in the ledger but are excluded from balances, reports, charts, future/remind lists and unreconciled alerts. The date filter offers **All date**, **This month**, **Last month**, **This year**, **Last year** and **Custom range…**, which asks for an inclusive start and end date.
 
 The ledger opens focused on the newest transaction:
 
@@ -357,7 +357,7 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | Post / skip a bill | Select it in the Scheduled tab, then use the bottom buttons |
 | Edit a ledger row | Select it in the strip and click **Open Ledger**, or double-click it |
 | Reconcile / remind / flag / void | Select rows in the ledger, then use the icons in the bottom bar |
-| Void the closest highlighted rows | `Alt+V` with two or more ledger rows selected |
+| Void the closest highlighted rows | `Alt+V` with two or more ledger rows selected; the action bar shows the hint while matches are highlighted |
 | Open budgets | `Ctrl+B`, the toolbar **Budgets** button, or **Reports → Budgets…** |
 | Set or clear a monthly budget | **Set budgets…** in the budgets window; enter `0` to remove one |
 | Browse budget months | `←` / `→` in the budgets window, or **This month** |
@@ -433,7 +433,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-One hundred and fifty-one tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, closest-amount highlighting for voiding, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, Delete-key removal and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
+One hundred and fifty-two tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, closest-amount highlighting for voiding with its Alt+V hint, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, Delete-key removal and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
 
 ## Notes / limitations
 

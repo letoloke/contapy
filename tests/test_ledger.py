@@ -3,16 +3,24 @@
 from __future__ import annotations
 
 import os
+import tempfile
 import unittest
 from datetime import date
+from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
-from contapy.models import TransactionRow
+from contapy.db import DataStore
+from contapy.models import TransactionDraft, TransactionRow
 from contapy.widgets.dialogs import DateRangeDialog
-from contapy.widgets.ledger import CUSTOM_RANGE, closest_amount_ids, date_bounds
+from contapy.widgets.ledger import (
+    CUSTOM_RANGE,
+    LedgerWindow,
+    closest_amount_ids,
+    date_bounds,
+)
 
 
 def row(row_id: int, amount: float, voided: bool = False) -> TransactionRow:
@@ -47,6 +55,43 @@ class DateBoundsTests(unittest.TestCase):
         dialog = DateRangeDialog(date(2026, 1, 5), date(2026, 2, 10))
         self.assertEqual(dialog.values(), (date(2026, 1, 5), date(2026, 2, 10)))
         dialog.deleteLater()
+
+
+class LedgerHintTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = DataStore(Path(self.tmp.name) / "hint.db", seed=False)
+        account = self.store.add_account("Checking", "Bank", 1_000)
+        today = date.today().isoformat()
+        for amount in (-400, -600, -1_000):
+            self.store.add_transaction(
+                TransactionDraft(
+                    date=today,
+                    account_id=account,
+                    payee="Test",
+                    category_id=None,
+                    amount=amount,
+                )
+            )
+        self.window = LedgerWindow(self.store, account)
+
+    def tearDown(self) -> None:
+        self.window.close()
+        self.store.close()
+        self.tmp.cleanup()
+
+    def test_hint_announces_alt_v_while_matches_are_highlighted(self) -> None:
+        by_amount = {row.amount: row.id for row in self.window.model.rows}
+        self.window._select_ids([by_amount[-400.0], by_amount[-600.0]])
+        self.assertEqual(self.window._highlight_ids, {by_amount[-1_000.0]})
+        self.assertIn("Alt+V voids 1 highlighted row", self.window.keyboard_hint.text())
+
+        self.window.table.clearSelection()
+        self.assertNotIn("Alt+V", self.window.keyboard_hint.text())
 
 
 class ClosestAmountTests(unittest.TestCase):
