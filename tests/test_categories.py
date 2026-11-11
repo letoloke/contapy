@@ -354,6 +354,72 @@ class CategoryDialogTests(unittest.TestCase):
         dialog._reload_list(select_id=child)
         self.assertEqual(dialog._selected_category().full_name, "Bills : Water")
 
+    def test_new_category_dialog_opens_on_the_active_tab_type(self) -> None:
+        store = self._store()
+        dialog = CategoryDialog(store, kind="income")
+        self.addCleanup(dialog.deleteLater)
+        self.assertEqual(dialog.kind_combo.currentData(), "income")
+
+    def test_categories_dialog_separates_income_and_expense_tabs(self) -> None:
+        store = self._store()
+        store.add_category("Bills", "expense")
+        store.add_category("Salary", "income")
+        dialog = CategoriesDialog(store)
+        self.addCleanup(dialog.deleteLater)
+
+        self.assertEqual(dialog.tabs.count(), 2)
+        self.assertEqual(
+            [dialog.tabs.tabText(i) for i in range(2)],
+            ["Expense (1)", "Income (1)"],
+        )
+        self.assertIs(dialog.tabs.currentWidget(), dialog.expense_listing)
+        self.assertEqual(
+            [
+                dialog.expense_listing.item(i).text().split("\n")[0]
+                for i in range(dialog.expense_listing.count())
+            ],
+            ["Bills"],
+        )
+        self.assertEqual(
+            [
+                dialog.income_listing.item(i).text().split("\n")[0]
+                for i in range(dialog.income_listing.count())
+            ],
+            ["Salary"],
+        )
+
+        dialog.tabs.setCurrentWidget(dialog.income_listing)
+        self.assertIs(dialog.listing, dialog.income_listing)
+        self.assertEqual(dialog._current_kind(), "income")
+        self.assertIsNone(dialog._selected_category())
+
+    def test_reloading_a_selected_category_opens_its_tab(self) -> None:
+        store = self._store()
+        store.add_category("Bills", "expense")
+        salary = store.add_category("Salary", "income")
+        dialog = CategoriesDialog(store)
+        self.addCleanup(dialog.deleteLater)
+
+        dialog._reload_list(select_id=salary)
+        self.assertIs(dialog.tabs.currentWidget(), dialog.income_listing)
+        self.assertEqual(dialog._selected_category().id, salary)
+
+    def test_delete_key_works_on_the_income_tab(self) -> None:
+        store = self._store()
+        category = store.add_category("Salary", "income")
+        dialog = CategoriesDialog(store)
+        self.addCleanup(dialog.deleteLater)
+        dialog.tabs.setCurrentWidget(dialog.income_listing)
+        dialog.income_listing.setCurrentRow(0)
+
+        with mock.patch.object(
+            QMessageBox, "exec", return_value=QMessageBox.StandardButton.Discard
+        ):
+            QTest.keyClick(dialog.income_listing, Qt.Key.Key_Delete)
+
+        self.assertIsNone(store.category(category))
+        self.assertTrue(dialog.changed)
+
     def test_delete_key_deletes_the_selected_category(self) -> None:
         store = self._store()
         category = store.add_category("Bills", "expense")

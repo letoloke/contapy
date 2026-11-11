@@ -40,6 +40,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QTabWidget,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -1254,6 +1255,7 @@ class CategoryDialog(QDialog):
         category: Category | None = None,
         parent_id: int | None = None,
         parent: QWidget | None = None,
+        kind: str = "expense",
     ):
         super().__init__(parent)
         self.store = store
@@ -1294,6 +1296,8 @@ class CategoryDialog(QDialog):
         self.kind_combo.addItem("Expense", "expense")
         self.kind_combo.addItem("Income", "income")
         if category is not None and category.kind == "income":
+            self.kind_combo.setCurrentIndex(1)
+        elif category is None and kind == "income":
             self.kind_combo.setCurrentIndex(1)
         form.addRow("Type", self.kind_combo)
 
@@ -1371,23 +1375,25 @@ class CategoriesDialog(QDialog):
         root.addWidget(heading)
 
         sub = QLabel(
-            "Categories group transactions for the charts, reports, budgets and "
-            "the ledger. Subcategories appear as “Parent : Child” and roll up "
-            "into their parent. Select a category and press Delete to remove it."
+            "Expense and income categories are on separate tabs. Categories "
+            "group transactions for the charts, reports, budgets and the "
+            "ledger. Subcategories appear as “Parent : Child” and roll up into "
+            "their parent. Select a category and press Delete to remove it."
         )
         sub.setWordWrap(True)
         sub.setFont(font(13, 400))
         sub.setStyleSheet(f"color:{C.MUTED};")
         root.addWidget(sub)
 
-        self.listing = QListWidget()
-        self.listing.setFont(font(13, 400))
-        self.listing.setSpacing(2)
-        self.listing.setIconSize(QSize(12, 12))
-        self.listing.itemDoubleClicked.connect(lambda _item: self.edit_category())
-        self.listing.itemSelectionChanged.connect(self._update_buttons)
-        self.listing.installEventFilter(self)
-        root.addWidget(self.listing, 1)
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+        self.tabs.tabBar().setDrawBase(False)
+        self.expense_listing = self._make_listing()
+        self.income_listing = self._make_listing()
+        self.tabs.addTab(self.expense_listing, "Expense")
+        self.tabs.addTab(self.income_listing, "Income")
+        self.tabs.currentChanged.connect(self._update_buttons)
+        root.addWidget(self.tabs, 1)
 
         button_row = QHBoxLayout()
         button_row.setSpacing(8)
@@ -1415,6 +1421,24 @@ class CategoriesDialog(QDialog):
         self._reload_list()
 
     # ------------------------------------------------------------------ rows
+    def _make_listing(self) -> QListWidget:
+        listing = QListWidget()
+        listing.setFont(font(13, 400))
+        listing.setSpacing(2)
+        listing.setIconSize(QSize(12, 12))
+        listing.itemDoubleClicked.connect(lambda _item: self.edit_category())
+        listing.itemSelectionChanged.connect(self._update_buttons)
+        listing.installEventFilter(self)
+        return listing
+
+    @property
+    def listing(self) -> QListWidget:
+        """The list shown in the active tab (Expense by default)."""
+        return self.tabs.currentWidget()
+
+    def _current_kind(self) -> str:
+        return "income" if self.tabs.currentWidget() is self.income_listing else "expense"
+
     def _reload_list(self, select_id: int | None = None) -> None:
         categories = ordered_categories(self.store.categories())
         subs_by_parent: dict[int, int] = {}
@@ -1424,23 +1448,41 @@ class CategoriesDialog(QDialog):
                     subs_by_parent.get(category.parent_id, 0) + 1
                 )
 
-        self.listing.clear()
+        listings = {
+            "expense": self.expense_listing,
+            "income": self.income_listing,
+        }
+        counts = {"expense": 0, "income": 0}
+        for listing in listings.values():
+            listing.clear()
         for category in categories:
-            detail = (
-                "Income category"
-                if category.kind == "income"
-                else "Spending category"
-            )
+            kind = "income" if category.kind == "income" else "expense"
+            detail = ""
             if category.parent_id is None and subs_by_parent.get(category.id):
-                detail += f" · {subs_by_parent[category.id]} subcategories"
-            self.listing.addItem(self._item(category, detail))
+                detail = f"{subs_by_parent[category.id]} subcategories"
+            listings[kind].addItem(self._item(category, detail))
+            counts[kind] += 1
+
+        self.tabs.setTabText(0, f"Expense ({counts['expense']})")
+        self.tabs.setTabText(1, f"Income ({counts['income']})")
+
         if select_id is not None:
-            for row in range(self.listing.count()):
-                item = self.listing.item(row)
-                if item.data(Qt.ItemDataRole.UserRole) == select_id:
-                    self.listing.setCurrentRow(row)
-                    break
+            self._select_category(select_id)
         self._update_buttons()
+
+    def _select_category(self, category_id: int) -> None:
+        category = self.store.category(category_id)
+        if category is None:
+            return
+        listing = (
+            self.income_listing if category.kind == "income" else self.expense_listing
+        )
+        self.tabs.setCurrentWidget(listing)
+        for row in range(listing.count()):
+            item = listing.item(row)
+            if item.data(Qt.ItemDataRole.UserRole) == category_id:
+                listing.setCurrentRow(row)
+                break
 
     @staticmethod
     def _item(category: Category, detail: str) -> QListWidgetItem:
@@ -1448,7 +1490,7 @@ class CategoriesDialog(QDialog):
         pixmap = QPixmap(12, 12)
         pixmap.fill(QColor(category.color))
         item.setIcon(QIcon(pixmap))
-        item.setText(f"{category.full_name}\n{detail}")
+        item.setText(f"{category.full_name}\n{detail}" if detail else category.full_name)
         item.setData(Qt.ItemDataRole.UserRole, category.id)
         return item
 
@@ -1458,7 +1500,7 @@ class CategoriesDialog(QDialog):
             return None
         return self.store.category(item.data(Qt.ItemDataRole.UserRole))
 
-    def _update_buttons(self) -> None:
+    def _update_buttons(self, *_args) -> None:
         selected = self._selected_category() is not None
         self.edit_button.setEnabled(selected)
         self.delete_button.setEnabled(selected)
@@ -1471,7 +1513,11 @@ class CategoriesDialog(QDialog):
         )
 
     def eventFilter(self, watched, event):  # noqa: N802
-        if watched is self.listing and self._is_delete_key(event):
+        if (
+            watched in (self.expense_listing, self.income_listing)
+            and self._is_delete_key(event)
+        ):
+            self.tabs.setCurrentWidget(watched)
             self.delete_category()
             return True
         return super().eventFilter(watched, event)
@@ -1492,7 +1538,11 @@ class CategoriesDialog(QDialog):
     # --------------------------------------------------------------- actions
     def new_category(self) -> None:
         dialog = CategoryDialog(
-            self.store, None, self._default_parent_id(), self
+            self.store,
+            None,
+            self._default_parent_id(),
+            self,
+            kind=self._current_kind(),
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return

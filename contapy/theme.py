@@ -412,6 +412,33 @@ def stylesheet() -> str:
         background: {C.SELECTION};
         color: {C.SELECTION_TEXT};
     }}
+    QTabWidget::pane {{
+        border: none;
+        background: transparent;
+        top: -1px;
+    }}
+    QTabBar {{
+        background: transparent;
+        border: none;
+    }}
+    QTabBar::tab {{
+        background: {C.BUTTON_BG};
+        color: {C.MUTED};
+        border: 1px solid {C.LIST_BORDER};
+        border-radius: 4px;
+        padding: 5px 14px;
+        margin: 0px 6px 8px 0px;
+        font-size: 13px;
+    }}
+    QTabBar::tab:hover {{
+        background: {C.BUTTON_BG_HOVER};
+        color: {C.TEXT};
+    }}
+    QTabBar::tab:selected {{
+        background: {C.ACCENT};
+        color: {C.ON_ACCENT};
+        border-color: {C.BUTTON_PRIMARY_BORDER};
+    }}
     QMessageBox {{
         background: {C.PANEL};
     }}
