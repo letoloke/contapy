@@ -30,7 +30,7 @@ from .models import ScheduledItem
 from .money import money
 from .theme import C, font, select_theme
 from .widgets.accounts import AccountsPanel
-from .widgets.budgets import BudgetWindow
+from .widgets.budgets import BudgetWindow, BudgetsPanel
 from .widgets.charts import ChartCard, DonutChart, SpendingRevenueChart
 from .widgets.import_dialog import CsvImportDialog
 from .widgets.ledger import LedgerWindow
@@ -129,10 +129,14 @@ class MainWindow(QMainWindow):
         self.act_toggle_scheduled = QAction("Scheduled Transactions", self)
         self.act_toggle_scheduled.setCheckable(True)
         self.act_toggle_scheduled.setChecked(True)
+        self.act_toggle_budgets = QAction("Budgets Panel", self)
+        self.act_toggle_budgets.setCheckable(True)
+        self.act_toggle_budgets.setChecked(True)
         self.act_refresh = self._action("Refresh Dashboard", self.refresh_all, "F5")
         view_menu = bar.addMenu("View")
         view_menu.addAction(self.act_toggle_accounts)
         view_menu.addAction(self.act_toggle_scheduled)
+        view_menu.addAction(self.act_toggle_budgets)
         view_menu.addSeparator()
         view_menu.addAction(self.act_refresh)
 
@@ -235,6 +239,7 @@ class MainWindow(QMainWindow):
         self.accounts_panel = AccountsPanel()
         self.accounts_panel.setMinimumHeight(412)
         self.scheduled_panel = ScheduledPanel()
+        self.budgets_panel = BudgetsPanel(self.store)
 
         self.charts_split = QSplitter(Qt.Orientation.Horizontal)
         self.charts_split.setHandleWidth(5)
@@ -254,12 +259,21 @@ class MainWindow(QMainWindow):
         self.hsplit.setStretchFactor(0, 0)
         self.hsplit.setStretchFactor(1, 1)
 
+        self.bottom_split = QSplitter(Qt.Orientation.Horizontal)
+        self.bottom_split.setHandleWidth(5)
+        self.bottom_split.setChildrenCollapsible(False)
+        self.bottom_split.setStyleSheet(f"QSplitter {{ background: {C.BG}; }} QSplitter::handle {{ background: {C.BG}; }}")
+        self.bottom_split.addWidget(self.scheduled_panel)
+        self.bottom_split.addWidget(self.budgets_panel)
+        self.bottom_split.setStretchFactor(0, 3)
+        self.bottom_split.setStretchFactor(1, 2)
+
         self.vsplit = QSplitter(Qt.Orientation.Vertical)
         self.vsplit.setHandleWidth(5)
         self.vsplit.setChildrenCollapsible(False)
         self.vsplit.setStyleSheet(f"QSplitter {{ background: {C.BG}; }} QSplitter::handle {{ background: {C.BG}; }}")
         self.vsplit.addWidget(self.hsplit)
-        self.vsplit.addWidget(self.scheduled_panel)
+        self.vsplit.addWidget(self.bottom_split)
         self.vsplit.setStretchFactor(0, 54)
         self.vsplit.setStretchFactor(1, 46)
 
@@ -269,6 +283,7 @@ class MainWindow(QMainWindow):
         self.hsplit.setSizes([615, 1225])
         self.charts_split.setSizes([610, 610])
         self.vsplit.setSizes([412, 349])
+        self.bottom_split.setSizes([1080, 720])
 
         self.toast = QLabel(self)
         self.toast.setObjectName("toast")
@@ -318,6 +333,7 @@ class MainWindow(QMainWindow):
         self.scheduled_panel.openLedgerRequested.connect(self.open_ledger)
         self.scheduled_panel.settingsRequested.connect(self.open_preferences)
         self.scheduled_panel.selectionChanged.connect(lambda _id: self._update_actions())
+        self.budgets_panel.changed.connect(self.refresh_all)
 
         self.donut_card.footer.periodChanged.connect(self._refresh_donut)
         self.donut_card.footer.modeChanged.connect(self._refresh_donut)
@@ -327,6 +343,7 @@ class MainWindow(QMainWindow):
 
         self.act_toggle_accounts.toggled.connect(self.accounts_panel.setVisible)
         self.act_toggle_scheduled.toggled.connect(self.scheduled_panel.setVisible)
+        self.act_toggle_budgets.toggled.connect(self.budgets_panel.setVisible)
 
     # ------------------------------------------------------------------- data
     def refresh_all(self) -> None:
@@ -341,6 +358,7 @@ class MainWindow(QMainWindow):
         self.scheduled_panel.set_data(
             self.store.scheduled_items(), accounts, future_items, remind_items
         )
+        self.budgets_panel.reload()
         for ledger in list(self.ledgers.values()):
             try:
                 ledger.reload()

@@ -10,9 +10,9 @@ This is totally vibe coding, using first DeepSeek-Harness and then (while on Oma
 
 ## HomeBank inspiration
 
-The layout, terminology and dark chrome follow HomeBank: grouped accounts with **Reconciled / Cleared / Today / Future** columns, the total and time charts, the Scheduled / Future / Remind strip at the bottom, and a separate **account ledger** window with filters, running balances and status icons. Everything is implemented independently in Python/PySide6; this is not the HomeBank codebase and is not affiliated with the HomeBank project.
+The layout, terminology and dark chrome follow HomeBank: grouped accounts with **Reconciled / Cleared / Today / Future** columns, the total and time charts, the Scheduled / Future / Remind strip and a compact **Budgets** panel at the bottom, and a separate **account ledger** window with filters, running balances and status icons. Everything is implemented independently in Python/PySide6; this is not the HomeBank codebase and is not affiliated with the HomeBank project.
 
-The account **Ledger**, the **Transaction editor**, the **Reports** window and the **Budgets** window are implemented as separate windows, like HomeBank's own windows. The current build uses its own SQLite store; opening HomeBank `.xhb` files or importing QIF/OFX/QFX is not implemented yet.
+The account **Ledger**, the **Transaction editor**, the **Reports** window and the full **Budgets** window are implemented as separate windows, like HomeBank's own windows; the dashboard also embeds a compact budgets panel next to the scheduled strip. The current build uses its own SQLite store; opening HomeBank `.xhb` files or importing QIF/OFX/QFX is not implemented yet.
 
 ## Transaction editor
 
@@ -205,6 +205,12 @@ monthly budget window for expense categories. Each category gets a progress bar
 comparing this month's spending with its budget, with green, amber and red
 states as the month fills up, plus a **Remaining** or **Over by** amount.
 
+The main screen also has a compact **Budgets** panel on the right half of the
+bottom strip, beside Scheduled / Future / Remind. It shows the current month's
+budgeted, spent and remaining totals with the same per-category rows, has its
+own **← / →** month navigation, **This month** and **Set budgets…** actions, and
+can be hidden from **View → Budgets Panel**.
+
 - **Set budgets…** lists every expense category. Enter a monthly amount and
   save; enter **0** to remove a budget. Budgets repeat every month.
 - **Month starts** in the toolbar chooses the day of the month each budget
@@ -226,7 +232,7 @@ states as the month fills up, plus a **Remaining** or **Over by** amount.
 - **Account tree** — Bank, Cash, Credit card and Savings groups with collapsible rows, alert markers for accounts with unreconciled transactions, and the four reference columns: **Reconciled, Cleared, Today, Future**. Group totals and the grand total update from the ledger. The list opens focused: **↑/↓** walk the accounts, **Home/End** jump, and **Enter** opens the selected account's ledger.
 - **Spending donut** — top ten expense categories plus *Other*, drawn with `QPainter`. Switch the footer to **Income** for the top ten income categories, and change periods from the same footer. Hover a slice for the category, amount and share.
 - **Spending & Revenue bars** — twelve months of income above zero and spending below, with the exact plotting style of the reference (green up, red down, 100k grid, year tag). Hover a month for income, spending and net.
-- **Scheduled strip** — Scheduled lists upcoming bills; Future and Remind are filtered views of the ledger (posted future-dated transactions and reminder-flagged transactions), just like HomeBank. Scheduled rows have working **Skip**, **Edit & Post** and **Post** actions; ledger rows open the account ledger.
+- **Scheduled strip** — Scheduled lists upcoming bills; Future and Remind are filtered views of the ledger (posted future-dated transactions and reminder-flagged transactions), just like HomeBank. Scheduled rows have working **Skip**, **Edit & Post** and **Post** actions; ledger rows open the account ledger. The bottom area is split horizontally, with a compact **Budgets** panel on the right.
 - **Reference chrome** — the File/Edit/View/Manage/Transactions/Reports/Tools/Help menu, icon shortcut toolbar, account footer tools, filter flyout, and the “Your accounts” status row.
 
 The demo figures are aligned to the reference: last 30 days **$167,248.99**, reconciled **$20,289.30**, today/future **−$97,263.62**.
@@ -240,7 +246,7 @@ The demo figures are aligned to the reference: last 30 days **$167,248.99**, rec
 - **Booking import** — merges Booking payout and Sabee reservation exports, unpivots the amount columns and adds room names before the standard import preview.
 - **Banamex import** — converts saved Banamex HTML statements (dates, memos and amounts) before the standard import preview.
 - **Reports window** — HomeBank-style Display panel, Category/Payee/Account and monthly grouping, Expense/Income types, date presets and custom ranges, search and account filters, and table, pie and bar views.
-- **Budgets window** — monthly per-category expense budgets with progress bars, remaining/over amounts, month navigation, a configurable day-of-month period start and six-month trend charts that zoom into a larger dialog.
+- **Budgets window** — monthly per-category expense budgets with progress bars, remaining/over amounts, month navigation, a configurable day-of-month period start and six-month trend charts that zoom into a larger dialog; the dashboard embeds a compact version beside the scheduled strip.
 - **Automatic assignment rules** — a rules manager with Condition (memo/payee search, case-sensitive and regex matching, optional amount filter with AND/OR) and Assignments (payee, category, payment, tags and notes, each with overwrite-or-fill-empty behavior); rules run on newly added and imported transactions.
 - **Subcategories** — a category manager with separate Expense/Income tabs, add/edit/delete, per-category transaction lists with search and subcategory roll-up, two-level `Parent : Child` categories everywhere (editor, ledger, CSV import/export), and roll-ups in the donut, report charts and budgets.
 - Schedule one-off bills; post or skip them from the home strip.
@@ -378,6 +384,7 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | Reconcile / remind / flag / void | Select rows in the ledger, then use the icons in the bottom bar |
 | Void the closest highlighted rows | `Alt+V` with two or more ledger rows selected; the action bar shows the hint while matches are highlighted |
 | Open budgets | `Ctrl+B`, the toolbar **Budgets** button, or **Reports → Budgets…** |
+| Show or hide the dashboard budgets panel | **View → Budgets Panel** |
 | Set or clear a monthly budget | **Set budgets…** in the budgets window; enter `0` to remove one |
 | Browse budget months | `←` / `→` in the budgets window, or **This month** |
 | Change when a budget period starts | Choose a day in **Month starts** on the budgets toolbar |
@@ -457,7 +464,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-One hundred and sixty-three tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, closest-amount highlighting for voiding with its Alt+V hint, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, Delete-key removal, Enter-to-edit and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the searchable Ctrl+K shortcut list and its window-level action, HomeBank automatic-assignment import (conditions, payees, categories, payments, tags, notes, overwrite flags, duplicates and invalid references), the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
+One hundred and sixty-five tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, closest-amount highlighting for voiding with its Alt+V hint, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, Delete-key removal, Enter-to-edit and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, the dashboard budgets panel beside the scheduled strip, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the searchable Ctrl+K shortcut list and its window-level action, HomeBank automatic-assignment import (conditions, payees, categories, payments, tags, notes, overwrite flags, duplicates and invalid references), the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
 
 ## Notes / limitations
 

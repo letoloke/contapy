@@ -253,21 +253,27 @@ class BudgetTrendDialog(QDialog):
 
 
 class BudgetSummary(QWidget):
-    def __init__(self, label: str, color: str, parent: QWidget | None = None):
+    def __init__(
+        self,
+        label: str,
+        color: str,
+        parent: QWidget | None = None,
+        compact: bool = False,
+    ):
         super().__init__(parent)
         self._color = color
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(1)
         self.label = QLabel(label)
-        self.label.setFont(font(12, 400))
+        self.label.setFont(font(11 if compact else 12, 400))
         self.label.setStyleSheet(f"color:{C.MUTED};")
         self.value = QLabel("—")
-        self.value.setFont(font(19, 600))
+        self.value.setFont(font(15 if compact else 19, 600))
         self.value.setStyleSheet(f"color:{color};")
         layout.addWidget(self.label)
         layout.addWidget(self.value)
-        self.setMinimumWidth(138)
+        self.setMinimumWidth(96 if compact else 138)
 
     def set_value(self, text: str, color: str | None = None) -> None:
         self.value.setText(text)
@@ -651,6 +657,8 @@ class BudgetWindow(QMainWindow):
             item = self.content_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                widget.hide()
+                widget.setParent(None)
                 widget.deleteLater()
 
         if not statuses:
@@ -702,6 +710,184 @@ class BudgetWindow(QMainWindow):
         self.month = self.store.current_budget_period()
         self.reload()
         self.changed.emit()
+
+    @staticmethod
+    def _short_date(value: date) -> str:
+        return f"{calendar.month_abbr[value.month]} {value.day}"
+
+    def open_settings(self) -> None:
+        dialog = BudgetSettingsDialog(self.store, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.changed:
+            self.reload()
+            self.changed.emit()
+
+    def open_trend(self, status: BudgetStatus) -> None:
+        if self.store.budget_start_day() == 1:
+            period = _month_label(self.month)
+        else:
+            first, last = self.store.budget_period(self.month)
+            period = (
+                f"{_month_label(self.month)} · "
+                f"{self._short_date(first)} – {self._short_date(last)}"
+            )
+        BudgetTrendDialog(status, period, self).exec()
+
+
+class BudgetsPanel(QWidget):
+    """Compact budget overview embedded beside the scheduled strip."""
+
+    changed = Signal()
+
+    def __init__(self, store: DataStore, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.store = store
+        self.month = self.store.current_budget_period()
+        self.setObjectName("budgetsPanel")
+        self.setMinimumWidth(430)
+        self.setStyleSheet(f"QWidget#budgetsPanel {{ background:{C.BG}; }}")
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        header = QWidget()
+        header.setFixedHeight(46)
+        header.setStyleSheet(
+            f"background:{C.PANEL}; border-bottom:1px solid {C.BORDER};"
+        )
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(14, 6, 12, 6)
+        header_layout.setSpacing(6)
+
+        title = QLabel("Budgets")
+        title.setFont(font(14, 600))
+        title.setStyleSheet(f"color:{C.TITLE};")
+        header_layout.addWidget(title)
+
+        header_layout.addSpacing(6)
+        self.prev_button = IconButton(
+            lambda p, r, c, w: draw_chevron(p, r, c, "left"),
+            26,
+            "Previous budget month",
+            parent=header,
+        )
+        self.prev_button.clicked.connect(lambda: self._shift_month(-1))
+        header_layout.addWidget(self.prev_button)
+
+        self.month_label = QLabel("")
+        self.month_label.setFont(font(13, 600))
+        self.month_label.setStyleSheet(f"color:{C.TEXT};")
+        self.month_label.setMinimumWidth(120)
+        self.month_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header_layout.addWidget(self.month_label)
+
+        self.next_button = IconButton(
+            lambda p, r, c, w: draw_chevron(p, r, c, "right"),
+            26,
+            "Next budget month",
+            parent=header,
+        )
+        self.next_button.clicked.connect(lambda: self._shift_month(1))
+        header_layout.addWidget(self.next_button)
+
+        header_layout.addStretch(1)
+        self.this_month = QPushButton("This month")
+        self.this_month.setProperty("role", "action")
+        self.this_month.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.this_month.setFont(font(12, 400))
+        self.this_month.setAutoDefault(False)
+        self.this_month.clicked.connect(self._show_this_month)
+        header_layout.addWidget(self.this_month)
+
+        self.settings_button = QPushButton("Set budgets…")
+        self.settings_button.setProperty("role", "primary")
+        self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.settings_button.setFont(font(12, 400))
+        self.settings_button.setAutoDefault(False)
+        self.settings_button.clicked.connect(self.open_settings)
+        header_layout.addWidget(self.settings_button)
+        root.addWidget(header)
+
+        summary = QWidget()
+        summary.setStyleSheet(f"background:{C.BG};")
+        summary_layout = QHBoxLayout(summary)
+        summary_layout.setContentsMargins(14, 7, 14, 7)
+        summary_layout.setSpacing(18)
+        self.budgeted_block = BudgetSummary("Budgeted", C.TEXT, compact=True)
+        self.spent_block = BudgetSummary("Spent", C.ORANGE, compact=True)
+        self.remaining_block = BudgetSummary("Remaining", C.GREEN, compact=True)
+        summary_layout.addWidget(self.budgeted_block)
+        summary_layout.addWidget(self.spent_block)
+        summary_layout.addWidget(self.remaining_block)
+        summary_layout.addStretch(1)
+        root.addWidget(summary)
+
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll.setStyleSheet(
+            f"QScrollArea {{ background:{C.BG}; border:none; }}"
+        )
+        self.content = QWidget()
+        self.content.setStyleSheet(f"background:{C.BG};")
+        self.content_layout = QVBoxLayout(self.content)
+        self.content_layout.setContentsMargins(12, 0, 12, 10)
+        self.content_layout.setSpacing(8)
+        self.scroll.setWidget(self.content)
+        root.addWidget(self.scroll, 1)
+
+        self.reload()
+
+    # ------------------------------------------------------------------ data
+    def reload(self) -> None:
+        statuses = self.store.budget_report(self.month)
+        budgeted = sum(status.budget for status in statuses)
+        spent = sum(status.spent for status in statuses)
+        remaining = budgeted - spent
+
+        self.month_label.setText(_month_label(self.month))
+        self.budgeted_block.set_value(money(budgeted))
+        self.spent_block.set_value(money(spent))
+        self.remaining_block.set_value(
+            money(remaining), C.GREEN if remaining >= 0 else C.RED_BAR
+        )
+
+        while self.content_layout.count():
+            item = self.content_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.hide()
+                widget.setParent(None)
+                widget.deleteLater()
+
+        if not statuses:
+            empty = QLabel(
+                "No budgets set for this period.\n"
+                "Use “Set budgets…” to give expense categories a monthly limit."
+            )
+            empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty.setWordWrap(True)
+            empty.setFont(font(13, 400))
+            empty.setStyleSheet(f"color:{C.MUTED};")
+            empty.setMinimumHeight(100)
+            self.content_layout.addWidget(empty)
+            self.content_layout.addStretch(1)
+            return
+
+        for status in statuses:
+            row = BudgetRow(status)
+            row.trendClicked.connect(self.open_trend)
+            self.content_layout.addWidget(row)
+        self.content_layout.addStretch(1)
+
+    # --------------------------------------------------------------- actions
+    def _shift_month(self, delta: int) -> None:
+        self.month = _shift_month(self.month, delta)
+        self.reload()
+
+    def _show_this_month(self) -> None:
+        self.month = self.store.current_budget_period()
+        self.reload()
 
     @staticmethod
     def _short_date(value: date) -> str:

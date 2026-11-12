@@ -15,7 +15,12 @@ from PySide6.QtWidgets import QApplication
 
 from contapy.db import DataStore, _shift_month_start
 from contapy.models import BudgetStatus
-from contapy.widgets.budgets import BudgetProgress, BudgetRow, BudgetWindow
+from contapy.widgets.budgets import (
+    BudgetProgress,
+    BudgetRow,
+    BudgetWindow,
+    BudgetsPanel,
+)
 
 
 def insert_category(
@@ -286,6 +291,59 @@ class BudgetWidgetTests(unittest.TestCase):
 
         window._show_this_month()
         self.assertEqual(window.month, store.current_budget_period())
+
+    def test_embedded_budgets_panel_renders_rows_and_navigates(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        store = DataStore(Path(tmp.name) / "panel.db", seed=False)
+        self.addCleanup(store.close)
+        cur = store.conn.execute(
+            "INSERT INTO accounts(name, kind, opening, sort_order) VALUES ('Bank','Bank',0,0)"
+        )
+        account_id = int(cur.lastrowid)
+        category_id = insert_category(store, "renta")
+        store.conn.commit()
+        store.set_budget(category_id, 1_000)
+        today = date.today()
+        insert_transaction(
+            store, account_id, category_id, today.replace(day=1).isoformat(), -250
+        )
+
+        panel = BudgetsPanel(store)
+        self.addCleanup(panel.deleteLater)
+        self.assertEqual(panel.month, today.replace(day=1))
+        self.assertTrue(panel.month_label.text())
+        self.assertNotEqual(panel.budgeted_block.value.text(), "—")
+        rows = [
+            panel.content_layout.itemAt(index).widget()
+            for index in range(panel.content_layout.count())
+        ]
+        self.assertTrue(any(isinstance(row, BudgetRow) for row in rows))
+
+        panel._shift_month(-1)
+        self.assertEqual(panel.month, _shift_month_start(today.replace(day=1), -1))
+        panel._show_this_month()
+        self.assertEqual(panel.month, today.replace(day=1))
+
+    def test_main_window_puts_budgets_beside_the_scheduled_strip(self) -> None:
+        from contapy.main_window import MainWindow
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        store = DataStore(Path(tmp.name) / "main.db", seed=False)
+        self.addCleanup(store.close)
+        window = MainWindow(store)
+        self.addCleanup(window.close)
+
+        self.assertEqual(window.bottom_split.count(), 2)
+        self.assertIs(window.bottom_split.widget(0), window.scheduled_panel)
+        self.assertIs(window.bottom_split.widget(1), window.budgets_panel)
+        self.assertTrue(window.act_toggle_budgets.isChecked())
+
+        window.act_toggle_budgets.setChecked(False)
+        self.assertTrue(window.budgets_panel.isHidden())
+        window.act_toggle_budgets.setChecked(True)
+        self.assertFalse(window.budgets_panel.isHidden())
 
 
 if __name__ == "__main__":
