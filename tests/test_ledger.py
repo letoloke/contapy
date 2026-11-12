@@ -13,15 +13,18 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from unittest import mock
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from contapy.db import DataStore
 from contapy.models import TransactionDraft, TransactionRow
+from contapy.theme import C
 from contapy.widgets.dialogs import BulkEditDialog, DateRangeDialog
 from contapy.widgets.ledger import (
     CUSTOM_RANGE,
     HEADERS,
     LedgerWindow,
+    category_text_color,
     closest_amount_ids,
     date_bounds,
 )
@@ -59,6 +62,19 @@ class DateBoundsTests(unittest.TestCase):
         dialog = DateRangeDialog(date(2026, 1, 5), date(2026, 2, 10))
         self.assertEqual(dialog.values(), (date(2026, 1, 5), date(2026, 2, 10)))
         dialog.deleteLater()
+
+
+class CategoryColorTests(unittest.TestCase):
+    def test_uncategorized_transactions_use_red_letters(self) -> None:
+        uncategorized = row(1, -10)
+        color = category_text_color(uncategorized, QColor("#ffffff"), False)
+        self.assertEqual(color.name(), QColor(C.RED_BAR).name())
+
+    def test_assigned_categories_keep_the_normal_text_color(self) -> None:
+        assigned = row(1, -10)
+        assigned.category_id = 7
+        color = category_text_color(assigned, QColor("#ffffff"), False)
+        self.assertEqual(color.name(), "#ffffff")
 
 
 class LedgerHintTests(unittest.TestCase):

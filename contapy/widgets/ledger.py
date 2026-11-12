@@ -85,6 +85,16 @@ def ledger_date(iso: str) -> str:
     return format_date(iso)
 
 
+def category_text_color(
+    row: TransactionRow, text_color: QColor, selected: bool
+) -> QColor:
+    """Paint uncategorized transactions red so they are easy to spot."""
+    if row.category_id is not None:
+        return text_color
+    color = QColor(C.RED_BAR)
+    return color.lighter(135) if selected else color
+
+
 def closest_amount_ids(
     rows: list[TransactionRow],
     selected_ids: set[int],
@@ -237,7 +247,7 @@ class LedgerDelegate(QStyledItemDelegate):
         if row.voided and not selected:
             text_color = QColor(C.MUTED_DARK)
             muted = QColor(C.MUTED_DARK)
-        category_color = text_color
+        category_color = category_text_color(row, text_color, selected)
 
         if col == FLAG:
             if row.flagged:
