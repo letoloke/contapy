@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import calendar
+from dataclasses import dataclass
 from datetime import date, timedelta
 
 from PySide6.QtCore import (
@@ -18,6 +19,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QAction, QColor, QFontMetrics, QKeySequence, QPainter, QPen
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -69,6 +71,14 @@ HEADERS = (
 )
 FILTER_DAY = 24
 CUSTOM_RANGE = "Custom range…"
+UNDO_LIMIT = 50
+
+
+@dataclass(slots=True)
+class _UndoEntry:
+    label: str
+    before: list[dict]
+    remove_ids: list[int]
 
 
 def ledger_date(iso: str) -> str:
@@ -459,6 +469,7 @@ class LedgerWindow(QMainWindow):
         self._previous_period = "All date"
         self._highlight_ids: set[int] = set()
         self._suspend_highlight = False
+        self._undo_stack: list[_UndoEntry] = []
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.setMinimumSize(1180, 540)
         self.resize(1260, 680)
@@ -490,6 +501,8 @@ class LedgerWindow(QMainWindow):
         self.act_inherit = self._action("Inherit Transaction…", self.inherit_transaction, "Ctrl+D")
         self.act_delete = self._action("Delete Transaction", self.delete_transaction)
         self.act_select_all = self._action("Select All", self._select_all)
+        self.act_undo = self._action("Undo", self.undo, "Ctrl+Z")
+        self.act_undo.setEnabled(False)
         self.act_import = self._action("Import CSV…", self.import_csv)
         self.act_export = self._action("Export CSV…", self.export_csv)
         self.act_close = self._action("Close", self.close)
@@ -504,6 +517,8 @@ class LedgerWindow(QMainWindow):
         account_menu.addAction(self.act_close)
 
         edit_menu = bar.addMenu("Edit")
+        edit_menu.addAction(self.act_undo)
+        edit_menu.addSeparator()
         edit_menu.addAction(self.act_edit)
         edit_menu.addAction(self.act_inherit)
         edit_menu.addAction(self.act_delete)
@@ -953,7 +968,10 @@ class LedgerWindow(QMainWindow):
                 f"color:{C.WARNING}; font-weight:600;"
             )
         else:
-            self.keyboard_hint.setText("↑↓ move · Enter open · Del delete")
+            hint = "↑↓ move · Enter open · Del delete"
+            if self._undo_stack:
+                hint += " · Ctrl+Z undo"
+            self.keyboard_hint.setText(hint)
             self.keyboard_hint.setStyleSheet(f"color:{C.MUTED_DARK};")
 
     def _update_summary(self) -> None:
@@ -1021,16 +1039,19 @@ class LedgerWindow(QMainWindow):
             return
         if draft.transfer_account_id is not None:
             group = self.store.add_transfer(draft, draft.transfer_account_id)
+            legs = self.store.transfer_legs(group)
             self.reload(preserve_selection=False)
             ids = [
-                row.id for row in self.store.transfer_legs(group)
+                row.id for row in legs
                 if row.account_id == self.account_id
             ]
             self._select_ids(ids)
+            self._push_undo("new transfer", [], [row.id for row in legs])
         else:
             new_id = self.store.add_transaction(draft)
             self.reload(preserve_selection=False)
             self._select_ids([new_id])
+            self._push_undo("new transaction", [], [new_id])
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
 
@@ -1062,16 +1083,19 @@ class LedgerWindow(QMainWindow):
             return
         if new_draft.transfer_account_id is not None:
             group = self.store.add_transfer(new_draft, new_draft.transfer_account_id)
+            legs = self.store.transfer_legs(group)
             self.reload(preserve_selection=False)
             ids = [
-                row.id for row in self.store.transfer_legs(group)
+                row.id for row in legs
                 if row.account_id == self.account_id
             ]
             self._select_ids(ids)
+            self._push_undo("new transfer", [], [row.id for row in legs])
         else:
             new_id = self.store.add_transaction(new_draft)
             self.reload(preserve_selection=False)
             self._select_ids([new_id])
+            self._push_undo("new transaction", [], [new_id])
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
 
@@ -1120,19 +1144,38 @@ class LedgerWindow(QMainWindow):
         new_draft = dialog.draft()
         if new_draft is None:
             return
+
+        before_ids = (
+            [row.id for row in self.store.transfer_legs(transfer_id)]
+            if transfer_id
+            else [source.id]
+        )
+        before = self.store.snapshot_transactions(before_ids)
+
         if transfer_id:
             if new_draft.transfer_account_id is not None:
                 self.store.update_transfer(
                     transfer_id, new_draft, new_draft.transfer_account_id
                 )
+                remove_ids = [
+                    row.id for row in self.store.transfer_legs(transfer_id)
+                ]
             else:
                 self.store.delete_transaction(source.id)
-                self.store.add_transaction(new_draft)
+                new_id = self.store.add_transaction(new_draft)
+                remove_ids = [new_id]
         elif new_draft.transfer_account_id is not None:
             self.store.delete_transaction(source.id)
-            self.store.add_transfer(new_draft, new_draft.transfer_account_id)
+            group = self.store.add_transfer(
+                new_draft, new_draft.transfer_account_id
+            )
+            remove_ids = [
+                row.id for row in self.store.transfer_legs(group)
+            ]
         else:
             self.store.update_transaction(source.id, new_draft)
+            remove_ids = [source.id]
+        self._push_undo("transaction edit", before, remove_ids)
         self.reload()
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
@@ -1158,6 +1201,7 @@ class LedgerWindow(QMainWindow):
             return
 
         ids = [row.id for row in editable]
+        before = self.store.snapshot_transactions(ids)
         tags_mode = changes.pop("tags_mode", "set")
         if "tags" in changes and tags_mode == "add":
             extra = str(changes.pop("tags", "")).strip()
@@ -1168,6 +1212,7 @@ class LedgerWindow(QMainWindow):
                     self.store.update_transactions([row.id], tags=merged)
         if changes:
             self.store.update_transactions(ids, **changes)
+        self._push_undo("bulk edit", before, ids)
         self.reload()
         self.changed.emit()
         if skipped:
@@ -1186,14 +1231,29 @@ class LedgerWindow(QMainWindow):
         answer = QMessageBox.question(
             self,
             "Delete transaction?",
-            f"Delete {label}? This cannot be undone.",
+            f"Delete {label}? You can undo this with Ctrl+Z.",
             QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
             QMessageBox.StandardButton.Cancel,
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
+        affected_ids: set[int] = set()
+        for row in selected:
+            if row.transfer_id:
+                affected_ids.update(
+                    leg.id for leg in self.store.transfer_legs(row.transfer_id)
+                )
+            else:
+                affected_ids.add(row.id)
+        before = self.store.snapshot_transactions(sorted(affected_ids))
         for row in selected:
             self.store.delete_transaction(row.id)
+        undo_label = (
+            "delete transaction"
+            if len(selected) == 1
+            else f"delete {len(selected)} transactions"
+        )
+        self._push_undo(undo_label, before, sorted(affected_ids))
         self.reload(preserve_selection=False)
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
@@ -1202,9 +1262,11 @@ class LedgerWindow(QMainWindow):
         ids = self._selected_ids()
         if not ids:
             return
+        before = self.store.snapshot_transactions(ids)
         self.store.update_transaction_flags(
             ids, cleared=cleared, reconciled=False
         )
+        self._push_undo("clear" if cleared else "unclear", before, ids)
         self.reload()
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
@@ -1213,10 +1275,12 @@ class LedgerWindow(QMainWindow):
         ids = self._selected_ids()
         if not ids:
             return
+        before = self.store.snapshot_transactions(ids)
         if reconciled:
             self.store.update_transaction_flags(ids, cleared=True, reconciled=True)
         else:
             self.store.update_transaction_flags(ids, cleared=True, reconciled=False)
+        self._push_undo("reconcile" if reconciled else "unreconcile", before, ids)
         self.reload()
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
@@ -1225,8 +1289,11 @@ class LedgerWindow(QMainWindow):
         selected = self._selected_rows()
         if not selected:
             return
+        ids = [row.id for row in selected]
+        before = self.store.snapshot_transactions(ids)
         target = not all(row.remind for row in selected)
-        self.store.update_transaction_flags([row.id for row in selected], remind=target)
+        self.store.update_transaction_flags(ids, remind=target)
+        self._push_undo("remind change", before, ids)
         self.reload()
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
@@ -1235,8 +1302,11 @@ class LedgerWindow(QMainWindow):
         selected = self._selected_rows()
         if not selected:
             return
+        ids = [row.id for row in selected]
+        before = self.store.snapshot_transactions(ids)
         target = not all(row.flagged for row in selected)
-        self.store.update_transaction_flags([row.id for row in selected], flagged=target)
+        self.store.update_transaction_flags(ids, flagged=target)
+        self._push_undo("flag change", before, ids)
         self.reload()
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
@@ -1245,8 +1315,11 @@ class LedgerWindow(QMainWindow):
         selected = self._selected_rows()
         if not selected:
             return
+        ids = [row.id for row in selected]
+        before = self.store.snapshot_transactions(ids)
         target = not all(row.voided for row in selected)
-        self.store.update_transaction_flags([row.id for row in selected], voided=target)
+        self.store.update_transaction_flags(ids, voided=target)
+        self._push_undo("void change", before, ids)
         self.reload()
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
@@ -1256,6 +1329,8 @@ class LedgerWindow(QMainWindow):
         if not ids:
             return
         selected_ids = [row.id for row in self._selected_rows() if not row.voided]
+        affected_ids = sorted(set(ids) | set(selected_ids))
+        before = self.store.snapshot_transactions(affected_ids)
         self._suspend_highlight = True
         try:
             self.store.update_transaction_flags(ids, voided=True)
@@ -1263,6 +1338,7 @@ class LedgerWindow(QMainWindow):
                 self.store.update_transaction_flags(
                     selected_ids, cleared=True, reconciled=True
                 )
+            self._push_undo("void highlighted", before, affected_ids)
             self.reload()
             self.changed.emit()
         finally:
@@ -1271,6 +1347,52 @@ class LedgerWindow(QMainWindow):
         self.delegate.highlight_ids = set()
         self.table.viewport().update()
         self.act_void_highlighted.setEnabled(False)
+        QTimer.singleShot(0, self._focus_table)
+
+    # ------------------------------------------------------------------- undo
+    def _push_undo(
+        self, label: str, before: list[dict], remove_ids: list[int]
+    ) -> None:
+        self._undo_stack.append(
+            _UndoEntry(
+                label=label,
+                before=before,
+                remove_ids=[int(transaction_id) for transaction_id in remove_ids],
+            )
+        )
+        if len(self._undo_stack) > UNDO_LIMIT:
+            del self._undo_stack[0]
+        self._update_undo_action()
+        if not self._highlight_ids and hasattr(self, "keyboard_hint"):
+            self.keyboard_hint.setText("↑↓ move · Enter open · Ctrl+Z undo")
+            self.keyboard_hint.setStyleSheet(f"color:{C.MUTED_DARK};")
+
+    def _update_undo_action(self) -> None:
+        if self._undo_stack:
+            self.act_undo.setText(f"Undo {self._undo_stack[-1].label}")
+            self.act_undo.setEnabled(True)
+        else:
+            self.act_undo.setText("Undo")
+            self.act_undo.setEnabled(False)
+
+    def undo(self) -> None:
+        focus = QApplication.focusWidget()
+        if isinstance(focus, QLineEdit):
+            focus.undo()
+            return
+        if not self._undo_stack:
+            return
+        entry = self._undo_stack.pop()
+        try:
+            self.store.restore_transactions(entry.before, entry.remove_ids)
+        except Exception as exc:
+            self._undo_stack.append(entry)
+            self._show_message("Undo failed", str(exc))
+            self._update_undo_action()
+            return
+        self.reload()
+        self.changed.emit()
+        self._update_undo_action()
         QTimer.singleShot(0, self._focus_table)
 
     def _select_ids(self, ids: list[int]) -> None:
@@ -1296,6 +1418,7 @@ class LedgerWindow(QMainWindow):
             return
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
+        max_before = self.store.max_transaction_id()
         try:
             added, skipped, duplicates = self.store.import_csv(
                 path,
@@ -1308,6 +1431,9 @@ class LedgerWindow(QMainWindow):
         except Exception as exc:
             QMessageBox.warning(self, "Import failed", str(exc))
             return
+        new_ids = self.store.transaction_ids_after(max_before)
+        if new_ids:
+            self._push_undo("CSV import", [], new_ids)
         self.reload()
         self.changed.emit()
         self._show_message(

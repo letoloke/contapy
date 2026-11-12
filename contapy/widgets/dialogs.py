@@ -2131,6 +2131,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
             ("Home / End", "Jump to the newest or oldest transaction"),
             ("Enter", "Edit the selection (bulk edit when several rows are selected)"),
             ("Delete", "Delete the selected transaction"),
+            ("Ctrl+Z", "Undo the last ledger change"),
             ("Ctrl+N", "New transaction"),
             ("Ctrl+D", "Inherit a new transaction from the selection"),
             (

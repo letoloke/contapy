@@ -45,6 +45,25 @@ from .omarchy import theme_category_color
 #: real value for nullable columns such as ``category_id``.
 _UNCHANGED = object()
 
+TRANSACTION_COLUMNS = (
+    "id",
+    "account_id",
+    "date",
+    "payee",
+    "category_id",
+    "amount",
+    "memo",
+    "cleared",
+    "reconciled",
+    "remind",
+    "flagged",
+    "voided",
+    "payment",
+    "number",
+    "tags",
+    "transfer_id",
+)
+
 SCHEMA = """
 PRAGMA foreign_keys = ON;
 
@@ -1368,6 +1387,68 @@ class DataStore:
         else:
             self.conn.execute("DELETE FROM transactions WHERE id=?", (transaction_id,))
         self.conn.commit()
+
+    def snapshot_transactions(self, transaction_ids: list[int]) -> list[dict]:
+        """Return complete row values for the requested transaction ids."""
+        ids = sorted({int(transaction_id) for transaction_id in transaction_ids})
+        snapshot: list[dict] = []
+        columns = ", ".join(TRANSACTION_COLUMNS)
+        for start in range(0, len(ids), 500):
+            chunk = ids[start : start + 500]
+            if not chunk:
+                continue
+            placeholders = ",".join("?" for _ in chunk)
+            rows = self.conn.execute(
+                f"SELECT {columns} FROM transactions WHERE id IN ({placeholders})",
+                chunk,
+            )
+            snapshot.extend(dict(row) for row in rows)
+        return snapshot
+
+    def restore_transactions(
+        self, snapshot: list[dict], remove_ids: list[int]
+    ) -> None:
+        """Replace the current rows with a previous snapshot.
+
+        ``remove_ids`` lists every id the undone action created or changed, so
+        replacements added by the action are deleted before the old rows return.
+        """
+        ids = sorted(
+            {int(transaction_id) for transaction_id in remove_ids}
+            | {int(row["id"]) for row in snapshot}
+        )
+        for start in range(0, len(ids), 500):
+            chunk = ids[start : start + 500]
+            placeholders = ",".join("?" for _ in chunk)
+            self.conn.execute(
+                f"DELETE FROM transactions WHERE id IN ({placeholders})", chunk
+            )
+        if snapshot:
+            columns = ", ".join(TRANSACTION_COLUMNS)
+            placeholders = ",".join("?" for _ in TRANSACTION_COLUMNS)
+            self.conn.executemany(
+                f"INSERT INTO transactions ({columns}) VALUES ({placeholders})",
+                [
+                    tuple(row[column] for column in TRANSACTION_COLUMNS)
+                    for row in snapshot
+                ],
+            )
+        self.conn.commit()
+
+    def max_transaction_id(self) -> int:
+        row = self.conn.execute(
+            "SELECT COALESCE(MAX(id), 0) AS max_id FROM transactions"
+        ).fetchone()
+        return int(row["max_id"])
+
+    def transaction_ids_after(self, transaction_id: int) -> list[int]:
+        return [
+            int(row["id"])
+            for row in self.conn.execute(
+                "SELECT id FROM transactions WHERE id > ? ORDER BY id",
+                (int(transaction_id),),
+            )
+        ]
 
     def _transaction_query(self, where: str = "", params: tuple = ()) -> list[sqlite3.Row]:
         return self._rows(

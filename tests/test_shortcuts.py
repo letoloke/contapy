@@ -52,10 +52,12 @@ class ShortcutsDialogTests(unittest.TestCase):
         dialog.search_edit.setText("categories")
         self.assertEqual(dialog.visible_rows(), 2)
 
-    def test_ledger_alt_v_is_documented(self) -> None:
+    def test_ledger_alt_v_and_undo_are_documented(self) -> None:
         dialog = ShortcutsDialog()
         self.addCleanup(dialog.deleteLater)
         dialog.search_edit.setText("highlighted")
+        self.assertEqual(dialog.visible_rows(), 1)
+        dialog.search_edit.setText("Ctrl+Z")
         self.assertEqual(dialog.visible_rows(), 1)
 
 

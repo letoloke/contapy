@@ -13,7 +13,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from unittest import mock
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QDialog
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from contapy.db import DataStore
 from contapy.models import TransactionDraft, TransactionRow
@@ -211,6 +211,154 @@ class LedgerHintTests(unittest.TestCase):
         ]
         self.assertIn("home, tax", values)
 
+    def test_ctrl_z_undoes_a_flag_change(self) -> None:
+        ids = [row.id for row in self.window.model.rows]
+        self.window._select_ids(ids)
+
+        self.window._set_cleared(False)
+        changed = {
+            row.id: row for row in self.store.ledger_rows(self.window.account_id)
+        }
+        for transaction_id in ids:
+            self.assertFalse(changed[transaction_id].cleared)
+        self.assertEqual(self.window.act_undo.text(), "Undo unclear")
+        self.assertEqual(self.window.act_undo.shortcut().toString(), "Ctrl+Z")
+
+        self.window.undo()
+
+        restored = {
+            row.id: row for row in self.store.ledger_rows(self.window.account_id)
+        }
+        for transaction_id in ids:
+            self.assertTrue(restored[transaction_id].cleared)
+        self.assertFalse(self.window.act_undo.isEnabled())
+
+    def test_ctrl_z_undoes_a_deleted_transaction(self) -> None:
+        from contapy.widgets import ledger as ledger_module
+
+        target = self.window.model.rows[0]
+        before = {
+            row.id: row for row in self.store.ledger_rows(self.window.account_id)
+        }[target.id]
+        self.window._select_ids([target.id])
+
+        with mock.patch.object(
+            ledger_module.QMessageBox,
+            "question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ):
+            self.window.delete_transaction()
+
+        remaining = {
+            row.id for row in self.store.ledger_rows(self.window.account_id)
+        }
+        self.assertNotIn(target.id, remaining)
+
+        self.window.undo()
+
+        restored = {
+            row.id: row for row in self.store.ledger_rows(self.window.account_id)
+        }[target.id]
+        self.assertEqual(restored.payee, before.payee)
+        self.assertEqual(restored.amount, before.amount)
+        self.assertEqual(restored.date, before.date)
+
+    def test_ctrl_z_undoes_a_new_transaction(self) -> None:
+        from contapy.widgets import ledger as ledger_module
+
+        class FakeCombo:
+            def findData(self, value) -> int:
+                return -1
+
+        class FakeDialog:
+            DialogCode = QDialog.DialogCode
+
+            def __init__(self, *args, **kwargs):
+                self.account_combo = FakeCombo()
+
+            def exec(self) -> QDialog.DialogCode:
+                return QDialog.DialogCode.Accepted
+
+            def draft(self) -> TransactionDraft:
+                return TransactionDraft(
+                    date=date.today().isoformat(),
+                    account_id=self.account_id,
+                    payee="Undo me",
+                    category_id=None,
+                    amount=-12,
+                )
+
+        FakeDialog.account_id = self.window.account_id
+        with mock.patch.object(ledger_module, "TransactionDialog", FakeDialog):
+            self.window.add_transaction()
+
+        created = [
+            row
+            for row in self.store.ledger_rows(self.window.account_id)
+            if row.payee == "Undo me"
+        ]
+        self.assertEqual(len(created), 1)
+
+        self.window.undo()
+
+        remaining = [
+            row
+            for row in self.store.ledger_rows(self.window.account_id)
+            if row.payee == "Undo me"
+        ]
+        self.assertEqual(remaining, [])
+
+    def test_ctrl_z_undoes_a_bulk_edit(self) -> None:
+        from contapy.widgets import ledger as ledger_module
+
+        rows = self.window.model.rows
+        selected_ids = [rows[0].id, rows[1].id]
+        self.window._select_ids(selected_ids)
+        original = {
+            row.id: row for row in self.store.ledger_rows(self.window.account_id)
+        }
+
+        class FakeDialog:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def exec(self) -> QDialog.DialogCode:
+                return QDialog.DialogCode.Accepted
+
+            def changes(self) -> dict[str, object]:
+                return {"payee": "Changed", "tags": "bulk"}
+
+        with mock.patch.object(ledger_module, "BulkEditDialog", FakeDialog):
+            self.window.edit_transaction()
+
+        changed = {
+            row.id: row for row in self.store.ledger_rows(self.window.account_id)
+        }
+        for transaction_id in selected_ids:
+            self.assertEqual(changed[transaction_id].payee, "Changed")
+
+        self.window.undo()
+
+        restored = {
+            row.id: row for row in self.store.ledger_rows(self.window.account_id)
+        }
+        for transaction_id in selected_ids:
+            self.assertEqual(restored[transaction_id].payee, original[transaction_id].payee)
+            self.assertEqual(restored[transaction_id].tags, original[transaction_id].tags)
+
+    def test_undo_history_keeps_multiple_steps(self) -> None:
+        ids = [row.id for row in self.window.model.rows]
+        self.window._select_ids(ids)
+        self.window._set_cleared(False)
+        self.window.update()
+        self.window._toggle_flag()
+
+        self.assertIn("flag change", self.window.act_undo.text())
+        self.window.undo()
+        self.assertIn("unclear", self.window.act_undo.text())
+        self.window.undo()
+        self.assertFalse(self.window.act_undo.isEnabled())
+
     def test_alt_v_voids_highlighted_and_reconciles_selected(self) -> None:
         by_amount = {row.amount: row.id for row in self.window.model.rows}
         selected_ids = [by_amount[-400.0], by_amount[-600.0]]
@@ -229,6 +377,23 @@ class LedgerHintTests(unittest.TestCase):
             self.assertTrue(rows[transaction_id].cleared)
             self.assertTrue(rows[transaction_id].reconciled)
             self.assertFalse(rows[transaction_id].voided)
+
+    def test_ctrl_z_undoes_alt_v(self) -> None:
+        by_amount = {row.amount: row.id for row in self.window.model.rows}
+        selected_ids = [by_amount[-400.0], by_amount[-600.0]]
+        highlighted_id = by_amount[-1_000.0]
+        self.window._select_ids(selected_ids)
+        self.window._void_highlighted()
+
+        self.window.undo()
+
+        rows = {
+            row.id: row for row in self.store.ledger_rows(self.window.account_id)
+        }
+        self.assertFalse(rows[highlighted_id].voided)
+        for transaction_id in selected_ids:
+            self.assertFalse(rows[transaction_id].reconciled)
+            self.assertTrue(rows[transaction_id].cleared)
 
     def test_hint_announces_alt_v_while_matches_are_highlighted(self) -> None:
         by_amount = {row.amount: row.id for row in self.window.model.rows}
