@@ -33,8 +33,33 @@ from .rounded_frame import RADIUS, RoundedFrame
 HEADER_H = 26
 FOOTER_H = 36
 ROW_H = 25
-COLUMNS = (0.442, 0.613, 0.776, 0.940)
+VALUE_WIDTH = 96
+NAME_MIN = 150
+NAME_LEFT = 50
+RIGHT_PAD = 8
 COLUMN_LABELS = ("Reconciled", "Cleared", "Today", "Future")
+# Keep the most useful balances longest; the order here is drop priority.
+COLUMN_PRIORITY = (2, 1, 0, 3)
+
+
+def _required_name_width(rows: list["AccountRow"]) -> int:
+    """Width needed to show every account name without eliding it."""
+    if not rows:
+        return NAME_MIN
+    metrics = QFontMetrics(font(14, 400))
+    return max(
+        NAME_MIN,
+        max(metrics.horizontalAdvance(row.name) for row in rows) + 10,
+    )
+
+
+def _visible_value_columns(width: int, rows: list["AccountRow"]) -> list[int]:
+    """Balance columns that fit while leaving the names fully readable."""
+    required = _required_name_width(rows)
+    for count in range(len(COLUMN_LABELS), -1, -1):
+        if width - NAME_LEFT - RIGHT_PAD - count * VALUE_WIDTH >= required:
+            return sorted(COLUMN_PRIORITY[:count])
+    return []
 
 
 @dataclass(slots=True)
@@ -71,13 +96,19 @@ class AccountsHeader(QWidget):
         p.setPen(QColor(C.MUTED))
         p.drawText(QRectF(40, 0, 120, HEADER_H),
                    Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "Accounts")
-        for edge, label in zip(COLUMNS, COLUMN_LABELS):
-            right = self.width() * edge
+        panel = self.parent()
+        rows = getattr(panel, "rows", [])
+        scroll = getattr(panel, "scroll", None)
+        width = scroll.viewport().width() if scroll is not None else self.width()
+        right = width - RIGHT_PAD
+        for index in reversed(_visible_value_columns(width, rows)):
+            left = right - VALUE_WIDTH
             p.drawText(
-                QRectF(right - 150, 0, 150, HEADER_H),
+                QRectF(left, 0, VALUE_WIDTH, HEADER_H),
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                label,
+                COLUMN_LABELS[index],
             )
+            right = left
         p.setPen(QPen(QColor(C.BORDER), 1))
         p.drawLine(0, HEADER_H - 1, self.width(), HEADER_H - 1)
         if self._flash:
@@ -310,9 +341,10 @@ class _AccountCanvas(QWidget):
         p.fillRect(self.rect(), QColor(C.PANEL))
 
         width = self.width()
-        name_x = max(50, int(width * 0.125))
         group_x = max(46, int(width * 0.114))
         warn_x = max(8, int(width * 0.022))
+        active_columns = _visible_value_columns(width, self.panel.rows)
+        values_left = width - RIGHT_PAD - len(active_columns) * VALUE_WIDTH
         value_font = font(14, 400)
         bold_value_font = font(14, 600)
         name_font = font(14, 400)
@@ -364,7 +396,12 @@ class _AccountCanvas(QWidget):
                 )
                 p.setPen(color)
                 p.drawText(
-                    QRectF(group_x, y, width * 0.35, ROW_H),
+                    QRectF(
+                        group_x,
+                        y,
+                        max(40, values_left - group_x - 8),
+                        ROW_H,
+                    ),
                     Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                     row.name,
                 )
@@ -391,10 +428,7 @@ class _AccountCanvas(QWidget):
                     text_x = max(8, int(width * 0.012))
                 else:
                     text_x = max(50, int(width * 0.125))
-                max_name_width = max(
-                    40,
-                    int(width * COLUMNS[0]) - text_x - 98,
-                )
+                max_name_width = max(40, values_left - text_x - 8)
                 metrics = QFontMetrics(base_font)
                 label = metrics.elidedText(row.name, Qt.TextElideMode.ElideRight, max_name_width)
                 p.drawText(
@@ -405,8 +439,10 @@ class _AccountCanvas(QWidget):
 
             if row.values:
                 p.setFont(bold_value_font if row.kind in ("group", "total", "grand") else value_font)
-                for position, value in zip(COLUMNS, row.values):
-                    edge = width * position
+                right = width - RIGHT_PAD
+                for index in reversed(active_columns):
+                    value = row.values[index]
+                    left = right - VALUE_WIDTH
                     if selected:
                         color = QColor(C.ROW_SELECTED_TEXT)
                     elif value > 0.004:
@@ -417,10 +453,11 @@ class _AccountCanvas(QWidget):
                         color = QColor(C.TEXT_SOFT)
                     p.setPen(color)
                     p.drawText(
-                        QRectF(edge - 150, y, 150, ROW_H),
+                        QRectF(left, y, VALUE_WIDTH, ROW_H),
                         Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                         money(value),
                     )
+                    right = left
             if row.kind == "total":
                 p.setPen(QPen(QColor(C.SEPARATOR), 1))
                 p.drawLine(0, int(rect.bottom()), width, int(rect.bottom()))
