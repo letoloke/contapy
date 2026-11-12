@@ -93,6 +93,16 @@ class ImportDialogTests(unittest.TestCase):
         self.assertIn("1 unreadable row(s)", dialog.status_label.text())
         dialog.deleteLater()
 
+    def test_automatic_rules_apply_by_default_and_can_be_disabled(self) -> None:
+        target = self.write_csv("target.csv", ["2031-03-01,20,Fresh row,"])
+        dialog = self.dialog(target)
+        self.assertTrue(dialog.apply_rules())
+        self.assertIn("assignment rules", dialog.rules_check.text().lower())
+
+        dialog.rules_check.setChecked(False)
+        self.assertFalse(dialog.apply_rules())
+        dialog.deleteLater()
+
 
 if __name__ == "__main__":
     unittest.main()

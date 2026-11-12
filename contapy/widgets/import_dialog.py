@@ -171,6 +171,24 @@ class CsvImportDialog(QDialog):
         options.addStretch(1)
         root.addLayout(options)
 
+        rules_row = QHBoxLayout()
+        rules_row.setSpacing(8)
+        self.rules_check = QCheckBox("Apply automatic assignment rules")
+        self.rules_check.setChecked(True)
+        self.rules_check.setToolTip(
+            "Run the rules from Manage → Rules… on every imported transaction. "
+            "Uncheck to import the rows exactly as they appear in the file."
+        )
+        rules_row.addWidget(self.rules_check)
+        rules_hint = QLabel(
+            "Matching rules can fill payee, category, payment, tags and notes."
+        )
+        rules_hint.setFont(font(11, 400))
+        rules_hint.setStyleSheet(f"color:{C.MUTED_DARK};")
+        rules_row.addWidget(rules_hint)
+        rules_row.addStretch(1)
+        root.addLayout(rules_row)
+
         self.account_help = QLabel()
         self.account_help.setWordWrap(True)
         self.account_help.setFont(font(11, 400))
@@ -476,3 +494,6 @@ class CsvImportDialog(QDialog):
 
     def memo_as_payee(self) -> bool:
         return self.memo_payee.isChecked()
+
+    def apply_rules(self) -> bool:
+        return self.rules_check.isChecked()

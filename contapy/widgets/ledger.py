@@ -1222,6 +1222,7 @@ class LedgerWindow(QMainWindow):
                 memo_as_payee=dialog.memo_as_payee(),
                 mapping=dialog.current_mapping(),
                 skip_rows=dialog.skip_row_indexes(),
+                apply_rules=dialog.apply_rules(),
             )
         except Exception as exc:
             QMessageBox.warning(self, "Import failed", str(exc))

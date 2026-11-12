@@ -69,6 +69,8 @@ The preview checks every valid row against the transactions already in the targe
 
 Every row has an **Import** checkbox. Rows that are not duplicates start checked; duplicates start unchecked, so importing the same statement twice only adds the new rows. Tick a duplicate to import it anyway, or untick any other row to leave it out. The Import button is disabled when no rows are selected. The check is per account and only compares against transactions already in the database; identical rows inside one CSV are not removed from each other. The import summary reports both unchecked duplicates and unreadable rows.
 
+**Apply automatic assignment rules** is checked by default, so every selected row runs through the rules from **Manage → Rules…** before it is stored. Untick it to import the bank's original payee, category, payment and tags untouched. Existing transactions are never changed by either choice.
+
 ## Account ledger
 
 ![ContaPy account ledger](screenshots/ledger.png)
@@ -233,7 +235,7 @@ The demo figures are aligned to the reference: last 30 days **$167,248.99**, rec
 
 - **Account ledger** — a HomeBank-style transaction window per account, with date/payee/type/status filters (including a custom date range), a search box, running balance, reconciliation/remind/flag/void icons, account balance summary, and add/edit/inherit/delete actions.
 - **Transaction editor** — Expense/Income/Transfer tabs, payment mode, number, tags, status icons, type-to-search combos, and Enter-to-save.
-- **CSV import** — automatic English/Spanish header detection, editable field mapping, remembered header profiles, mapped-row preview with per-row import checkboxes, duplicate detection by memo, target-account selection and memo-to-payee fallback.
+- **CSV import** — automatic English/Spanish header detection, editable field mapping, remembered header profiles, mapped-row preview with per-row import checkboxes, optional automatic assignment rules, duplicate detection by memo, target-account selection and memo-to-payee fallback.
 - **Airbnb import** — converts Airbnb reservation exports (dropping payout rows and rebuilding memos) before the standard import preview.
 - **Booking import** — merges Booking payout and Sabee reservation exports, unpivots the amount columns and adds room names before the standard import preview.
 - **Banamex import** — converts saved Banamex HTML statements (dates, memos and amounts) before the standard import preview.
@@ -394,6 +396,7 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | Filter the strip | The **All** account combo and the filter icon |
 | Change chart period | The combo in each chart footer |
 | Import / export | `Ctrl+I` / `Ctrl+E`; the import dialog auto-detects HomeBank/Spanish headers |
+| Import without automatic rules | Untick **Apply automatic assignment rules** in the import dialog |
 | Open another database | **File → Open Database…** or `Ctrl+O` |
 | Save a copy elsewhere | **File → Save Database As…** or `Ctrl+Shift+S` |
 | Refresh | `F5` |
@@ -454,7 +457,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-One hundred and sixty-one tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, closest-amount highlighting for voiding with its Alt+V hint, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, Delete-key removal, Enter-to-edit and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the searchable Ctrl+K shortcut list and its window-level action, HomeBank automatic-assignment import (conditions, payees, categories, payments, tags, notes, overwrite flags, duplicates and invalid references), the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
+One hundred and sixty-three tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, closest-amount highlighting for voiding with its Alt+V hint, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, Delete-key removal, Enter-to-edit and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the searchable Ctrl+K shortcut list and its window-level action, HomeBank automatic-assignment import (conditions, payees, categories, payments, tags, notes, overwrite flags, duplicates and invalid references), the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
 
 ## Notes / limitations
 

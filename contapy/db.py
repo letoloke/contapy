@@ -1736,13 +1736,16 @@ class DataStore:
         memo_as_payee: bool = False,
         mapping: dict[str, str] | None = None,
         skip_rows: set[int] | None = None,
+        apply_rules: bool = True,
     ) -> tuple[int, int, int]:
         """Import a CSV, auto-detecting English/Spanish bank header names.
 
         Files with an account column use the account names in the file. Files
         without one (such as HomeBank bank exports) use ``account_id`` as the
         target account. ``skip_rows`` lets the import dialog leave out rows it
-        already marked as duplicates; returns added, unreadable, duplicates.
+        already marked as duplicates; set ``apply_rules`` to false to import the
+        raw rows without running the automatic assignment rules. Returns
+        added, unreadable, duplicates.
         """
         plan = read_csv_plan(path)
         if mapping is not None:
@@ -1790,24 +1793,24 @@ class DataStore:
                         # keep the row and leave it uncategorized.
                         category_id = None
                 cleared, reconciled, remind, flagged, voided = statuses_from_row(plan, row)
-                draft = self.apply_rules(
-                    TransactionDraft(
-                        date=parsed.isoformat(),
-                        account_id=row_account_id,
-                        payee=payee,
-                        category_id=category_id,
-                        amount=amount,
-                        memo=memo,
-                        cleared=cleared,
-                        reconciled=reconciled,
-                        remind=remind,
-                        flagged=flagged,
-                        voided=voided,
-                        payment=plan.value(row, "payment"),
-                        number=plan.value(row, "number"),
-                        tags=plan.value(row, "tags"),
-                    )
+                draft = TransactionDraft(
+                    date=parsed.isoformat(),
+                    account_id=row_account_id,
+                    payee=payee,
+                    category_id=category_id,
+                    amount=amount,
+                    memo=memo,
+                    cleared=cleared,
+                    reconciled=reconciled,
+                    remind=remind,
+                    flagged=flagged,
+                    voided=voided,
+                    payment=plan.value(row, "payment"),
+                    number=plan.value(row, "number"),
+                    tags=plan.value(row, "tags"),
                 )
+                if apply_rules:
+                    draft = self.apply_rules(draft)
                 self.conn.execute(
                     "INSERT INTO transactions(account_id, date, payee, category_id, amount, memo, "
                     "cleared, reconciled, remind, flagged, voided, payment, number, tags) "

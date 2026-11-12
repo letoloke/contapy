@@ -319,6 +319,49 @@ class RuleStoreTests(unittest.TestCase):
         self.assertIsNone(tea.category_id)
         self.assertEqual(tea.tags, "")
 
+    def test_import_can_skip_automatic_rules(self) -> None:
+        self.store.add_rule(
+            Rule(
+                search="coffee",
+                match_memo=True,
+                category_id=self.other,
+                category_overwrite=True,
+                assign_tags="imported",
+                tags_overwrite=True,
+            )
+        )
+        path = Path(self.tmp.name) / "raw-import.csv"
+        path.write_text(
+            "Date,Amount,Payee,Memo\n"
+            "2026-11-03,-12.50,Corner shop,Coffee beans\n",
+            encoding="utf-8",
+        )
+        added, skipped, _duplicates = self.store.import_csv(
+            path, account_id=self.account, apply_rules=False
+        )
+        self.assertEqual((added, skipped), (1, 0))
+        row = next(
+            row
+            for row in self.store.ledger_rows(self.account)
+            if row.memo == "Coffee beans"
+        )
+        self.assertIsNone(row.category_id)
+        self.assertEqual(row.tags, "")
+
+        path.write_text(
+            "Date,Amount,Payee,Memo\n"
+            "2026-11-04,-9.00,Corner shop,Coffee beans 2\n",
+            encoding="utf-8",
+        )
+        self.store.import_csv(path, account_id=self.account)
+        applied = next(
+            row
+            for row in self.store.ledger_rows(self.account)
+            if row.memo == "Coffee beans 2"
+        )
+        self.assertEqual(applied.category_id, self.other)
+        self.assertEqual(applied.tags, "imported")
+
 
 class RuleDialogTests(unittest.TestCase):
     @classmethod
