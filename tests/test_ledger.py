@@ -10,6 +10,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from contapy.db import DataStore
@@ -17,6 +18,7 @@ from contapy.models import TransactionDraft, TransactionRow
 from contapy.widgets.dialogs import DateRangeDialog
 from contapy.widgets.ledger import (
     CUSTOM_RANGE,
+    HEADERS,
     LedgerWindow,
     closest_amount_ids,
     date_bounds,
@@ -83,6 +85,30 @@ class LedgerHintTests(unittest.TestCase):
         self.window.close()
         self.store.close()
         self.tmp.cleanup()
+
+    def test_tags_column_shows_transaction_tags(self) -> None:
+        self.store.add_transaction(
+            TransactionDraft(
+                date=date.today().isoformat(),
+                account_id=self.window.account_id,
+                payee="Tagged",
+                category_id=None,
+                amount=-25,
+                tags="home, tax",
+            )
+        )
+        self.window.reload()
+
+        tag_col = HEADERS.index("Tags")
+        self.assertEqual(
+            self.window.model.headerData(tag_col, Qt.Orientation.Horizontal),
+            "Tags",
+        )
+        values = [
+            self.window.model.data(self.window.model.index(index, tag_col))
+            for index in range(self.window.model.rowCount())
+        ]
+        self.assertIn("home, tax", values)
 
     def test_hint_announces_alt_v_while_matches_are_highlighted(self) -> None:
         by_amount = {row.amount: row.id for row in self.window.model.rows}

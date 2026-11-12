@@ -30,6 +30,7 @@ from .models import ScheduledItem
 from .money import money
 from .theme import C, font, select_theme
 from .widgets.accounts import AccountsPanel
+from .branding import APP_NAME
 from .widgets.budgets import BudgetWindow, BudgetsPanel
 from .widgets.charts import ChartCard, DonutChart, SpendingRevenueChart
 from .widgets.import_dialog import CsvImportDialog
@@ -194,7 +195,7 @@ class MainWindow(QMainWindow):
         )
         self.act_shortcuts.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
         help_menu.addAction(self.act_shortcuts)
-        help_menu.addAction(self._action("About ContaPy", self.show_about))
+        help_menu.addAction(self._action(f"About {APP_NAME}", self.show_about))
 
     def _action(self, text: str, slot, shortcut: str | None = None) -> QAction:
         action = QAction(text, self)
@@ -768,7 +769,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 "Could not save database",
-                f"ContaPy could not save:\n{target}\n\n{exc}",
+                f"{APP_NAME} could not save:\n{target}\n\n{exc}",
             )
             return
         # Continue on the copy so future edits land in the new location. The
@@ -787,7 +788,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 "Could not open database",
-                f"ContaPy could not open:\n{target}\n\n{exc}",
+                f"{APP_NAME} could not open:\n{target}\n\n{exc}",
             )
             return False
 
@@ -830,13 +831,13 @@ class MainWindow(QMainWindow):
         return True
 
     def _update_window_title(self) -> None:
-        self.setWindowTitle(f"ContaPy — {self.store.path.name}")
+        self.setWindowTitle(f"{APP_NAME} — {self.store.path.name}")
 
     def _daily_backup(self, notify: bool = False) -> None:
         try:
             created = self.store.ensure_daily_backup()
         except Exception as exc:  # pragma: no cover - filesystem problems
-            print(f"ContaPy: daily backup failed: {exc}", file=sys.stderr)
+            print(f"{APP_NAME}: daily backup failed: {exc}", file=sys.stderr)
             if notify:
                 self.show_toast("Daily backup failed")
             return
@@ -988,7 +989,7 @@ class MainWindow(QMainWindow):
 
     def show_about(self) -> None:
         box = QMessageBox(self)
-        box.setWindowTitle("About ContaPy")
+        box.setWindowTitle(f"About {APP_NAME}")
         box.setTextFormat(Qt.TextFormat.RichText)
         box.setText(about_text())
         box.exec()

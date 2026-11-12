@@ -12,6 +12,7 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication
 
 from . import __version__
+from .branding import APP_DESCRIPTION, APP_NAME
 from .config import date_format_choice, last_database, theme_choice
 from .dates import set_date_format
 from .db import DataStore, default_db_path
@@ -43,7 +44,7 @@ def build_app_icon() -> QIcon:
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="ContaPy — a local-first finance dashboard")
+    parser = argparse.ArgumentParser(description=f"{APP_NAME} — {APP_DESCRIPTION}")
     parser.add_argument("--db", help="Path to the SQLite database")
     parser.add_argument("--screenshot", help="Render the window to a PNG and exit")
     parser.add_argument("--size", default="1850x835", help="Window size for --screenshot")
@@ -76,9 +77,9 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["QT_SCALE_FACTOR"] = "1"
 
     app = QApplication(sys.argv[:1])
-    app.setApplicationName("ContaPy")
-    app.setApplicationDisplayName("ContaPy")
-    app.setOrganizationName("ContaPy")
+    app.setApplicationName(APP_NAME)
+    app.setApplicationDisplayName(APP_NAME)
+    app.setOrganizationName(APP_NAME)
     app.setApplicationVersion(__version__)
     set_date_format(date_format_choice())
     select_theme(theme_choice())

@@ -53,9 +53,20 @@ from .icons import (
     draw_void,
 )
 
-ROWS = 9
-FLAG, DATE, PAYEE, CATEGORY, STATUS, EXPENSE, INCOME, BALANCE, MEMO = range(ROWS)
-HEADERS = ("Flag", "Date", "Payee", "Category", "Status", "Expense", "Income", "Balance", "Memo")
+ROWS = 10
+FLAG, DATE, PAYEE, CATEGORY, TAGS, STATUS, EXPENSE, INCOME, BALANCE, MEMO = range(ROWS)
+HEADERS = (
+    "Flag",
+    "Date",
+    "Payee",
+    "Category",
+    "Tags",
+    "Status",
+    "Expense",
+    "Income",
+    "Balance",
+    "Memo",
+)
 FILTER_DAY = 24
 CUSTOM_RANGE = "Custom range…"
 
@@ -135,6 +146,8 @@ class LedgerModel(QAbstractTableModel):
                 return row.payee
             if col == CATEGORY:
                 return row.category_name
+            if col == TAGS:
+                return row.tags
             if col == EXPENSE:
                 return money(row.amount) if row.amount < 0 else ""
             if col == INCOME:
@@ -149,11 +162,14 @@ class LedgerModel(QAbstractTableModel):
                 return Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
             return Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         if role == Qt.ItemDataRole.ToolTipRole:
-            return (
+            detail = (
                 f"{row.date} · {row.payee}\n"
                 f"{row.category_name} · {money(row.amount)}\n"
                 f"Balance after: {money(row.balance)}"
             )
+            if row.tags:
+                detail += f"\nTags: {row.tags}"
+            return detail
         return None
 
     def headerData(self, section: int, orientation, role=Qt.ItemDataRole.DisplayRole):  # noqa: N802
@@ -227,6 +243,8 @@ class LedgerDelegate(QStyledItemDelegate):
             self._text(painter, rect, pad, row.payee, self._payee_font, text_color)
         elif col == CATEGORY:
             self._text(painter, rect, pad, row.category_name, self._value_font, category_color)
+        elif col == TAGS:
+            self._text(painter, rect, pad, row.tags, self._small_font, muted)
         elif col == STATUS:
             x = rect.left() + 7
             if row.voided:
@@ -442,8 +460,8 @@ class LedgerWindow(QMainWindow):
         self._highlight_ids: set[int] = set()
         self._suspend_highlight = False
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
-        self.setMinimumSize(1040, 540)
-        self.resize(1120, 680)
+        self.setMinimumSize(1180, 540)
+        self.resize(1260, 680)
         self.setWindowTitle(
             f"{self.account.name} — Account" if self.account else "Account"
         )
@@ -612,6 +630,8 @@ class LedgerWindow(QMainWindow):
         header.resizeSection(PAYEE, 195)
         header.setSectionResizeMode(CATEGORY, QHeaderView.ResizeMode.Interactive)
         header.resizeSection(CATEGORY, 170)
+        header.setSectionResizeMode(TAGS, QHeaderView.ResizeMode.Interactive)
+        header.resizeSection(TAGS, 140)
         header.setSectionResizeMode(STATUS, QHeaderView.ResizeMode.Fixed)
         header.resizeSection(STATUS, 64)
         header.setSectionResizeMode(EXPENSE, QHeaderView.ResizeMode.Fixed)

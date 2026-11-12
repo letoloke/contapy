@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..branding import APP_NAME
 from ..fontawesome import glyph_icon
 from ..theme import C, emoji_pixmap, font
 
@@ -138,7 +139,7 @@ class AppToolbar(QWidget):
             "gear", "🎯", "Preferences", self.preferencesRequested.emit, layout
         )
         self._button(
-            "heart", "❤️", "About ContaPy", self.aboutRequested.emit, layout
+            f"heart", "❤️", f"About {APP_NAME}", self.aboutRequested.emit, layout
         )
         layout.addStretch(1)
 

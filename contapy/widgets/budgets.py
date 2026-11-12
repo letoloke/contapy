@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..branding import APP_NAME
 from ..db import DataStore
 from ..models import BudgetStatus, ordered_categories
 from ..money import money, money_short
@@ -493,7 +494,7 @@ class BudgetWindow(QMainWindow):
         self.store = store
         self.month = self.store.current_budget_period()
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
-        self.setWindowTitle("Budgets — ContaPy")
+        self.setWindowTitle(f"Budgets — {APP_NAME}")
         self.setMinimumSize(980, 620)
         self.resize(1120, 720)
         self.setStyleSheet(f"QMainWindow {{ background:{C.BG}; }}")

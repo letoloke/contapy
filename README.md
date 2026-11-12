@@ -1,10 +1,10 @@
-# ContaPy
+# LetoBank
 
 A HomeBank-inspired, local-first personal finance dashboard built with **Python, PySide6 and SQLite**. The welcome screen, account ledger and transaction editor are from-scratch PySide6 interpretations of [HomeBank](https://www.gethomebank.org/) — fully interactive, not mockups.
 
 This is totally vibe coding, using first DeepSeek-Harness and then (while on Omarchy) OpenCode. Im not quite sure what I'm doing honestly; I just love Homebank, but a few things I didn't like, so I kind of made this
 
-![ContaPy welcome screen](screenshots/welcome.png)
+![LetoBank welcome screen](screenshots/welcome.png)
 
 *(Compact layout at 1500×870: [screenshots/welcome-compact.png](screenshots/welcome-compact.png))*
 
@@ -16,7 +16,7 @@ The account **Ledger**, the **Transaction editor**, the **Reports** window and t
 
 ## Transaction editor
 
-![ContaPy transaction editor](screenshots/transaction.png)
+![LetoBank transaction editor](screenshots/transaction.png)
 
 The editor follows HomeBank's transaction dialog: **Expense / Income / Transfer** tabs, date and signed amount with currency code, account, payment mode, number, payee, category, status icons, memo and tags. Payee, category, payment and tags are editable with type-to-search completion.
 
@@ -36,7 +36,7 @@ Transfers create two linked transaction legs (one per account) and are deleted t
 
 CSV import auto-detects HomeBank-style English and Spanish headers, ignores accents and punctuation, and previews the mapped rows before importing. Every field in the **Header mapping** grid is an editable dropdown — Date, Amount, Payee, Memo, Payment, Number, Category, Tags, Account, Status and the status flags. The supplied bank file maps like this:
 
-| File column | ContaPy field |
+| File column | LetoBank field |
 |---|---|
 | Fecha | Date |
 | Importe | Amount |
@@ -73,9 +73,9 @@ Every row has an **Import** checkbox. Rows that are not duplicates start checked
 
 ## Account ledger
 
-![ContaPy account ledger](screenshots/ledger.png)
+![LetoBank account ledger](screenshots/ledger.png)
 
-Double-click an account (or press `Ctrl+L`) to open its ledger. It follows HomeBank's account window: date/payee/type/status filters, a search box, newest activity first with a running balance per row, status icons for cleared/reconciled/remind/flag/void, reconciled–cleared–today–future balances, and Add / Inherit / Edit / Delete actions. Select rows to mark them cleared or reconciled, or to toggle remind, flag and void. Select two or more rows and the ledger highlights the unselected transaction whose amount is closest to their total, and the action bar shows an amber **“Alt+V voids N highlighted rows”** note; press **Alt+V** to void them. Voided rows stay visible in the ledger but are excluded from balances, reports, charts, future/remind lists and unreconciled alerts. The date filter offers **All date**, **This month**, **Last month**, **This year**, **Last year** and **Custom range…**, which asks for an inclusive start and end date.
+Double-click an account (or press `Ctrl+L`) to open its ledger. It follows HomeBank's account window: date/payee/type/status filters, a search box, newest activity first with a running balance per row, columns for category, **tags** and memo, status icons for cleared/reconciled/remind/flag/void, reconciled–cleared–today–future balances, and Add / Inherit / Edit / Delete actions. Select rows to mark them cleared or reconciled, or to toggle remind, flag and void. Select two or more rows and the ledger highlights the unselected transaction whose amount is closest to their total, and the action bar shows an amber **“Alt+V voids N highlighted rows”** note; press **Alt+V** to void them. Voided rows stay visible in the ledger but are excluded from balances, reports, charts, future/remind lists and unreconciled alerts. The date filter offers **All date**, **This month**, **Last month**, **This year**, **Last year** and **Custom range…**, which asks for an inclusive start and end date.
 
 The ledger opens focused on the newest transaction:
 
@@ -156,7 +156,7 @@ into the rule that does not exist yet is created when you save, including
 ### Importing HomeBank rules
 
 HomeBank keeps its automatic assignments inside the wallet XML. Open
-**Manage → Rules… → Import from HomeBank…** and choose a `.xhb` file. ContaPy
+**Manage → Rules… → Import from HomeBank…** and choose a `.xhb` file. LetoBank
 reads the `<asg>` rules together with the wallet's payee and category tables,
 so references become names and missing categories are created, including
 `Parent : Child` subcategories. HomeBank's memo/payee search field,
@@ -168,7 +168,7 @@ the database are not changed.
 
 ## Reports
 
-![ContaPy reports window](screenshots/reports.png)
+![LetoBank reports window](screenshots/reports.png)
 
 **Reports → Reports Window…** (`Ctrl+R`) opens a live report over the current
 database. The toolbar's **Spending report** button also opens this window. The
@@ -280,7 +280,7 @@ The first launch seeds a demo dataset. Data lives at `~/.local/share/contapy/con
 ### Switching databases
 
 **File → Open Database…** (`Ctrl+O`) opens another SQLite database without
-restarting. ContaPy remembers the choice in `~/.config/contapy/config.json`
+restarting. LetoBank remembers the choice in `~/.config/contapy/config.json`
 (honouring `XDG_CONFIG_HOME`) and reopens that database on the next launch. The
 window title shows the database filename so it is always clear which file is
 active.
@@ -298,14 +298,14 @@ database is left untouched as a safety copy.
 
 ### Daily backups
 
-ContaPy keeps one automatic copy per day in a folder named `dailylbaka` beside
+LetoBank keeps one automatic copy per day in a folder named `dailylbaka` beside
 the active database:
 
 ```
 ~/.local/share/contapy/dailylbaka/contapy-2026-11-06.db
 ```
 
-The backup is created the first time ContaPy runs on a new day, checked again
+The backup is created the first time LetoBank runs on a new day, checked again
 hourly while the app stays open, and when the app closes. Existing daily files
 are never overwritten, so the folder grows by one database per day. Backups are
 ordinary SQLite files: to restore one, use **File → Open Database…** to open the
@@ -313,11 +313,11 @@ dated file, then **File → Save Database As…** to write it back over your nor
 database. Backups follow the database: after **Save Database As…**, the new
 location gets its own `dailylbaka` folder.
 
-> **Upgrading from Budget:** if the old `~/.local/share/budget/budget.db` exists, the first ContaPy launch copies it to the new location automatically. The original file is left untouched. `CONTAPY_DB` overrides the path; the older `BUDGET_DB` variable is still honoured.
+> **Upgrading from Budget:** if the old `~/.local/share/budget/budget.db` exists, the first LetoBank launch copies it to the new location automatically. The original file is left untouched. `CONTAPY_DB` overrides the path; the older `BUDGET_DB` variable is still honoured.
 
 ### Theme
 
-ContaPy defaults to **One Dark**. Open **Preferences** (`Ctrl+,`) and use the
+LetoBank defaults to **One Dark**. Open **Preferences** (`Ctrl+,`) and use the
 **Theme** selector to switch to any theme installed under
 `~/.config/omarchy/themes`, `~/.local/share/omarchy/themes` or
 `/usr/share/omarchy/themes`. The choice is remembered in
@@ -327,8 +327,8 @@ donut all follow it. Both dark and light themes work.
 
 The selector also offers **Omarchy current theme**, which follows
 `~/.local/state/omarchy/current/theme/colors.toml` (honouring
-`XDG_STATE_HOME`), and **Graphite (built-in)**, the original ContaPy palette.
-If the selected theme disappears, ContaPy falls back to the graphite palette;
+`XDG_STATE_HOME`), and **Graphite (built-in)**, the original LetoBank palette.
+If the selected theme disappears, LetoBank falls back to the graphite palette;
 One Dark itself is bundled so the default works without Omarchy installed.
 
 Environment variables override the saved choice:
@@ -412,7 +412,7 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 
 In the account list: **↑/↓** move, **Home/End** jump, **Enter** opens the ledger. In the ledger: **↑/↓** move, **Home/End** jump, **Enter** opens the selected transaction, **Delete** removes it, and **Escape** closes the ledger. In the transaction window: **Enter** saves, **Tab** moves, **Alt+E/I/T** switches type and **Ctrl+0–5** sets status. **Escape** cancels. The home strip also supports **↑/↓** and **Enter** (edit scheduled / open future or remind rows). **Ctrl+R** opens the report window, where **Ctrl+1/2/3** switch table, pie and bar views and **F5** refreshes.
 
-Press **Ctrl+K** anywhere in ContaPy to open a searchable list of every shortcut, grouped by context (Global, Accounts list, Account ledger, Transaction window, Categories, Reports and Budgets). Type to filter by shortcut, context or action; **Esc** closes the list.
+Press **Ctrl+K** anywhere in LetoBank to open a searchable list of every shortcut, grouped by context (Global, Accounts list, Account ledger, Transaction window, Categories, Reports and Budgets). Type to filter by shortcut, context or action; **Esc** closes the list.
 
 ### CSV format
 

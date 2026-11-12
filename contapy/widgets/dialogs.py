@@ -52,6 +52,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import __version__
+from ..branding import APP_NAME
 from ..config import (
     date_format_choice,
     ledger_status_choice,
@@ -1106,7 +1107,7 @@ class PreferencesDialog(QDialog):
         heading.setFont(font(18, 600))
         root.addWidget(heading)
 
-        intro = QLabel("ContaPy is local-first. Everything lives in one SQLite file on this machine.")
+        intro = QLabel(f"{APP_NAME} is local-first. Everything lives in one SQLite file on this machine.")
         intro.setWordWrap(True)
         intro.setFont(font(13, 400))
         intro.setStyleSheet(f"color:{C.MUTED};")
@@ -1895,7 +1896,7 @@ class ListDialog(QDialog):
 
 def about_text() -> str:
     return (
-        f"<h3 style='color:{C.TITLE};'>ContaPy</h3>"
+        f"<h3 style='color:{C.TITLE};'>{APP_NAME}</h3>"
         f"<p style='color:{C.TEXT_SOFT};'>A local-first personal finance dashboard.<br>"
         "Accounts, a transaction ledger, scheduled transactions, category spending and cash flow — "
         "built with Python, PySide6 and SQLite.</p>"
@@ -1995,7 +1996,7 @@ def shortcuts_text() -> str:
             parts.append(f"<b>{shortcut}</b> &nbsp; {description}<br>")
         parts.append("<br>")
     parts.append(
-        f"<span style='color:{C.MUTED};'>Press Ctrl+K anywhere in ContaPy to "
+        f"<span style='color:{C.MUTED};'>Press Ctrl+K anywhere in {APP_NAME} to "
         "open this list.</span>"
     )
     return "".join(parts)
@@ -2019,7 +2020,7 @@ class ShortcutsDialog(QDialog):
         root.addWidget(heading)
 
         subtitle = QLabel(
-            "Press Ctrl+K anywhere in ContaPy to open this list. Type below to "
+            f"Press Ctrl+K anywhere in {APP_NAME} to open this list. Type below to "
             "filter by context, key or action; Esc closes."
         )
         subtitle.setWordWrap(True)
