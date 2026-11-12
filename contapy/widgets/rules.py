@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -31,6 +32,7 @@ from PySide6.QtWidgets import (
 from ..db import DataStore
 from ..models import Rule, ordered_categories
 from ..theme import C, font
+from ..xhb_rules import import_xhb_rules
 from .dialogs import SearchCombo
 
 
@@ -427,7 +429,9 @@ class RulesDialog(QDialog):
         subtitle = QLabel(
             "Rules run when a transaction is added or imported. Untick a rule to "
             "disable it without deleting it. Rules are applied from top to "
-            "bottom, so a later overwrite rule wins."
+            "bottom, so a later overwrite rule wins.\n\n"
+            "Import from HomeBank… reads the automatic assignments stored in a "
+            "HomeBank .xhb wallet, creating any categories it needs."
         )
         subtitle.setWordWrap(True)
         subtitle.setFont(font(13, 400))
@@ -446,11 +450,13 @@ class RulesDialog(QDialog):
         self.new_button = QPushButton("New…")
         self.edit_button = QPushButton("Edit…")
         self.delete_button = QPushButton("Delete")
+        self.import_button = QPushButton("Import from HomeBank…")
         close = QPushButton("Close")
         for button in (
             self.new_button,
             self.edit_button,
             self.delete_button,
+            self.import_button,
             close,
         ):
             button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -459,12 +465,14 @@ class RulesDialog(QDialog):
         self.new_button.clicked.connect(self.new_rule)
         self.edit_button.clicked.connect(self.edit_rule)
         self.delete_button.clicked.connect(self.delete_rule)
+        self.import_button.clicked.connect(self.import_homebank)
         close.setAutoDefault(False)
         close.clicked.connect(self.accept)
         buttons.addWidget(self.new_button)
         buttons.addWidget(self.edit_button)
         buttons.addWidget(self.delete_button)
         buttons.addStretch(1)
+        buttons.addWidget(self.import_button)
         buttons.addWidget(close)
         root.addLayout(buttons)
 
@@ -539,6 +547,38 @@ class RulesDialog(QDialog):
             rule_id = self.store.add_rule(dialog.rule())
             self.changed = True
             self._reload_list(rule_id)
+
+    def import_homebank(self) -> None:
+        """Import the automatic assignments stored in a HomeBank .xhb wallet."""
+        path, _selected = QFileDialog.getOpenFileName(
+            self,
+            "Import HomeBank rules",
+            "",
+            "HomeBank wallet (*.xhb);;All files (*)",
+        )
+        if not path:
+            return
+        try:
+            result = import_xhb_rules(self.store, path)
+        except ValueError as error:
+            QMessageBox.critical(self, "HomeBank import", str(error))
+            return
+
+        if result.imported:
+            self.changed = True
+        self._reload_list()
+
+        box = QMessageBox(self)
+        box.setWindowTitle("HomeBank import")
+        box.setIcon(
+            QMessageBox.Icon.Information
+            if result.imported
+            else QMessageBox.Icon.Warning
+        )
+        box.setText(result.summary())
+        if result.warnings:
+            box.setDetailedText("\n".join(result.warnings))
+        box.exec()
 
     def edit_rule(self) -> None:
         rule_id = self._current_id()

@@ -151,6 +151,19 @@ Rules run from top to bottom, so a later overwrite rule wins. A Category typed
 into the rule that does not exist yet is created when you save, including
 `Parent : Child` subcategories.
 
+### Importing HomeBank rules
+
+HomeBank keeps its automatic assignments inside the wallet XML. Open
+**Manage → Rules… → Import from HomeBank…** and choose a `.xhb` file. ContaPy
+reads the `<asg>` rules together with the wallet's payee and category tables,
+so references become names and missing categories are created, including
+`Parent : Child` subcategories. HomeBank's memo/payee search field,
+case-sensitive and regular-expression options, amount equality, payment modes,
+tags and overwrite flags are mapped directly; a rule's **Notes** becomes a
+Notes assignment. Prefilled rules, rules with no usable assignment and exact
+duplicates are skipped, and the summary explains why. Transactions already in
+the database are not changed.
+
 ## Reports
 
 ![ContaPy reports window](screenshots/reports.png)
@@ -372,6 +385,7 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | Delete a category | Select it in **Manage → Categories…** and press `Delete`, then confirm the irreversible warning |
 | Show a category's transactions | Select it in **Manage → Categories…** and press **Transactions…** |
 | Create or edit assignment rules | **Manage → Rules…**, then **New…** or **Edit…** |
+| Import HomeBank automatic assignments | **Manage → Rules… → Import from HomeBank…**, then choose a `.xhb` file |
 | Disable a rule temporarily | Untick it in **Manage → Rules…** |
 | Navigate ledger rows | `↑` / `↓`; **Home/End** for newest/oldest |
 | Open a ledger transaction | `Enter` on the selected row |
@@ -440,7 +454,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-One hundred and fifty-seven tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, closest-amount highlighting for voiding with its Alt+V hint, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, Delete-key removal, Enter-to-edit and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the searchable Ctrl+K shortcut list and its window-level action, the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
+One hundred and sixty-one tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, closest-amount highlighting for voiding with its Alt+V hint, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, Delete-key removal, Enter-to-edit and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the searchable Ctrl+K shortcut list and its window-level action, HomeBank automatic-assignment import (conditions, payees, categories, payments, tags, notes, overwrite flags, duplicates and invalid references), the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
 
 ## Notes / limitations
 
