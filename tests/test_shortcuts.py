@@ -59,6 +59,8 @@ class ShortcutsDialogTests(unittest.TestCase):
         self.assertEqual(dialog.visible_rows(), 1)
         dialog.search_edit.setText("Ctrl+Z")
         self.assertEqual(dialog.visible_rows(), 1)
+        dialog.search_edit.setText("Reconcile the selected transactions")
+        self.assertEqual(dialog.visible_rows(), 1)
 
 
 class MainWindowShortcutTests(unittest.TestCase):

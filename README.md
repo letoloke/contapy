@@ -173,7 +173,7 @@ the database are not changed.
 
 ![LetoBank reports window](screenshots/reports.png)
 
-**Reports → Reports Window…** (`Ctrl+R`) opens a live report over the current
+**Reports → Reports Window…** (`Ctrl+R` in the main window; in a ledger `Ctrl+R` reconciles the selected rows) opens a live report over the current
 database. The toolbar's **Spending report** button also opens this window. The
 left **Display** panel controls the report:
 
@@ -384,7 +384,8 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | New scheduled bill | **Transactions → New Scheduled Transaction…** |
 | Post / skip a bill | Select it in the Scheduled tab, then use the bottom buttons |
 | Edit a ledger row | Select it in the strip and click **Open Ledger**, or double-click it |
-| Reconcile / remind / flag / void | Select rows in the ledger, then use the icons in the bottom bar |
+| Reconcile selected ledger rows | `Ctrl+R`, the reconcile icon in the bottom bar, or **Tools → Mark Reconciled** |
+| Remind / flag / void | Select rows in the ledger, then use the icons in the bottom bar |
 | Void the closest highlighted rows and reconcile the selection | `Alt+V` with two or more ledger rows selected; the action bar shows the hint while matches are highlighted |
 | Undo the last ledger change | `Ctrl+Z`; the **Edit** menu shows the action that will be reverted |
 | Open budgets | `Ctrl+B`, the toolbar **Budgets** button, or **Reports → Budgets…** |
@@ -414,7 +415,7 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | Preferences | `Ctrl+,` |
 | Show the keyboard shortcut list | `Ctrl+K` anywhere in the app, or **Help → Keyboard Shortcuts** |
 
-In the account list: **↑/↓** move, **Home/End** jump, **Enter** opens the ledger. In the ledger: **↑/↓** move, **Home/End** jump, **Enter** opens the selected transaction, **Delete** removes it, **Ctrl+Z** undoes the last change, and **Escape** closes the ledger. In the transaction window: **Enter** saves, **Tab** moves, **Alt+E/I/T** switches type and **Ctrl+0–5** sets status. **Escape** cancels. The home strip also supports **↑/↓** and **Enter** (edit scheduled / open future or remind rows). **Ctrl+R** opens the report window, where **Ctrl+1/2/3** switch table, pie and bar views and **F5** refreshes.
+In the account list: **↑/↓** move, **Home/End** jump, **Enter** opens the ledger. In the ledger: **↑/↓** move, **Home/End** jump, **Enter** opens the selected transaction, **Delete** removes it, **Ctrl+R** reconciles the selection, **Ctrl+Z** undoes the last change, and **Escape** closes the ledger. In the transaction window: **Enter** saves, **Tab** moves, **Alt+E/I/T** switches type and **Ctrl+0–5** sets status. **Escape** cancels. The home strip also supports **↑/↓** and **Enter** (edit scheduled / open future or remind rows). **Ctrl+R** in the main window opens the report window, where **Ctrl+1/2/3** switch table, pie and bar views and **F5** refreshes.
 
 Press **Ctrl+K** anywhere in LetoBank to open a searchable list of every shortcut, grouped by context (Global, Accounts list, Account ledger, Transaction window, Categories, Reports and Budgets). Type to filter by shortcut, context or action; **Esc** closes the list.
 
@@ -468,7 +469,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-One hundred and eighty-three tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, bulk ledger editing, ledger undo, uncategorized category highlighting, responsive account-sidebar columns, closest-amount highlighting for voiding with its Alt+V hint, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, Delete-key removal, Enter-to-edit and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, the dashboard budgets panel beside the scheduled strip, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the searchable Ctrl+K shortcut list and its window-level action, HomeBank automatic-assignment import (conditions, payees, categories, payments, tags, notes, overwrite flags, duplicates and invalid references), the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
+One hundred and eighty-four tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, bulk ledger editing, ledger undo, Ctrl+R reconciliation, uncategorized category highlighting, responsive account-sidebar columns, closest-amount highlighting for voiding with its Alt+V hint, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, Delete-key removal, Enter-to-edit and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, the dashboard budgets panel beside the scheduled strip, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the searchable Ctrl+K shortcut list and its window-level action, HomeBank automatic-assignment import (conditions, payees, categories, payments, tags, notes, overwrite flags, duplicates and invalid references), the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
 
 ## Notes / limitations
 

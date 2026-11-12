@@ -227,6 +227,28 @@ class LedgerHintTests(unittest.TestCase):
         ]
         self.assertIn("home, tax", values)
 
+    def test_ctrl_r_reconciles_the_selection(self) -> None:
+        ids = [row.id for row in self.window.model.rows]
+        self.window._select_ids(ids)
+        self.assertEqual(self.window.act_reconcile.shortcut().toString(), "Ctrl+R")
+
+        self.window.act_reconcile.trigger()
+
+        rows = {
+            row.id: row for row in self.store.ledger_rows(self.window.account_id)
+        }
+        for transaction_id in ids:
+            self.assertTrue(rows[transaction_id].cleared)
+            self.assertTrue(rows[transaction_id].reconciled)
+        self.assertIn("reconcile", self.window.act_undo.text())
+
+        self.window.undo()
+        restored = {
+            row.id: row for row in self.store.ledger_rows(self.window.account_id)
+        }
+        for transaction_id in ids:
+            self.assertFalse(restored[transaction_id].reconciled)
+
     def test_ctrl_z_undoes_a_flag_change(self) -> None:
         ids = [row.id for row in self.window.model.rows]
         self.window._select_ids(ids)

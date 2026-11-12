@@ -537,7 +537,10 @@ class LedgerWindow(QMainWindow):
 
         tools_menu = bar.addMenu("Tools")
         tools_menu.addAction(self._action("Mark Cleared", lambda: self._set_cleared(True)))
-        tools_menu.addAction(self._action("Mark Reconciled", lambda: self._set_reconciled(True)))
+        self.act_reconcile = self._action(
+            "Mark Reconciled", lambda: self._set_reconciled(True), "Ctrl+R"
+        )
+        tools_menu.addAction(self.act_reconcile)
         tools_menu.addAction(self._action("Mark Uncleared", lambda: self._set_cleared(False)))
         tools_menu.addSeparator()
         tools_menu.addAction(self._action("Toggle Remind", self._toggle_remind))
@@ -702,7 +705,7 @@ class LedgerWindow(QMainWindow):
             draw_check_circle, 30, "Mark selected cleared", color=CLEARED, parent=self
         )
         self.reconcile_btn = IconButton(
-            draw_reconciled, 30, "Mark selected reconciled", parent=self
+            draw_reconciled, 30, "Mark selected reconciled (Ctrl+R)", parent=self
         )
         self.remind_btn = IconButton(
             draw_bell, 30, "Toggle remind for selected", color=C.WARNING, parent=self

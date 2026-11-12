@@ -2132,6 +2132,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
             ("Enter", "Edit the selection (bulk edit when several rows are selected)"),
             ("Delete", "Delete the selected transaction"),
             ("Ctrl+Z", "Undo the last ledger change"),
+            ("Ctrl+R", "Reconcile the selected transactions"),
             ("Ctrl+N", "New transaction"),
             ("Ctrl+D", "Inherit a new transaction from the selection"),
             (
