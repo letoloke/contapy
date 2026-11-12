@@ -211,11 +211,32 @@ class LedgerHintTests(unittest.TestCase):
         ]
         self.assertIn("home, tax", values)
 
+    def test_alt_v_voids_highlighted_and_reconciles_selected(self) -> None:
+        by_amount = {row.amount: row.id for row in self.window.model.rows}
+        selected_ids = [by_amount[-400.0], by_amount[-600.0]]
+        highlighted_id = by_amount[-1_000.0]
+        self.window._select_ids(selected_ids)
+        self.assertEqual(self.window._highlight_ids, {highlighted_id})
+
+        self.window._void_highlighted()
+
+        rows = {
+            row.id: row for row in self.store.ledger_rows(self.window.account_id)
+        }
+        self.assertTrue(rows[highlighted_id].voided)
+        self.assertFalse(rows[highlighted_id].reconciled)
+        for transaction_id in selected_ids:
+            self.assertTrue(rows[transaction_id].cleared)
+            self.assertTrue(rows[transaction_id].reconciled)
+            self.assertFalse(rows[transaction_id].voided)
+
     def test_hint_announces_alt_v_while_matches_are_highlighted(self) -> None:
         by_amount = {row.amount: row.id for row in self.window.model.rows}
         self.window._select_ids([by_amount[-400.0], by_amount[-600.0]])
         self.assertEqual(self.window._highlight_ids, {by_amount[-1_000.0]})
-        self.assertIn("Alt+V voids 1 highlighted row", self.window.keyboard_hint.text())
+        hint = self.window.keyboard_hint.text()
+        self.assertIn("Alt+V voids 1 highlighted row", hint)
+        self.assertIn("reconciles 2 selected rows", hint)
 
         self.window.table.clearSelection()
         self.assertNotIn("Alt+V", self.window.keyboard_hint.text())

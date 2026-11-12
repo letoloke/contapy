@@ -520,7 +520,7 @@ class LedgerWindow(QMainWindow):
         tools_menu.addAction(self._action("Toggle Void", self._toggle_void))
         tools_menu.addSeparator()
         self.act_void_highlighted = self._action(
-            "Void Highlighted", self._void_highlighted, "Alt+V"
+            "Void Highlighted & Reconcile Selected", self._void_highlighted, "Alt+V"
         )
         self.act_void_highlighted.setEnabled(False)
         tools_menu.addAction(self.act_void_highlighted)
@@ -943,8 +943,11 @@ class LedgerWindow(QMainWindow):
         if ids:
             count = len(ids)
             rows = "row" if count == 1 else "rows"
+            selected_count = len(selected)
+            selected_rows = "row" if selected_count == 1 else "rows"
             self.keyboard_hint.setText(
-                f"Alt+V voids {count} highlighted {rows}"
+                f"Alt+V voids {count} highlighted {rows} · "
+                f"reconciles {selected_count} selected {selected_rows}"
             )
             self.keyboard_hint.setStyleSheet(
                 f"color:{C.WARNING}; font-weight:600;"
@@ -1252,9 +1255,14 @@ class LedgerWindow(QMainWindow):
         ids = sorted(self._highlight_ids)
         if not ids:
             return
+        selected_ids = [row.id for row in self._selected_rows() if not row.voided]
         self._suspend_highlight = True
         try:
             self.store.update_transaction_flags(ids, voided=True)
+            if selected_ids:
+                self.store.update_transaction_flags(
+                    selected_ids, cleared=True, reconciled=True
+                )
             self.reload()
             self.changed.emit()
         finally:
