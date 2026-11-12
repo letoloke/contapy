@@ -10,12 +10,14 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from unittest import mock
+
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QDialog
 
 from contapy.db import DataStore
 from contapy.models import TransactionDraft, TransactionRow
-from contapy.widgets.dialogs import DateRangeDialog
+from contapy.widgets.dialogs import BulkEditDialog, DateRangeDialog
 from contapy.widgets.ledger import (
     CUSTOM_RANGE,
     HEADERS,
@@ -85,6 +87,105 @@ class LedgerHintTests(unittest.TestCase):
         self.window.close()
         self.store.close()
         self.tmp.cleanup()
+
+    def test_store_bulk_update_leaves_other_rows_and_fields_alone(self) -> None:
+        rows = self.window.model.rows
+        target_ids = [rows[0].id, rows[1].id]
+        untouched_id = rows[2].id
+        before = {row.id: row for row in self.store.ledger_rows(self.window.account_id)}
+
+        self.store.update_transactions(
+            target_ids, payee="Bulk", tags="shared", memo="batch"
+        )
+
+        after = {row.id: row for row in self.store.ledger_rows(self.window.account_id)}
+        for transaction_id in target_ids:
+            self.assertEqual(after[transaction_id].payee, "Bulk")
+            self.assertEqual(after[transaction_id].tags, "shared")
+            self.assertEqual(after[transaction_id].memo, "batch")
+            self.assertEqual(after[transaction_id].amount, before[transaction_id].amount)
+            self.assertEqual(
+                after[transaction_id].category_id, before[transaction_id].category_id
+            )
+        self.assertEqual(after[untouched_id].payee, before[untouched_id].payee)
+        self.assertEqual(after[untouched_id].tags, before[untouched_id].tags)
+        self.assertEqual(after[untouched_id].memo, before[untouched_id].memo)
+
+    def test_bulk_edit_dialog_only_returns_ticked_fields(self) -> None:
+        dialog = BulkEditDialog(self.store, self.store.categories(), 2)
+        self.addCleanup(dialog.deleteLater)
+        self.assertFalse(dialog.apply_button.isEnabled())
+        self.assertEqual(dialog.changes(), {})
+
+        dialog.category_check.setChecked(True)
+        dialog.category_combo.setCurrentIndex(
+            dialog.category_combo.findData(None)
+        )
+        self.assertTrue(dialog.apply_button.isEnabled())
+        self.assertEqual(dialog.changes(), {"category_id": None})
+
+        dialog.tags_check.setChecked(True)
+        dialog.tags_combo.setEditText("shared")
+        dialog.tags_mode.setCurrentIndex(dialog.tags_mode.findData("add"))
+        self.assertEqual(
+            dialog.changes(),
+            {"category_id": None, "tags": "shared", "tags_mode": "add"},
+        )
+
+    def test_edit_with_multiple_rows_applies_bulk_changes(self) -> None:
+        from contapy.widgets import ledger as ledger_module
+
+        rows = self.window.model.rows
+        selected_ids = [rows[0].id, rows[1].id]
+        self.window._select_ids(selected_ids)
+
+        class FakeDialog:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def exec(self) -> QDialog.DialogCode:
+                return QDialog.DialogCode.Accepted
+
+            def changes(self) -> dict[str, object]:
+                return {"payee": "Bulk", "tags": "batch", "tags_mode": "set"}
+
+        with mock.patch.object(ledger_module, "BulkEditDialog", FakeDialog):
+            self.window.edit_transaction()
+
+        updated = {
+            row.id: row for row in self.store.ledger_rows(self.window.account_id)
+        }
+        for transaction_id in selected_ids:
+            self.assertEqual(updated[transaction_id].payee, "Bulk")
+            self.assertEqual(updated[transaction_id].tags, "batch")
+
+    def test_bulk_edit_can_append_tags(self) -> None:
+        from contapy.widgets import ledger as ledger_module
+
+        rows = self.window.model.rows
+        selected_ids = [rows[0].id, rows[1].id]
+        self.store.update_transactions(selected_ids, tags="existing")
+        self.window.reload()
+        self.window._select_ids(selected_ids)
+
+        class FakeDialog:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def exec(self) -> QDialog.DialogCode:
+                return QDialog.DialogCode.Accepted
+
+            def changes(self) -> dict[str, object]:
+                return {"tags": "extra", "tags_mode": "add"}
+
+        with mock.patch.object(ledger_module, "BulkEditDialog", FakeDialog):
+            self.window.edit_transaction()
+
+        updated = {
+            row.id: row for row in self.store.ledger_rows(self.window.account_id)
+        }
+        for transaction_id in selected_ids:
+            self.assertEqual(updated[transaction_id].tags, "existing extra")
 
     def test_tags_column_shows_transaction_tags(self) -> None:
         self.store.add_transaction(

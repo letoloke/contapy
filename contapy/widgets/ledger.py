@@ -42,7 +42,7 @@ from ..db import DataStore
 from ..models import Account, Balance, TransactionRow
 from ..money import money
 from ..theme import C, CLEARED, font
-from .dialogs import DateRangeDialog, TransactionDialog
+from .dialogs import BulkEditDialog, DateRangeDialog, TransactionDialog
 from .import_dialog import CsvImportDialog
 from .icons import (
     IconButton,
@@ -967,7 +967,16 @@ class LedgerWindow(QMainWindow):
         self.selected_label.setText(f"{len(selected)} selected")
 
     def _update_buttons(self) -> None:
-        has_selection = bool(self._selected_rows())
+        selected = self._selected_rows()
+        has_selection = bool(selected)
+        self.act_edit.setText(
+            "Edit Transactions…" if len(selected) > 1 else "Edit Transaction…"
+        )
+        self.edit_btn.setToolTip(
+            f"Edit {len(selected)} selected transactions"
+            if len(selected) > 1
+            else "Edit the selected transaction"
+        )
         for button in (
             self.inherit_btn,
             self.edit_btn,
@@ -1067,6 +1076,9 @@ class LedgerWindow(QMainWindow):
         selected = self._selected_rows()
         if not selected:
             return
+        if len(selected) > 1:
+            self._bulk_edit_transactions(selected)
+            return
         source = selected[0]
         from ..models import TransactionDraft
 
@@ -1120,6 +1132,47 @@ class LedgerWindow(QMainWindow):
             self.store.update_transaction(source.id, new_draft)
         self.reload()
         self.changed.emit()
+        QTimer.singleShot(0, self._focus_table)
+
+    def _bulk_edit_transactions(self, selected: list[TransactionRow]) -> None:
+        editable = [row for row in selected if not row.transfer_id]
+        skipped = len(selected) - len(editable)
+        if not editable:
+            self._show_message(
+                "Bulk edit",
+                "The selected rows are transfers. Edit transfer legs one at a "
+                "time so both sides of the transfer stay in sync.",
+            )
+            return
+
+        dialog = BulkEditDialog(
+            self.store, self.store.categories(), len(editable), self
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        changes = dialog.changes()
+        if not changes:
+            return
+
+        ids = [row.id for row in editable]
+        tags_mode = changes.pop("tags_mode", "set")
+        if "tags" in changes and tags_mode == "add":
+            extra = str(changes.pop("tags", "")).strip()
+            if extra:
+                for row in editable:
+                    current = row.tags.strip()
+                    merged = f"{current} {extra}".strip() if current else extra
+                    self.store.update_transactions([row.id], tags=merged)
+        if changes:
+            self.store.update_transactions(ids, **changes)
+        self.reload()
+        self.changed.emit()
+        if skipped:
+            self._show_message(
+                "Bulk edit",
+                f"Updated {len(editable)} transactions.\n"
+                f"Skipped {skipped} transfer row(s).",
+            )
         QTimer.singleShot(0, self._focus_table)
 
     def delete_transaction(self) -> None:

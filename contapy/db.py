@@ -41,6 +41,10 @@ from .models import (
 )
 from .omarchy import theme_category_color
 
+#: Marker for bulk updates that should leave a column untouched.  ``None`` is a
+#: real value for nullable columns such as ``category_id``.
+_UNCHANGED = object()
+
 SCHEMA = """
 PRAGMA foreign_keys = ON;
 
@@ -1271,6 +1275,46 @@ class DataStore:
                 transaction_id,
             ),
         )
+        self.conn.commit()
+
+    def update_transactions(
+        self,
+        transaction_ids: list[int],
+        *,
+        payee: object = _UNCHANGED,
+        category_id: object = _UNCHANGED,
+        payment: object = _UNCHANGED,
+        number: object = _UNCHANGED,
+        tags: object = _UNCHANGED,
+        memo: object = _UNCHANGED,
+    ) -> None:
+        """Update only the supplied fields on every listed transaction."""
+        if not transaction_ids:
+            return
+        assignments: list[str] = []
+        params: list = []
+        for column, value in (
+            ("payee", payee),
+            ("category_id", category_id),
+            ("payment", payment),
+            ("number", number),
+            ("tags", tags),
+            ("memo", memo),
+        ):
+            if value is _UNCHANGED:
+                continue
+            assignments.append(f"{column}=?")
+            params.append(value.strip() if isinstance(value, str) else value)
+        if not assignments:
+            return
+        for start in range(0, len(transaction_ids), 500):
+            chunk = transaction_ids[start : start + 500]
+            placeholders = ",".join("?" for _ in chunk)
+            self.conn.execute(
+                f"UPDATE transactions SET {', '.join(assignments)} "
+                f"WHERE id IN ({placeholders})",
+                (*params, *chunk),
+            )
         self.conn.commit()
 
     def update_transaction_flags(

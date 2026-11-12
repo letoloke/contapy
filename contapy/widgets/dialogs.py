@@ -1088,6 +1088,199 @@ class DateRangeDialog(QDialog):
         super().accept()
 
 
+class BulkEditDialog(QDialog):
+    """Change fields shared by several selected ledger transactions."""
+
+    def __init__(
+        self,
+        store: DataStore,
+        categories: list[Category],
+        count: int,
+        parent: QWidget | None = None,
+    ):
+        super().__init__(parent)
+        self.store = store
+        self.count = count
+        self.setWindowTitle(f"Edit {count} transactions")
+        self.setModal(True)
+        self.setMinimumWidth(590)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(22, 20, 22, 18)
+        root.setSpacing(14)
+
+        heading = QLabel(f"Edit {count} transactions")
+        heading.setFont(font(18, 600))
+        root.addWidget(heading)
+
+        note = QLabel(
+            "Tick only the fields you want to change. Every other value is kept "
+            "exactly as it is, and dates, amounts and accounts are not touched."
+        )
+        note.setWordWrap(True)
+        note.setFont(font(12, 400))
+        note.setStyleSheet(f"color:{C.MUTED};")
+        root.addWidget(note)
+
+        form = QFormLayout()
+        form.setVerticalSpacing(9)
+        form.setHorizontalSpacing(16)
+        form.setLabelAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+
+        self.payee_combo = SearchCombo("Type a payee", auto_match=False)
+        self.payee_combo.set_choices(
+            [(payee, payee) for payee in store.payees()], select_first=False
+        )
+        self.payee_check, payee_row = self._edit_row(
+            self.payee_combo, "Replace the payee on every selected transaction"
+        )
+        form.addRow("Payee:", payee_row)
+
+        self.category_combo = QComboBox()
+        self.category_combo.addItem("Uncategorized", None)
+        for category in ordered_categories(categories):
+            self.category_combo.addItem(category.full_name, category.id)
+        self.category_check, category_row = self._edit_row(
+            self.category_combo, "Replace the category on every selected transaction"
+        )
+        form.addRow("Category:", category_row)
+
+        self.payment_combo = SearchCombo("(none)", auto_match=False)
+        payment_choices = [("(none)", "")]
+        presets = [
+            "Cash",
+            "Credit card",
+            "Debit card",
+            "Bank transfer",
+            "Check",
+            "Direct debit",
+            "Standing order",
+            "Electronic payment",
+            "Deposit",
+            "Financial institution fee",
+        ]
+        seen = {""}
+        for item in presets + store.payments():
+            if item and item not in seen:
+                payment_choices.append((item, item))
+                seen.add(item)
+        self.payment_combo.set_choices(payment_choices)
+        self.payment_check, payment_row = self._edit_row(
+            self.payment_combo, "Replace the payment method on every selected transaction"
+        )
+        form.addRow("Payment:", payment_row)
+
+        self.number_edit = QLineEdit()
+        self.number_edit.setPlaceholderText("Cheque, invoice or reference number")
+        self.number_check, number_row = self._edit_row(
+            self.number_edit, "Replace the reference number on every selected transaction"
+        )
+        form.addRow("Number:", number_row)
+
+        tags_field = QWidget()
+        tags_layout = QHBoxLayout(tags_field)
+        tags_layout.setContentsMargins(0, 0, 0, 0)
+        tags_layout.setSpacing(6)
+        self.tags_combo = SearchCombo("Space-separated tags", auto_match=False)
+        self.tags_combo.set_choices(
+            [(tag, tag) for tag in store.tags()], select_first=False
+        )
+        tags_layout.addWidget(self.tags_combo, 1)
+        self.tags_mode = QComboBox()
+        self.tags_mode.addItem("Set to", "set")
+        self.tags_mode.addItem("Add to", "add")
+        self.tags_mode.setFixedWidth(108)
+        self.tags_mode.setToolTip(
+            "Set replaces the current tags; Add appends this text to them."
+        )
+        tags_layout.addWidget(self.tags_mode)
+        self.tags_check, tags_row = self._edit_row(
+            tags_field, "Change tags on every selected transaction"
+        )
+        form.addRow("Tags:", tags_row)
+
+        self.memo_edit = QLineEdit()
+        self.memo_edit.setPlaceholderText("Optional note")
+        self.memo_check, memo_row = self._edit_row(
+            self.memo_edit, "Replace the memo on every selected transaction"
+        )
+        form.addRow("Memo:", memo_row)
+
+        root.addLayout(form)
+        root.addStretch(1)
+
+        buttons = QDialogButtonBox()
+        cancel = buttons.addButton("Cancel", QDialogButtonBox.ButtonRole.RejectRole)
+        self.apply_button = buttons.addButton(
+            f"Apply to {count}", QDialogButtonBox.ButtonRole.AcceptRole
+        )
+        cancel.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.apply_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel.setAutoDefault(False)
+        self.apply_button.setProperty("role", "primary")
+        self.apply_button.setAutoDefault(True)
+        self.apply_button.setDefault(True)
+        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self.accept)
+        root.addWidget(buttons)
+
+        self._update_apply()
+
+    # ----------------------------------------------------------------- pieces
+    def _edit_row(
+        self, widget: QWidget, tooltip: str
+    ) -> tuple[QCheckBox, QWidget]:
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        check = QCheckBox()
+        check.setToolTip(tooltip)
+        widget.setEnabled(False)
+        check.toggled.connect(widget.setEnabled)
+        check.toggled.connect(self._update_apply)
+        layout.addWidget(check)
+        layout.addWidget(widget, 1)
+        return check, row
+
+    def _update_apply(self) -> None:
+        enabled = any(
+            check.isChecked()
+            for check in (
+                self.payee_check,
+                self.category_check,
+                self.payment_check,
+                self.number_check,
+                self.tags_check,
+                self.memo_check,
+            )
+        )
+        if hasattr(self, "apply_button"):
+            self.apply_button.setEnabled(enabled)
+
+    # ----------------------------------------------------------------- result
+    def changes(self) -> dict[str, object]:
+        """Only the fields the user explicitly ticked."""
+        changes: dict[str, object] = {}
+        if self.payee_check.isChecked():
+            changes["payee"] = self.payee_combo.currentText().strip()
+        if self.category_check.isChecked():
+            changes["category_id"] = self.category_combo.currentData()
+        if self.payment_check.isChecked():
+            text = self.payment_combo.currentText().strip()
+            changes["payment"] = "" if text == "(none)" else text
+        if self.number_check.isChecked():
+            changes["number"] = self.number_edit.text().strip()
+        if self.tags_check.isChecked():
+            changes["tags"] = self.tags_combo.currentText().strip()
+            changes["tags_mode"] = self.tags_mode.currentData()
+        if self.memo_check.isChecked():
+            changes["memo"] = self.memo_edit.text().strip()
+        return changes
+
+
 class PreferencesDialog(QDialog):
     def __init__(self, store: DataStore, parent: QWidget | None = None):
         super().__init__(parent)
@@ -1936,7 +2129,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
         [
             ("↑ / ↓", "Move between transactions"),
             ("Home / End", "Jump to the newest or oldest transaction"),
-            ("Enter", "Open the selected transaction"),
+            ("Enter", "Edit the selection (bulk edit when several rows are selected)"),
             ("Delete", "Delete the selected transaction"),
             ("Ctrl+N", "New transaction"),
             ("Ctrl+D", "Inherit a new transaction from the selection"),
