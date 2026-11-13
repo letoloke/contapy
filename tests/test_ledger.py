@@ -203,6 +203,15 @@ class LedgerHintTests(unittest.TestCase):
         for transaction_id in selected_ids:
             self.assertEqual(updated[transaction_id].tags, "existing extra")
 
+    def test_ledger_has_no_tooltips(self) -> None:
+        index = self.window.model.index(0, 0)
+        self.assertIsNone(
+            self.window.model.data(index, Qt.ItemDataRole.ToolTipRole)
+        )
+        self.assertEqual(self.window.table.toolTip(), "")
+        self.assertEqual(self.window.clear_btn.toolTip(), "")
+        self.assertEqual(self.window.reconcile_btn.toolTip(), "")
+
     def test_tags_column_shows_transaction_tags(self) -> None:
         self.store.add_transaction(
             TransactionDraft(

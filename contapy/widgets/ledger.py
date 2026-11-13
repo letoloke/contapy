@@ -194,25 +194,6 @@ class LedgerModel(QAbstractTableModel):
             if col in (EXPENSE, INCOME, BALANCE):
                 return Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
             return Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-        if role == Qt.ItemDataRole.ToolTipRole:
-            if row.is_split_child:
-                detail = (
-                    f"{row.date} · {row.payee}\n"
-                    f"Split line · {row.category_name} · {money(row.amount)}"
-                )
-            else:
-                detail = (
-                    f"{row.date} · {row.payee}\n"
-                    f"{row.category_name} · {money(row.amount)}\n"
-                    f"Balance after: {money(row.balance)}"
-                )
-                if row.split_count:
-                    detail += f"\nSplit into {row.split_count} categories"
-            if row.memo:
-                detail += f"\nMemo: {row.memo}"
-            if row.tags:
-                detail += f"\nTags: {row.tags}"
-            return detail
         return None
 
     def headerData(self, section: int, orientation, role=Qt.ItemDataRole.DisplayRole):  # noqa: N802
@@ -830,20 +811,28 @@ class LedgerWindow(QMainWindow):
         action_layout.addWidget(self._separator())
 
         self.clear_btn = IconButton(
-            draw_check_circle, 30, "Mark selected cleared", color=CLEARED, parent=self
+            draw_check_circle, 30, "", color=CLEARED, parent=self
         )
         self.reconcile_btn = IconButton(
-            draw_reconciled, 30, "Mark selected reconciled (Ctrl+R)", parent=self
+            draw_reconciled, 30, "", parent=self
         )
         self.remind_btn = IconButton(
-            draw_bell, 30, "Toggle remind for selected", color=C.WARNING, parent=self
+            draw_bell, 30, "", color=C.WARNING, parent=self
         )
         self.flag_btn = IconButton(
-            draw_flag, 30, "Toggle flag for selected", color=C.WARNING, parent=self
+            draw_flag, 30, "", color=C.WARNING, parent=self
         )
         self.void_btn = IconButton(
-            draw_void, 30, "Toggle void for selected", color=C.MUTED_DARK, parent=self
+            draw_void, 30, "", color=C.MUTED_DARK, parent=self
         )
+        for button, name in (
+            (self.clear_btn, "Mark selected cleared"),
+            (self.reconcile_btn, "Mark selected reconciled (Ctrl+R)"),
+            (self.remind_btn, "Toggle remind for selected"),
+            (self.flag_btn, "Toggle flag for selected"),
+            (self.void_btn, "Toggle void for selected"),
+        ):
+            button.setAccessibleName(name)
         for button in (
             self.clear_btn,
             self.reconcile_btn,
@@ -888,7 +877,6 @@ class LedgerWindow(QMainWindow):
         self.table.editRequested.connect(self._edit_selected_from_keyboard)
         self.table.deleteRequested.connect(self.delete_transaction)
         self.search_edit.returnPressed.connect(self._focus_table)
-        self.table.setToolTip("Use ↑/↓ to move through transactions; press Enter to open.")
 
         self._update_buttons()
 
@@ -1159,11 +1147,6 @@ class LedgerWindow(QMainWindow):
         has_selection = bool(selected)
         self.act_edit.setText(
             "Edit Transactions…" if len(selected) > 1 else "Edit Transaction…"
-        )
-        self.edit_btn.setToolTip(
-            f"Edit {len(selected)} selected transactions"
-            if len(selected) > 1
-            else "Edit the selected transaction"
         )
         for button in (
             self.inherit_btn,
