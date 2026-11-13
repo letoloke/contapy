@@ -93,6 +93,59 @@ class ImportDialogTests(unittest.TestCase):
         self.assertIn("1 unreadable row(s)", dialog.status_label.text())
         dialog.deleteLater()
 
+    def test_preview_sorts_by_amount_and_keeps_selection(self) -> None:
+        target = self.write_csv(
+            "sort.csv",
+            [
+                "2031-01-01,-10,Small,",
+                "2031-01-02,300,Large,",
+                "2031-01-03,50,Medium,",
+            ],
+        )
+        dialog = self.dialog(target)
+        dialog.preview.item(1, 0).setCheckState(Qt.CheckState.Unchecked)
+
+        dialog._header_clicked(4)
+        self.assertEqual(
+            [
+                dialog.preview.item(row, 2).text()
+                for row in range(dialog.preview.rowCount())
+            ],
+            ["Large", "Medium", "Small"],
+        )
+        self.assertEqual(dialog.skip_row_indexes(), {1})
+
+        dialog._header_clicked(4)
+        self.assertEqual(
+            [
+                dialog.preview.item(row, 2).text()
+                for row in range(dialog.preview.rowCount())
+            ],
+            ["Small", "Medium", "Large"],
+        )
+        self.assertEqual(dialog.skip_row_indexes(), {1})
+        dialog.deleteLater()
+
+    def test_preview_sorts_dates_chronologically(self) -> None:
+        target = self.write_csv(
+            "dates.csv",
+            [
+                "2031-01-01,10,Oldest,",
+                "2031-03-01,20,Newest,",
+                "2031-02-01,30,Middle,",
+            ],
+        )
+        dialog = self.dialog(target)
+        dialog._header_clicked(1)
+        self.assertEqual(
+            [
+                dialog.preview.item(row, 2).text()
+                for row in range(dialog.preview.rowCount())
+            ],
+            ["Newest", "Middle", "Oldest"],
+        )
+        dialog.deleteLater()
+
     def test_automatic_rules_apply_by_default_and_can_be_disabled(self) -> None:
         target = self.write_csv("target.csv", ["2031-03-01,20,Fresh row,"])
         dialog = self.dialog(target)

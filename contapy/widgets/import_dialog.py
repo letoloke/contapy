@@ -29,6 +29,19 @@ from ..money import money
 from ..theme import C, font
 
 
+class _SortItem(QTableWidgetItem):
+    """Table item that sorts by an explicit key instead of its display text."""
+
+    def __init__(self, text: str, sort_key):
+        super().__init__(text)
+        self._sort_key = sort_key
+
+    def __lt__(self, other) -> bool:
+        if isinstance(other, _SortItem):
+            return self._sort_key < other._sort_key
+        return super().__lt__(other)
+
+
 class CsvImportDialog(QDialog):
     FIELDS = (
         ("date", "Date", True),
@@ -71,6 +84,8 @@ class CsvImportDialog(QDialog):
         self._duplicate_rows: set[int] = set()
         self._valid_rows: set[int] = set()
         self._updating_preview = False
+        self._sort_column = -1
+        self._sort_order = Qt.SortOrder.AscendingOrder
         self.field_combos: dict[str, QComboBox] = {}
 
         self.setWindowTitle("Import transactions")
@@ -195,6 +210,17 @@ class CsvImportDialog(QDialog):
         self.account_help.setStyleSheet(f"color:{C.MUTED_DARK};")
         root.addWidget(self.account_help)
 
+        preview_title = QHBoxLayout()
+        preview_label = QLabel("Preview")
+        preview_label.setFont(font(12, 600))
+        preview_title.addWidget(preview_label)
+        preview_title.addStretch(1)
+        sort_hint = QLabel("Click a column header to sort")
+        sort_hint.setFont(font(11, 400))
+        sort_hint.setStyleSheet(f"color:{C.MUTED_DARK};")
+        preview_title.addWidget(sort_hint)
+        root.addLayout(preview_title)
+
         self.preview = QTableWidget(0, 7)
         self.preview.setHorizontalHeaderLabels(
             ["Import", "Date", "Payee", "Memo", "Amount", "Category", "Status"]
@@ -225,6 +251,9 @@ class CsvImportDialog(QDialog):
         header.resizeSection(5, 140)
         header.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
         header.resizeSection(6, 90)
+        header.setSectionsClickable(True)
+        header.setSortIndicatorShown(False)
+        header.sectionClicked.connect(self._header_clicked)
         self.preview.setStyleSheet(
             f"QTableWidget {{ background:{C.PANEL}; alternate-background-color:{C.ALT_ROW};"
             f" border:none; }}"
@@ -325,6 +354,32 @@ class CsvImportDialog(QDialog):
         category = self.plan.value(row, "category") or "Uncategorized"
         return parsed_date.isoformat(), payee, memo, amount, category
 
+    def _header_clicked(self, column: int) -> None:
+        if column == 0:
+            return
+        if column == self._sort_column:
+            self._sort_order = (
+                Qt.SortOrder.DescendingOrder
+                if self._sort_order == Qt.SortOrder.AscendingOrder
+                else Qt.SortOrder.AscendingOrder
+            )
+        else:
+            self._sort_column = column
+            self._sort_order = (
+                Qt.SortOrder.DescendingOrder
+                if column in (1, 4)
+                else Qt.SortOrder.AscendingOrder
+            )
+        self._apply_sort()
+
+    def _apply_sort(self) -> None:
+        if self._sort_column < 0:
+            return
+        header = self.preview.horizontalHeader()
+        header.setSortIndicator(self._sort_column, self._sort_order)
+        header.setSortIndicatorShown(True)
+        self.preview.sortItems(self._sort_column, self._sort_order)
+
     def _refresh_preview(self, *_args) -> None:
         existing = self.store.import_fingerprints([account.id for account in self.accounts])
         preview_rows: list[tuple[int, str, str, str, float, str, bool]] = []
@@ -393,9 +448,16 @@ class CsvImportDialog(QDialog):
                 self.preview.setItem(row_index, 0, check)
 
                 status = "Duplicate" if is_duplicate else ""
-                values = (format_date(date_text), payee, memo, money(amount), category, status)
-                for column, value in enumerate(values, start=1):
-                    item = QTableWidgetItem(value)
+                values = (
+                    (1, format_date(date_text), date_text),
+                    (2, payee, payee.casefold()),
+                    (3, memo, memo.casefold()),
+                    (4, money(amount), amount),
+                    (5, category, category.casefold()),
+                    (6, status, status.casefold()),
+                )
+                for column, value, sort_key in values:
+                    item = _SortItem(value, sort_key)
                     if column == 4:
                         item.setTextAlignment(
                             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
@@ -414,6 +476,7 @@ class CsvImportDialog(QDialog):
         finally:
             self._updating_preview = False
 
+        self._apply_sort()
         self._update_selection_summary()
 
     def _checked_rows(self) -> set[int]:
