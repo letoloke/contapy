@@ -22,6 +22,7 @@ from contapy.theme import C
 from contapy.widgets.dialogs import BulkEditDialog, DateRangeDialog
 from contapy.widgets.ledger import (
     CUSTOM_RANGE,
+    EXPENSE,
     HEADERS,
     LedgerWindow,
     category_text_color,
@@ -257,6 +258,27 @@ class LedgerHintTests(unittest.TestCase):
         }
         for transaction_id in ids:
             self.assertFalse(restored[transaction_id].reconciled)
+
+    def test_ledger_headers_sort_by_amount_and_keep_selection(self) -> None:
+        by_amount = {row.amount: row.id for row in self.window.model.rows}
+        self.window._select_ids([by_amount[-600.0]])
+        header = self.window.table.horizontalHeader()
+        self.assertTrue(header.sectionsClickable())
+        self.assertTrue(header.isSortIndicatorShown())
+
+        self.window._header_clicked(EXPENSE)
+        self.assertEqual(
+            [row.amount for row in self.window.model.rows],
+            [-1_000.0, -600.0, -400.0],
+        )
+        self.assertEqual(self.window._selected_ids(), [by_amount[-600.0]])
+
+        self.window._header_clicked(EXPENSE)
+        self.assertEqual(
+            [row.amount for row in self.window.model.rows],
+            [-400.0, -600.0, -1_000.0],
+        )
+        self.assertEqual(self.window._selected_ids(), [by_amount[-600.0]])
 
     def test_ctrl_z_undoes_a_flag_change(self) -> None:
         ids = [row.id for row in self.window.model.rows]

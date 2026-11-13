@@ -16,7 +16,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 from contapy.db import DataStore
 from contapy.models import SplitDraft, TransactionDraft
 from contapy.widgets.dialogs import SplitDialog, TransactionDialog
-from contapy.widgets.ledger import LedgerWindow
+from contapy.widgets.ledger import EXPENSE, LedgerWindow
 
 
 class SplitStoreTests(unittest.TestCase):
@@ -324,12 +324,53 @@ class SplitLedgerTests(unittest.TestCase):
                 ],
             )
         )
+        store.add_transaction(
+            TransactionDraft(
+                date=date.today().isoformat(),
+                account_id=account,
+                payee="Refund",
+                category_id=None,
+                amount=2_000,
+            )
+        )
+        store.add_transaction(
+            TransactionDraft(
+                date=date.today().isoformat(),
+                account_id=account,
+                payee="Rent",
+                category_id=None,
+                amount=-2_000,
+            )
+        )
 
         window = LedgerWindow(store, account)
         self.addCleanup(window.close)
-        self.assertEqual(len(window.model.rows), 3)
-        self.assertEqual(window.model.rows[0].split_count, 2)
-        self.assertTrue(window.model.rows[1].is_split_child)
+        self.assertEqual(len(window.model.rows), 5)
+        parent_index = next(
+            index
+            for index, row in enumerate(window.model.rows)
+            if row.id == transaction_id and not row.is_split_child
+        )
+        self.assertEqual(window.model.rows[parent_index].split_count, 2)
+        self.assertTrue(window.model.rows[parent_index + 1].is_split_child)
+        self.assertTrue(window.model.rows[parent_index + 2].is_split_child)
+
+        window._header_clicked(EXPENSE)
+        self.assertEqual(
+            [
+                row.payee
+                for row in window.model.rows
+                if not row.is_split_child
+            ],
+            ["Rent", "Amazon", "Refund"],
+        )
+        parent_index = next(
+            index
+            for index, row in enumerate(window.model.rows)
+            if row.id == transaction_id and not row.is_split_child
+        )
+        self.assertTrue(window.model.rows[parent_index + 1].is_split_child)
+        self.assertTrue(window.model.rows[parent_index + 2].is_split_child)
 
         child_index = next(
             index

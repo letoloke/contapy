@@ -589,6 +589,8 @@ class LedgerWindow(QMainWindow):
         self._highlight_ids: set[int] = set()
         self._suspend_highlight = False
         self._undo_stack: list[_UndoEntry] = []
+        self._sort_column = DATE
+        self._sort_order = Qt.SortOrder.DescendingOrder
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.setMinimumSize(1180, 540)
         self.resize(1260, 680)
@@ -759,6 +761,10 @@ class LedgerWindow(QMainWindow):
         header.setHighlightSections(False)
         header.setFixedHeight(31)
         header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        header.setSectionsClickable(True)
+        header.setSortIndicatorShown(True)
+        header.setSortIndicator(DATE, self._sort_order)
+        header.sectionClicked.connect(self._header_clicked)
         header.setSectionResizeMode(FLAG, QHeaderView.ResizeMode.Fixed)
         header.resizeSection(FLAG, 30)
         header.setSectionResizeMode(DATE, QHeaderView.ResizeMode.Fixed)
@@ -971,6 +977,66 @@ class LedgerWindow(QMainWindow):
             return None, None
         return dialog.values()
 
+    def _default_sort_order(self, column: int) -> Qt.SortOrder:
+        if column in (DATE, BALANCE, INCOME):
+            return Qt.SortOrder.DescendingOrder
+        if column == EXPENSE:
+            return Qt.SortOrder.AscendingOrder
+        return Qt.SortOrder.AscendingOrder
+
+    def _header_clicked(self, column: int) -> None:
+        if column == self._sort_column:
+            self._sort_order = (
+                Qt.SortOrder.DescendingOrder
+                if self._sort_order == Qt.SortOrder.AscendingOrder
+                else Qt.SortOrder.AscendingOrder
+            )
+        else:
+            self._sort_column = column
+            self._sort_order = self._default_sort_order(column)
+        header = self.table.horizontalHeader()
+        header.setSortIndicator(self._sort_column, self._sort_order)
+        header.setSortIndicatorShown(True)
+        self._apply_filters()
+
+    @staticmethod
+    def _status_rank(row: TransactionRow) -> int:
+        if row.voided:
+            return 0
+        if row.reconciled:
+            return 1
+        if row.cleared:
+            return 2
+        if row.remind:
+            return 3
+        if row.flagged:
+            return 4
+        return 5
+
+    def _sort_key(self, row: TransactionRow):
+        column = self._sort_column
+        if column == FLAG:
+            primary = 1 if row.flagged else 0
+        elif column == DATE:
+            primary = row.date
+        elif column == PAYEE:
+            primary = row.payee.casefold()
+        elif column == CATEGORY:
+            primary = row.category_name.casefold()
+        elif column == TAGS:
+            primary = row.tags.casefold()
+        elif column == STATUS:
+            primary = self._status_rank(row)
+        elif column in (EXPENSE, INCOME):
+            primary = row.amount
+        elif column == BALANCE:
+            primary = row.balance
+        elif column == MEMO:
+            primary = row.memo.casefold()
+        else:
+            primary = row.date
+        return (primary, row.date, row.id)
+
     def _apply_filters(self, selected_ids: list[int] | None = None) -> None:
         if selected_ids is None:
             selected_ids = self._selected_ids()
@@ -1003,7 +1069,7 @@ class LedgerWindow(QMainWindow):
                 )
             ).lower()
 
-        visible: list[TransactionRow] = []
+        groups: list[tuple[TransactionRow, list[TransactionRow]]] = []
         for row in parents:
             day = date.fromisoformat(row.date)
             if start and day < start:
@@ -1034,12 +1100,19 @@ class LedgerWindow(QMainWindow):
             group = [row, *children.get(row.id, [])]
             if search and not any(search in searchable(item) for item in group):
                 continue
-            visible.extend(group)
+            groups.append((row, group[1:]))
 
-        # HomeBank shows the newest activity first while the balance column
-        # still reflects the running balance at each transaction. Split
-        # children share the parent's key and keep their order after it.
-        visible.sort(key=lambda r: (r.date, r.id), reverse=True)
+        # HomeBank shows the newest activity first by default. Split children
+        # share their parent's key and stay directly beneath it.
+        groups.sort(
+            key=lambda item: self._sort_key(item[0]),
+            reverse=self._sort_order == Qt.SortOrder.DescendingOrder,
+        )
+        visible = [
+            row
+            for parent, children_rows in groups
+            for row in (parent, *children_rows)
+        ]
         self.model.set_rows(visible)
         self._restore_selection(selected_ids)
         self._update_summary()
