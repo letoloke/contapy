@@ -27,7 +27,7 @@ from .config import date_format_choice, remember_database, theme_choice
 from .dates import set_date_format
 from .db import DataStore
 from .models import ScheduledItem
-from .activity import ActivityLog, activity_log_path
+from .activity import ActivityLog, activity_log_path, transaction_detail
 from .money import money
 from .theme import C, font, select_theme
 from .widgets.accounts import AccountsPanel
@@ -558,7 +558,7 @@ class MainWindow(QMainWindow):
             self.store.add_scheduled(draft)
             self._record_activity(
                 "Scheduled transaction",
-                f"{draft.payee} · {money(draft.amount)} · {draft.date}",
+                f"{transaction_detail(draft.payee, draft.amount, draft.memo)} · {draft.date}",
             )
             self.show_toast(f"Scheduled {draft.payee} for {draft.date}")
             self.refresh_all()
@@ -567,7 +567,7 @@ class MainWindow(QMainWindow):
             if draft.transfer_account_id is not None:
                 self.store.add_transfer(draft, draft.transfer_account_id)
                 destination = self.store.account(draft.transfer_account_id)
-                detail = f"{draft.payee} · {money(draft.amount)}"
+                detail = transaction_detail(draft.payee, draft.amount, draft.memo)
                 if destination is not None:
                     detail += f" → {destination.name}"
                 self._record_activity("New transfer", detail)
@@ -575,7 +575,8 @@ class MainWindow(QMainWindow):
             else:
                 self.store.add_transaction(draft)
                 self._record_activity(
-                    "New transaction", f"{draft.payee} · {money(draft.amount)}"
+                    "New transaction",
+                    transaction_detail(draft.payee, draft.amount, draft.memo),
                 )
                 self.show_toast(f"Added {draft.payee} · {money(draft.amount)}")
             self.refresh_all()
@@ -662,7 +663,8 @@ class MainWindow(QMainWindow):
             return
         self.store.post_scheduled(item_id)
         self._record_activity(
-            "Posted scheduled transaction", f"{item.payee} · {money(item.amount)}"
+            "Posted scheduled transaction",
+            transaction_detail(item.payee, item.amount, item.memo),
         )
         self.refresh_all()
         self.show_toast(f"Posted {item.payee} · {money(item.amount)}")
@@ -681,7 +683,10 @@ class MainWindow(QMainWindow):
         if answer != QMessageBox.StandardButton.Yes:
             return
         self.store.skip_scheduled(item_id)
-        self._record_activity("Skipped scheduled transaction", item.payee)
+        self._record_activity(
+            "Skipped scheduled transaction",
+            transaction_detail(item.payee, item.amount, item.memo),
+        )
         self.refresh_all()
         self.show_toast(f"Skipped {item.payee}")
 
@@ -709,7 +714,9 @@ class MainWindow(QMainWindow):
         self.store.skip_scheduled(item_id)
         self._record_activity(
             "Edited and posted scheduled transaction",
-            f"{new_draft.payee} · {money(new_draft.amount)}",
+            transaction_detail(
+                new_draft.payee, new_draft.amount, new_draft.memo
+            ),
         )
         self.refresh_all()
         self.show_toast(f"Posted {new_draft.payee} · {money(new_draft.amount)}")

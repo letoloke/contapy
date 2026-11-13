@@ -12,13 +12,23 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
-from contapy.activity import ActivityLog
+from contapy.activity import ActivityLog, transaction_detail
 from contapy.db import DataStore
 from contapy.main_window import MainWindow
 from contapy.theme import apply_theme
 
 
 class ActivityLogTests(unittest.TestCase):
+    def test_transaction_detail_includes_memo_when_present(self) -> None:
+        self.assertEqual(
+            transaction_detail("Coffee", -25.0, "Oat milk"),
+            "Coffee · $ -25.00 · memo: Oat milk",
+        )
+        self.assertEqual(
+            transaction_detail("Coffee", -25.0),
+            "Coffee · $ -25.00",
+        )
+
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

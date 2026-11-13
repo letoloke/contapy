@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..activity import transaction_detail
 from ..config import ledger_status_choice
 from ..dates import format_date
 from ..db import DataStore
@@ -1273,7 +1274,7 @@ class LedgerWindow(QMainWindow):
             self._select_ids(ids)
             self._push_undo("new transfer", [], [row.id for row in legs])
             self._log_activity(
-                f"New transfer: {draft.payee} · {money(draft.amount)}"
+                f"New transfer: {transaction_detail(draft.payee, draft.amount, draft.memo)}"
             )
         else:
             new_id = self.store.add_transaction(draft)
@@ -1281,7 +1282,9 @@ class LedgerWindow(QMainWindow):
             self._select_ids([new_id])
             self._push_undo("new transaction", [], [new_id])
             kind = "New split transaction" if draft.splits else "New transaction"
-            self._log_activity(f"{kind}: {draft.payee} · {money(draft.amount)}")
+            self._log_activity(
+                f"{kind}: {transaction_detail(draft.payee, draft.amount, draft.memo)}"
+            )
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
 
@@ -1323,7 +1326,7 @@ class LedgerWindow(QMainWindow):
             self._select_ids(ids)
             self._push_undo("new transfer", [], [row.id for row in legs])
             self._log_activity(
-                f"New transfer: {new_draft.payee} · {money(new_draft.amount)}"
+                f"New transfer: {transaction_detail(new_draft.payee, new_draft.amount, new_draft.memo)}"
             )
         else:
             new_id = self.store.add_transaction(new_draft)
@@ -1336,7 +1339,7 @@ class LedgerWindow(QMainWindow):
                 else "Inherited transaction"
             )
             self._log_activity(
-                f"{kind}: {new_draft.payee} · {money(new_draft.amount)}"
+                f"{kind}: {transaction_detail(new_draft.payee, new_draft.amount, new_draft.memo)}"
             )
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
@@ -1428,7 +1431,7 @@ class LedgerWindow(QMainWindow):
             else ("Edited split transaction" if new_draft.splits else "Edited transaction")
         )
         self._log_activity(
-            f"{kind}: {new_draft.payee} · {money(new_draft.amount)}"
+            f"{kind}: {transaction_detail(new_draft.payee, new_draft.amount, new_draft.memo)}"
         )
         self.reload()
         self.changed.emit()
@@ -1514,12 +1517,11 @@ class LedgerWindow(QMainWindow):
         self._push_undo(
             undo_label, before, sorted(affected_ids), splits_before
         )
-        if len(selected) == 1:
+        for row in selected:
             self._log_activity(
-                f"Deleted transaction: {selected[0].payee} · {money(selected[0].amount)}"
+                "Deleted transaction: "
+                f"{transaction_detail(row.payee, row.amount, row.memo)}"
             )
-        else:
-            self._log_activity(f"Deleted {len(selected)} transactions")
         self.reload(preserve_selection=False)
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)

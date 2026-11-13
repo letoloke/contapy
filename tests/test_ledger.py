@@ -259,6 +259,35 @@ class LedgerHintTests(unittest.TestCase):
         for transaction_id in ids:
             self.assertFalse(restored[transaction_id].reconciled)
 
+    def test_activity_messages_include_transaction_memos(self) -> None:
+        from contapy.widgets import ledger as ledger_module
+
+        transaction_id = self.store.add_transaction(
+            TransactionDraft(
+                date=date.today().isoformat(),
+                account_id=self.window.account_id,
+                payee="Coffee",
+                category_id=None,
+                amount=-25,
+                memo="Oat milk",
+            )
+        )
+        self.window.reload()
+        self.window._select_ids([transaction_id])
+        messages: list[str] = []
+        self.window.activity.connect(messages.append)
+
+        with mock.patch.object(
+            ledger_module.QMessageBox,
+            "question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ):
+            self.window.delete_transaction()
+
+        self.assertTrue(
+            any("memo: Oat milk" in message for message in messages)
+        )
+
     def test_ledger_emits_activity_messages(self) -> None:
         messages: list[str] = []
         self.window.activity.connect(messages.append)

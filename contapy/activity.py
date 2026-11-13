@@ -6,10 +6,21 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+from .money import money
+
 
 def activity_log_path(db_path: str | Path) -> Path:
     """The activity log lives beside the active database."""
     return Path(db_path).expanduser().parent / "activity-history.md"
+
+
+def transaction_detail(payee: str, amount: float, memo: str = "") -> str:
+    """Format a transaction for the history, including its memo when present."""
+    detail = f"{payee} · {money(amount)}"
+    memo = str(memo).strip()
+    if memo:
+        detail += f" · memo: {memo}"
+    return detail
 
 
 class ActivityLog:
