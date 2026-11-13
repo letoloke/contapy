@@ -2103,8 +2103,17 @@ class DataStore:
         self.conn.commit()
 
     def import_fingerprints(self, account_ids: list[int] | None = None) -> set[ImportFingerprint]:
-        """Fingerprints for duplicate detection during CSV import."""
-        sql = "SELECT account_id, date, memo, payee, amount FROM transactions WHERE voided = 0"
+        """Fingerprints for duplicate detection during CSV import.
+
+        Voided transactions are included: they remain in the ledger for audit
+        purposes and should still be recognised when the same bank row is
+        imported again. The preview leaves duplicates unchecked, so they can
+        still be imported deliberately.
+        """
+        sql = (
+            "SELECT account_id, date, memo, payee, amount "
+            "FROM transactions WHERE 1 = 1"
+        )
         params: tuple = ()
         if account_ids is not None:
             ids = list(dict.fromkeys(int(account_id) for account_id in account_ids))

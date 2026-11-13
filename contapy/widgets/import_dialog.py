@@ -508,6 +508,13 @@ class CsvImportDialog(QDialog):
             self.status_label.setText("Map both Date and Amount to continue.")
             self.status_label.setStyleSheet(f"color:{C.ORANGE};")
             return
+        if selected == 0 and unchecked_duplicates:
+            self.status_label.setText(
+                f"0 of {self._valid_count} row(s) selected · "
+                f"{unchecked_duplicates} duplicate(s) not selected"
+            )
+            self.status_label.setStyleSheet(f"color:{C.ORANGE};")
+            return
         if selected == 0:
             self.status_label.setText(
                 "No rows selected — tick the rows you want to import."

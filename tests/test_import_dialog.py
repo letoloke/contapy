@@ -78,6 +78,28 @@ class ImportDialogTests(unittest.TestCase):
         self.assertFalse(dialog.import_button.isEnabled())
         dialog.deleteLater()
 
+    def test_voided_transactions_are_still_detected_as_duplicates(self) -> None:
+        seed = self.write_csv(
+            "voided-seed.csv",
+            ["2031-01-01,-10,Voided payment,Cafe"],
+        )
+        self.store.import_csv(seed, account_id=self.account.id)
+        transaction = self.store.ledger_rows(self.account.id)[0]
+        self.store.update_transaction_flags([transaction.id], voided=True)
+
+        target = self.write_csv(
+            "voided-target.csv",
+            ["2031-01-01,-10,Voided payment,Cafe"],
+        )
+        dialog = self.dialog(target)
+
+        self.assertEqual(
+            dialog.preview.item(0, 0).checkState(), Qt.CheckState.Unchecked
+        )
+        self.assertEqual(dialog.skip_row_indexes(), {0})
+        self.assertIn("1 duplicate(s) not selected", dialog.status_label.text())
+        dialog.deleteLater()
+
     def test_unreadable_rows_are_not_marked_as_skipped(self) -> None:
         target = self.write_csv(
             "target.csv",
