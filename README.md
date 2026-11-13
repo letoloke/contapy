@@ -18,7 +18,7 @@ The account **Ledger**, the **Transaction editor**, the **Reports** window and t
 
 ![LetoBank transaction editor](screenshots/transaction.png)
 
-The editor follows HomeBank's transaction dialog: **Expense / Income / Transfer** tabs, date and signed amount with currency code, account, payment mode, number, payee, category, status icons, memo and tags. Payee, category, payment and tags are editable with type-to-search completion.
+The editor follows HomeBank's transaction dialog: **Expense / Income / Transfer** tabs, date and signed amount with currency code, account, payment mode, number, payee, category, status icons, memo and tags. Payee, category, payment and tags are editable with type-to-search completion. A transaction can also be split across multiple categories with the **Split…** row.
 
 Keyboard-first behaviour:
 
@@ -87,6 +87,22 @@ The ledger opens focused on the newest transaction:
 - **Ctrl+Z** undoes the last ledger change, including flag changes, Alt+V, bulk edits, add/edit/delete and CSV imports.
 - **Enter** in the search box jumps focus to the filtered results.
 - **Tab / Shift+Tab** return to the filters when needed.
+
+## Split transactions
+
+The transaction editor has a **Split…** row. It opens the split editor, where one bank transaction can be divided across two or more categories.
+
+- Each allocation has its own category, memo, tags and amount.
+- Percentage labels show how the bank amount is distributed.
+- **Add another split** adds a line; **×** removes one; **Distribute remainder** assigns the unassigned difference to the last line.
+- The dialog will not save until there are at least two category allocations and their total matches the transaction amount.
+- **Remove split** in the transaction editor returns it to a normal single-category transaction.
+- The parent transaction keeps the full bank amount and stays in the account ledger as one parent row with a **Split · N parts** badge. The individual allocations appear beneath it as child rows.
+- Balances use the parent amount only. Reports, budgets, category totals, category transaction lists and the spending charts use the split allocations, so nothing is double-counted.
+- Selecting a child row acts on its parent transaction. Split parents are edited or deleted one at a time; bulk edit skips them.
+- **Ctrl+Z** restores split allocations after an edit or delete.
+
+Scheduled transactions and transfers are not split in this version.
 
 ## Subcategories
 
@@ -385,6 +401,7 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | Post / skip a bill | Select it in the Scheduled tab, then use the bottom buttons |
 | Edit a ledger row | Select it in the strip and click **Open Ledger**, or double-click it |
 | Reconcile selected ledger rows | `Ctrl+R`, the reconcile icon in the bottom bar, or **Tools → Mark Reconciled** |
+| Split a transaction | **Split…** in the transaction editor |
 | Remind / flag / void | Select rows in the ledger, then use the icons in the bottom bar |
 | Void the closest highlighted rows and reconcile the selection | `Alt+V` with two or more ledger rows selected; the action bar shows the hint while matches are highlighted |
 | Undo the last ledger change | `Ctrl+Z`; the **Edit** menu shows the action that will be reverted |
@@ -469,7 +486,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-One hundred and eighty-four tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, bulk ledger editing, ledger undo, Ctrl+R reconciliation, uncategorized category highlighting, responsive account-sidebar columns, closest-amount highlighting for voiding with its Alt+V hint, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, Delete-key removal, Enter-to-edit and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, the dashboard budgets panel beside the scheduled strip, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the searchable Ctrl+K shortcut list and its window-level action, HomeBank automatic-assignment import (conditions, payees, categories, payments, tags, notes, overwrite flags, duplicates and invalid references), the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
+One hundred and ninety-six tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, bulk ledger editing, ledger undo, Ctrl+R reconciliation, split transactions (storage, editing, balanced allocation, ledger children, reports, budgets, category lists and undo), uncategorized category highlighting, responsive account-sidebar columns, closest-amount highlighting for voiding with its Alt+V hint, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, Delete-key removal, Enter-to-edit and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, the dashboard budgets panel beside the scheduled strip, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the searchable Ctrl+K shortcut list and its window-level action, HomeBank automatic-assignment import (conditions, payees, categories, payments, tags, notes, overwrite flags, duplicates and invalid references), the 70-row HomeBank bank-CSV import, custom and remembered header mappings, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
 
 ## Notes / limitations
 

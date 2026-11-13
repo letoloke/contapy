@@ -112,6 +112,20 @@ class ScheduledItem:
 
 
 @dataclass(slots=True)
+class SplitDraft:
+    """One category allocation inside a split transaction."""
+
+    category_id: int | None
+    amount: float
+    memo: str = ""
+    tags: str = ""
+    category_name: str = ""
+    category_color: str = ""
+    category_kind: str = "expense"
+    id: int = 0
+
+
+@dataclass(slots=True)
 class TransactionRow:
     id: int
     account_id: int
@@ -134,6 +148,14 @@ class TransactionRow:
     tags: str = ""
     transfer_id: str | None = None
     balance: float = 0.0
+    splits: list[SplitDraft] = field(default_factory=list)
+    is_split_child: bool = False
+    split_parent_id: int | None = None
+    split_id: int | None = None
+
+    @property
+    def split_count(self) -> int:
+        return len(self.splits)
 
 
 @dataclass(slots=True)
@@ -194,6 +216,7 @@ class TransactionDraft:
     transfer_account_id: int | None = None
     transfer_id: str | None = None
     scheduled: bool = False
+    splits: list[SplitDraft] = field(default_factory=list)
 
 
 @dataclass(slots=True)

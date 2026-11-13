@@ -36,6 +36,7 @@ from .models import (
     Rule,
     ScheduledItem,
     Slice,
+    SplitDraft,
     TransactionDraft,
     TransactionRow,
 )
@@ -62,6 +63,16 @@ TRANSACTION_COLUMNS = (
     "number",
     "tags",
     "transfer_id",
+)
+
+SPLIT_COLUMNS = (
+    "id",
+    "transaction_id",
+    "category_id",
+    "amount",
+    "memo",
+    "tags",
+    "sort_order",
 )
 
 SCHEMA = """
@@ -109,6 +120,64 @@ CREATE TABLE IF NOT EXISTS transactions (
     number      TEXT NOT NULL DEFAULT '',
     tags        TEXT NOT NULL DEFAULT '',
     transfer_id TEXT
+);
+
+CREATE TABLE IF NOT EXISTS transaction_splits (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+    category_id    INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+    amount         REAL NOT NULL,
+    memo           TEXT NOT NULL DEFAULT '',
+    tags           TEXT NOT NULL DEFAULT '',
+    sort_order     INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_transaction_splits_transaction
+    ON transaction_splits(transaction_id);
+
+-- Reporting view: split parents contribute their split lines, while ordinary
+-- transactions contribute themselves.
+CREATE VIEW IF NOT EXISTS transaction_lines AS
+SELECT t.id AS source_id,
+       t.account_id AS account_id,
+       t.date AS date,
+       t.payee AS payee,
+       s.category_id AS category_id,
+       s.amount AS amount,
+       s.memo AS memo,
+       s.tags AS tags,
+       t.voided AS voided,
+       t.cleared AS cleared,
+       t.reconciled AS reconciled,
+       t.remind AS remind,
+       t.flagged AS flagged,
+       t.payment AS payment,
+       t.number AS number,
+       t.transfer_id AS transfer_id,
+       1 AS is_split
+FROM transactions t
+JOIN transaction_splits s ON s.transaction_id = t.id
+UNION ALL
+SELECT t.id,
+       t.account_id,
+       t.date,
+       t.payee,
+       t.category_id,
+       t.amount,
+       t.memo,
+       t.tags,
+       t.voided,
+       t.cleared,
+       t.reconciled,
+       t.remind,
+       t.flagged,
+       t.payment,
+       t.number,
+       t.transfer_id,
+       0
+FROM transactions t
+WHERE NOT EXISTS (
+    SELECT 1 FROM transaction_splits s WHERE s.transaction_id = t.id
 );
 
 CREATE TABLE IF NOT EXISTS scheduled (
@@ -754,16 +823,16 @@ class DataStore:
 
         rows = self._rows(
             """
-            SELECT t.category_id AS category_id,
-                   t.date AS date,
-                   SUM(-t.amount) AS spent
-            FROM transactions t
-            JOIN categories c ON c.id = t.category_id
-            WHERE t.voided = 0
-              AND t.amount < 0
+            SELECT l.category_id AS category_id,
+                   l.date AS date,
+                   SUM(-l.amount) AS spent
+            FROM transaction_lines l
+            JOIN categories c ON c.id = l.category_id
+            WHERE l.voided = 0
+              AND l.amount < 0
               AND c.kind = 'expense'
-              AND t.date BETWEEN ? AND ?
-            GROUP BY t.category_id, t.date
+              AND l.date BETWEEN ? AND ?
+            GROUP BY l.category_id, l.date
             """,
             (periods[0][2].isoformat(), periods[-1][3].isoformat()),
         )
@@ -828,21 +897,21 @@ class DataStore:
         search: str = "",
     ) -> list[sqlite3.Row]:
         params: list = [start.isoformat(), end.isoformat()]
-        clauses = ["t.date BETWEEN ? AND ?", "t.voided = 0"]
+        clauses = ["l.date BETWEEN ? AND ?", "l.voided = 0"]
         if account_id is not None:
-            clauses.append("t.account_id = ?")
+            clauses.append("l.account_id = ?")
             params.append(account_id)
         text = search.strip()
         if text:
             like = f"%{text}%"
             clauses.append(
-                "(t.payee LIKE ? OR t.memo LIKE ? OR t.tags LIKE ? "
+                "(l.payee LIKE ? OR l.memo LIKE ? OR l.tags LIKE ? "
                 "OR c.name LIKE ? OR p.name LIKE ?)"
             )
             params.extend([like, like, like, like, like])
         return self._rows(
             f"""
-            SELECT t.date, t.amount, t.payee,
+            SELECT l.date, l.amount, l.payee,
                    a.id AS account_id, a.name AS account_name,
                    c.id AS category_id, c.name AS category_name,
                    c.kind AS category_kind, c.color AS category_color,
@@ -852,9 +921,9 @@ class DataStore:
                    COALESCE(p.name, c.name) AS top_name,
                    COALESCE(p.color, c.color) AS top_color,
                    COALESCE(p.sort_order, c.sort_order) AS top_sort
-            FROM transactions t
-            JOIN accounts a ON a.id = t.account_id
-            LEFT JOIN categories c ON c.id = t.category_id
+            FROM transaction_lines l
+            JOIN accounts a ON a.id = l.account_id
+            LEFT JOIN categories c ON c.id = l.category_id
             LEFT JOIN categories p ON p.id = c.parent_id
             WHERE {' AND '.join(clauses)}
             """,
@@ -1007,20 +1076,20 @@ class DataStore:
         params: list = [start.isoformat(), end.isoformat(), kind]
         account_sql = ""
         if account_id is not None:
-            account_sql = " AND t.account_id = ?"
+            account_sql = " AND l.account_id = ?"
             params.append(account_id)
         rows = self._rows(
             f"""
             SELECT COALESCE(p.id, c.id) AS top_id,
                    COALESCE(p.name, c.name) AS name,
                    COALESCE(p.color, c.color) AS color,
-                   SUM({sign}t.amount) AS total_amount
-            FROM transactions t
-            JOIN categories c ON c.id = t.category_id
+                   SUM({sign}l.amount) AS total_amount
+            FROM transaction_lines l
+            JOIN categories c ON c.id = l.category_id
             LEFT JOIN categories p ON p.id = c.parent_id
-            WHERE t.date BETWEEN ? AND ?
-              AND t.voided = 0
-              AND t.amount {comparison} 0
+            WHERE l.date BETWEEN ? AND ?
+              AND l.voided = 0
+              AND l.amount {comparison} 0
               AND c.kind = ?
               {account_sql}
             GROUP BY top_id
@@ -1069,15 +1138,15 @@ class DataStore:
         params: list = [first.isoformat()]
         account_sql = ""
         if account_id is not None:
-            account_sql = " AND account_id = ?"
+            account_sql = " AND l.account_id = ?"
             params.append(account_id)
         rows = self._rows(
             f"""
-            SELECT substr(date, 1, 7) AS ym,
-                   SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) AS income,
-                   SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END) AS expense
-            FROM transactions
-            WHERE date >= ? AND voided = 0 AND category_id IS NOT NULL
+            SELECT substr(l.date, 1, 7) AS ym,
+                   SUM(CASE WHEN l.amount > 0 THEN l.amount ELSE 0 END) AS income,
+                   SUM(CASE WHEN l.amount < 0 THEN -l.amount ELSE 0 END) AS expense
+            FROM transaction_lines l
+            WHERE l.date >= ? AND l.voided = 0 AND l.category_id IS NOT NULL
               {account_sql}
             GROUP BY ym
             """,
@@ -1194,7 +1263,8 @@ class DataStore:
 
     # ----------------------------------------------------------- transactions
     def add_transaction(self, draft: TransactionDraft) -> int:
-        draft = self.apply_rules(draft)
+        if not draft.splits:
+            draft = self.apply_rules(draft)
         cleared = draft.reconciled or draft.cleared
         cur = self.conn.execute(
             "INSERT INTO transactions(account_id, date, payee, category_id, amount, memo, "
@@ -1204,7 +1274,7 @@ class DataStore:
                 draft.account_id,
                 draft.date,
                 draft.payee.strip(),
-                draft.category_id,
+                None if draft.splits else draft.category_id,
                 float(draft.amount),
                 draft.memo.strip(),
                 1 if cleared else 0,
@@ -1218,8 +1288,11 @@ class DataStore:
                 draft.transfer_id,
             ),
         )
+        transaction_id = int(cur.lastrowid)
+        if draft.splits:
+            self._insert_splits(transaction_id, draft.splits)
         self.conn.commit()
-        return int(cur.lastrowid)
+        return transaction_id
 
     def add_transfer(self, draft: TransactionDraft, to_account_id: int) -> str:
         group = uuid.uuid4().hex
@@ -1280,7 +1353,7 @@ class DataStore:
                 draft.account_id,
                 draft.date,
                 draft.payee.strip(),
-                draft.category_id,
+                None if draft.splits else draft.category_id,
                 float(draft.amount),
                 draft.memo.strip(),
                 1 if cleared else 0,
@@ -1294,7 +1367,97 @@ class DataStore:
                 transaction_id,
             ),
         )
+        self._insert_splits(transaction_id, draft.splits)
         self.conn.commit()
+
+    def _insert_splits(
+        self, transaction_id: int, splits: list[SplitDraft]
+    ) -> None:
+        self.conn.execute(
+            "DELETE FROM transaction_splits WHERE transaction_id=?",
+            (transaction_id,),
+        )
+        for index, split in enumerate(splits):
+            self.conn.execute(
+                "INSERT INTO transaction_splits("
+                "transaction_id, category_id, amount, memo, tags, sort_order"
+                ") VALUES (?,?,?,?,?,?)",
+                (
+                    transaction_id,
+                    split.category_id,
+                    float(split.amount),
+                    split.memo.strip(),
+                    split.tags.strip(),
+                    index,
+                ),
+            )
+
+    def splits_for_transactions(
+        self, transaction_ids: list[int]
+    ) -> dict[int, list[SplitDraft]]:
+        """Split lines keyed by parent transaction id, with category metadata."""
+        ids = sorted({int(transaction_id) for transaction_id in transaction_ids})
+        result: dict[int, list[SplitDraft]] = {}
+        for start in range(0, len(ids), 500):
+            chunk = ids[start : start + 500]
+            if not chunk:
+                continue
+            placeholders = ",".join("?" for _ in chunk)
+            rows = self.conn.execute(
+                f"""
+                SELECT s.id, s.transaction_id, s.category_id, s.amount,
+                       s.memo, s.tags, s.sort_order,
+                       CASE WHEN p.name IS NOT NULL AND p.name <> ''
+                            THEN p.name || ' : ' || c.name ELSE c.name END
+                           AS category_name,
+                       c.color AS category_color, c.kind AS category_kind
+                FROM transaction_splits s
+                LEFT JOIN categories c ON c.id = s.category_id
+                LEFT JOIN categories p ON p.id = c.parent_id
+                WHERE s.transaction_id IN ({placeholders})
+                ORDER BY s.transaction_id, s.sort_order, s.id
+                """,
+                chunk,
+            )
+            for row in rows:
+                parent_id = int(row["transaction_id"])
+                result.setdefault(parent_id, []).append(
+                    SplitDraft(
+                        id=int(row["id"]),
+                        category_id=row["category_id"],
+                        amount=float(row["amount"]),
+                        memo=row["memo"] or "",
+                        tags=row["tags"] or "",
+                        category_name=row["category_name"] or "Uncategorized",
+                        category_color=row["category_color"] or "",
+                        category_kind=row["category_kind"] or "expense",
+                    )
+                )
+        return result
+
+    def splits_for(self, transaction_id: int) -> list[SplitDraft]:
+        return self.splits_for_transactions([transaction_id]).get(
+            int(transaction_id), []
+        )
+
+    def snapshot_splits(self, transaction_ids: list[int]) -> list[dict]:
+        ids = sorted({int(transaction_id) for transaction_id in transaction_ids})
+        snapshot: list[dict] = []
+        columns = ", ".join(SPLIT_COLUMNS)
+        for start in range(0, len(ids), 500):
+            chunk = ids[start : start + 500]
+            if not chunk:
+                continue
+            placeholders = ",".join("?" for _ in chunk)
+            snapshot.extend(
+                dict(row)
+                for row in self.conn.execute(
+                    f"SELECT {columns} FROM transaction_splits "
+                    f"WHERE transaction_id IN ({placeholders})",
+                    chunk,
+                )
+            )
+        return snapshot
 
     def update_transactions(
         self,
@@ -1406,7 +1569,10 @@ class DataStore:
         return snapshot
 
     def restore_transactions(
-        self, snapshot: list[dict], remove_ids: list[int]
+        self,
+        snapshot: list[dict],
+        remove_ids: list[int],
+        split_snapshot: list[dict] | None = None,
     ) -> None:
         """Replace the current rows with a previous snapshot.
 
@@ -1431,6 +1597,35 @@ class DataStore:
                 [
                     tuple(row[column] for column in TRANSACTION_COLUMNS)
                     for row in snapshot
+                ],
+            )
+        if split_snapshot:
+            split_ids = sorted({int(row["id"]) for row in split_snapshot})
+            parent_ids = sorted(
+                {int(row["transaction_id"]) for row in split_snapshot}
+            )
+            for start in range(0, len(split_ids), 500):
+                chunk = split_ids[start : start + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                self.conn.execute(
+                    f"DELETE FROM transaction_splits WHERE id IN ({placeholders})",
+                    chunk,
+                )
+            for start in range(0, len(parent_ids), 500):
+                chunk = parent_ids[start : start + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                self.conn.execute(
+                    f"DELETE FROM transaction_splits "
+                    f"WHERE transaction_id IN ({placeholders})",
+                    chunk,
+                )
+            columns = ", ".join(SPLIT_COLUMNS)
+            placeholders = ",".join("?" for _ in SPLIT_COLUMNS)
+            self.conn.executemany(
+                f"INSERT INTO transaction_splits ({columns}) VALUES ({placeholders})",
+                [
+                    tuple(row[column] for column in SPLIT_COLUMNS)
+                    for row in split_snapshot
                 ],
             )
         self.conn.commit()
@@ -1495,16 +1690,62 @@ class DataStore:
         )
 
     def ledger_rows(self, account_id: int) -> list[TransactionRow]:
-        """All transactions for one account, with a running balance."""
+        """All transactions for one account, with a running balance.
+
+        Split transactions appear as their parent row followed by one child row
+        per category allocation. Only the parent changes the running balance.
+        """
         account = self.account(account_id)
         if account is None:
             return []
+        raw_rows = self._transaction_query("WHERE t.account_id = ?", (account_id,))
+        split_map = self.splits_for_transactions(
+            [int(raw["id"]) for raw in raw_rows]
+        )
         running = account.opening
         rows: list[TransactionRow] = []
-        for raw in self._transaction_query("WHERE t.account_id = ?", (account_id,)):
+        for raw in raw_rows:
             if not raw["voided"]:
                 running += float(raw["amount"])
-            rows.append(self._to_transaction_row(raw, running))
+            parent = self._to_transaction_row(raw, running)
+            splits = split_map.get(parent.id, [])
+            if splits:
+                parent.splits = splits
+                parent.category_id = None
+                parent.category_name = f"Split · {len(splits)} parts"
+                parent.category_color = theme_category_color("", None)
+            rows.append(parent)
+            for split in splits:
+                rows.append(
+                    TransactionRow(
+                        id=parent.id,
+                        account_id=parent.account_id,
+                        account_name=parent.account_name,
+                        date=parent.date,
+                        payee=parent.payee,
+                        category_id=split.category_id,
+                        category_name=split.category_name,
+                        category_color=theme_category_color(
+                            split.category_name, split.category_color or None
+                        ),
+                        category_kind=split.category_kind,
+                        amount=split.amount,
+                        memo=split.memo,
+                        cleared=parent.cleared,
+                        reconciled=parent.reconciled,
+                        remind=parent.remind,
+                        flagged=parent.flagged,
+                        voided=parent.voided,
+                        payment=parent.payment,
+                        number=parent.number,
+                        tags=split.tags,
+                        transfer_id=parent.transfer_id,
+                        balance=0.0,
+                        is_split_child=True,
+                        split_parent_id=parent.id,
+                        split_id=split.id,
+                    )
+                )
         return rows
 
     def category_transactions(
@@ -1528,8 +1769,24 @@ class DataStore:
                 if child.parent_id == category_id
             )
         placeholders = ",".join("?" for _ in ids)
-        rows = self._transaction_query(
-            f"WHERE t.category_id IN ({placeholders})", tuple(ids)
+        rows = self._rows(
+            f"""
+            SELECT l.source_id AS id, l.account_id, a.name AS account_name,
+                   l.date, l.payee, l.category_id,
+                   CASE WHEN p.name IS NOT NULL AND p.name <> ''
+                        THEN p.name || ' : ' || c.name ELSE c.name END
+                       AS category_name,
+                   c.color AS category_color, c.kind AS category_kind,
+                   l.amount, l.memo, l.cleared, l.reconciled, l.remind,
+                   l.flagged, l.voided, l.payment, l.number, l.tags,
+                   l.transfer_id
+            FROM transaction_lines l
+            JOIN accounts a ON a.id = l.account_id
+            LEFT JOIN categories c ON c.id = l.category_id
+            LEFT JOIN categories p ON p.id = c.parent_id
+            WHERE l.category_id IN ({placeholders})
+            """,
+            tuple(ids),
         )
         transactions = [self._to_transaction_row(row) for row in rows]
         transactions.sort(key=lambda row: (row.date, row.id), reverse=True)
@@ -1537,7 +1794,16 @@ class DataStore:
 
     def transaction(self, transaction_id: int) -> TransactionRow | None:
         rows = self._transaction_query("WHERE t.id = ?", (transaction_id,))
-        return self._to_transaction_row(rows[0]) if rows else None
+        if not rows:
+            return None
+        row = self._to_transaction_row(rows[0])
+        splits = self.splits_for(row.id)
+        if splits:
+            row.splits = splits
+            row.category_id = None
+            row.category_name = f"Split · {len(splits)} parts"
+            row.category_color = theme_category_color("", None)
+        return row
 
     def strip_transactions(self) -> tuple[list[TransactionRow], list[TransactionRow]]:
         """Future-dated and remind-flagged posted transactions for the home strip."""
@@ -1559,7 +1825,10 @@ class DataStore:
         return [r[0] for r in rows]
 
     def tags(self) -> list[str]:
-        rows = self._rows("SELECT tags FROM transactions WHERE tags <> ''")
+        rows = self._rows(
+            "SELECT tags FROM transactions WHERE tags <> '' "
+            "UNION ALL SELECT tags FROM transaction_splits WHERE tags <> ''"
+        )
         values: set[str] = set()
         for row in rows:
             values.update(part for part in row[0].split() if part)

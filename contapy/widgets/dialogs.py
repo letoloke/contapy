@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QDoubleSpinBox,
     QFormLayout,
+    QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -43,6 +44,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -66,6 +68,7 @@ from ..db import DataStore
 from ..models import (
     Account,
     Category,
+    SplitDraft,
     TransactionDraft,
     TransactionRow,
     ordered_categories,
@@ -233,6 +236,430 @@ def _drawer_icon(draw_fn, color: str, size: int = 18) -> QIcon:
     return QIcon(pixmap)
 
 
+class _SplitDistributionBar(QWidget):
+    """Thin stacked bar showing how the split total is distributed."""
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.parts: list[tuple[float, str]] = []
+        self.setFixedHeight(9)
+        self.setStyleSheet("background:transparent;")
+
+    def set_parts(self, parts: list[tuple[float, str]]) -> None:
+        self.parts = parts
+        self.update()
+
+    def paintEvent(self, event):  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.PenStyle.NoPen)
+        total = sum(value for value, _color in self.parts) or 1.0
+        x = 0.0
+        width = self.width()
+        for index, (value, color) in enumerate(self.parts):
+            segment = width * value / total
+            gap = 2 if index < len(self.parts) - 1 else 0
+            painter.setBrush(QColor(color))
+            painter.drawRoundedRect(
+                QRectF(x, 0, max(1.0, segment - gap), self.height()), 4, 4
+            )
+            x += segment
+        painter.end()
+
+
+class SplitEditorRow(QFrame):
+    """One editable category allocation inside a split transaction."""
+
+    def __init__(
+        self,
+        categories: list[Category],
+        split: SplitDraft,
+        on_changed,
+        on_remove,
+        parent: QWidget | None = None,
+    ):
+        super().__init__(parent)
+        self.setObjectName("splitEditorRow")
+        self.setStyleSheet(
+            f"QFrame#splitEditorRow {{ background:{C.INPUT_BG};"
+            f" border:1px solid {C.INPUT_BORDER}; border-radius:7px; }}"
+        )
+        self._category_colors = {
+            category.id: category.color for category in categories
+        }
+        self._on_changed = on_changed
+        self._on_remove = on_remove
+        self.split_id = split.id
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(9, 6, 9, 6)
+        layout.setSpacing(9)
+
+        self.dot = QLabel()
+        self.dot.setFixedSize(9, 9)
+        layout.addWidget(self.dot)
+
+        self.category_combo = QComboBox()
+        self.category_combo.setFixedWidth(220)
+        self.category_combo.setFont(font(13, 400))
+        self.category_combo.addItem("Choose a category…", None)
+        for category in ordered_categories(categories):
+            self.category_combo.addItem(category.full_name, category.id)
+        index = self.category_combo.findData(split.category_id)
+        self.category_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.category_combo.currentIndexChanged.connect(self._category_changed)
+        layout.addWidget(self.category_combo)
+
+        self.memo_edit = QLineEdit(split.memo)
+        self.memo_edit.setPlaceholderText("What was this part for?")
+        self.memo_edit.setFont(font(13, 400))
+        layout.addWidget(self.memo_edit, 1)
+
+        self.tags_edit = QLineEdit(split.tags)
+        self.tags_edit.setPlaceholderText("Tags")
+        self.tags_edit.setFixedWidth(135)
+        self.tags_edit.setFont(font(12, 400))
+        layout.addWidget(self.tags_edit)
+
+        self.amount_spin = QDoubleSpinBox()
+        self.amount_spin.setDecimals(2)
+        self.amount_spin.setRange(0.0, 999_999_999.0)
+        self.amount_spin.setSingleStep(1.0)
+        self.amount_spin.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.amount_spin.setGroupSeparatorShown(True)
+        self.amount_spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        self.amount_spin.setFixedWidth(126)
+        self.amount_spin.lineEdit().setMinimumWidth(110)
+        self.amount_spin.setFont(font(14, 600))
+        self.amount_spin.setValue(abs(float(split.amount)))
+        self.amount_spin.valueChanged.connect(lambda _value: self._on_changed())
+        layout.addWidget(self.amount_spin)
+
+        self.percent_label = QLabel("—")
+        self.percent_label.setFixedWidth(44)
+        self.percent_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self.percent_label.setFont(font(12, 500))
+        self.percent_label.setStyleSheet(f"color:{C.MUTED};")
+        layout.addWidget(self.percent_label)
+
+        self.remove_button = QPushButton("×")
+        self.remove_button.setProperty("role", "action")
+        self.remove_button.setFixedSize(28, 28)
+        self.remove_button.setFont(font(16, 400))
+        self.remove_button.setToolTip("Remove this split")
+        self.remove_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.remove_button.clicked.connect(lambda: self._on_remove(self))
+        layout.addWidget(self.remove_button)
+
+        self._category_changed()
+
+    def _category_changed(self) -> None:
+        color = self._category_colors.get(self.category_combo.currentData())
+        self.dot.setStyleSheet(
+            f"background:{color or C.MUTED_DARK}; border-radius:4px;"
+        )
+        self._on_changed()
+
+    def values(self) -> SplitDraft:
+        return SplitDraft(
+            id=self.split_id,
+            category_id=self.category_combo.currentData(),
+            amount=float(self.amount_spin.value()),
+            memo=self.memo_edit.text().strip(),
+            tags=self.tags_edit.text().strip(),
+        )
+
+    def set_percent(self, percent: float) -> None:
+        self.percent_label.setText(f"{percent:.0f}%" if percent > 0 else "—")
+
+    def set_remove_enabled(self, enabled: bool) -> None:
+        self.remove_button.setEnabled(enabled)
+
+
+class SplitDialog(QDialog):
+    """Editor for dividing one transaction across several categories."""
+
+    def __init__(
+        self,
+        store: DataStore,
+        categories: list[Category],
+        total: float,
+        splits: list[SplitDraft] | None = None,
+        currency_code: str = "",
+        parent: QWidget | None = None,
+    ):
+        super().__init__(parent)
+        self.store = store
+        self.categories = ordered_categories(categories)
+        self.total = abs(float(total))
+        self.currency_code = currency_code
+        self.rows: list[SplitEditorRow] = []
+        self._result: list[SplitDraft] = []
+
+        self.setWindowTitle("Split transaction")
+        self.setModal(True)
+        self.setMinimumSize(1040, 560)
+        self.resize(1120, 620)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(22, 18, 22, 16)
+        root.setSpacing(12)
+
+        heading = QLabel("Split transaction")
+        heading.setFont(font(20, 600))
+        root.addWidget(heading)
+
+        note = QLabel(
+            f"Divide {money(self.total)} across two or more categories. "
+            "The parent transaction keeps the bank amount; these splits feed "
+            "reports, budgets and category totals."
+        )
+        note.setWordWrap(True)
+        note.setFont(font(12, 400))
+        note.setStyleSheet(f"color:{C.MUTED};")
+        root.addWidget(note)
+
+        summary_row = QHBoxLayout()
+        summary_row.setSpacing(18)
+        summary_row.addWidget(self._stat("Bank amount", money(self.total)))
+        self.count_label = QLabel("")
+        self.count_label.setFont(font(12, 400))
+        self.count_label.setStyleSheet(f"color:{C.MUTED};")
+        summary_row.addWidget(self.count_label)
+        summary_row.addStretch(1)
+        distribute = QPushButton("Distribute remainder")
+        distribute.setProperty("role", "action")
+        distribute.setCursor(Qt.CursorShape.PointingHandCursor)
+        distribute.setFont(font(12, 400))
+        distribute.clicked.connect(self._distribute_remainder)
+        summary_row.addWidget(distribute)
+        root.addLayout(summary_row)
+
+        self.bar = _SplitDistributionBar()
+        root.addWidget(self.bar)
+
+        header = QWidget()
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(9, 0, 9, 0)
+        header_layout.setSpacing(9)
+        for text, width in (
+            ("", 9),
+            ("Category", 220),
+            ("Memo", 0),
+            ("Tags", 135),
+            ("Amount", 126),
+            ("%", 44),
+            ("", 28),
+        ):
+            label = QLabel(text)
+            label.setFont(font(10, 600))
+            label.setStyleSheet(f"color:{C.MUTED};")
+            if width:
+                label.setFixedWidth(width)
+            if text in ("Amount", "%"):
+                label.setAlignment(
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                )
+            header_layout.addWidget(label, 1 if width == 0 else 0)
+        root.addWidget(header)
+
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setMaximumHeight(280)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll.setStyleSheet(
+            f"QScrollArea {{ background:transparent; border:none; }}"
+        )
+        self.rows_widget = QWidget()
+        self.rows_widget.setStyleSheet("background:transparent;")
+        self.rows_layout = QVBoxLayout(self.rows_widget)
+        self.rows_layout.setContentsMargins(0, 0, 0, 0)
+        self.rows_layout.setSpacing(7)
+        self.rows_layout.addStretch(1)
+        self.scroll.setWidget(self.rows_widget)
+        root.addWidget(self.scroll, 1)
+
+        add_button = QPushButton("+  Add another split")
+        add_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_button.setFont(font(13, 500))
+        add_button.setFixedHeight(36)
+        add_button.setStyleSheet(
+            f"QPushButton {{ background:transparent; border:1px dashed {C.INPUT_BORDER};"
+            f" border-radius:7px; color:{C.MUTED}; text-align:left; padding-left:12px; }}"
+            f"QPushButton:hover {{ background:{C.ROW_HOVER}; color:{C.TEXT}; }}"
+        )
+        add_button.clicked.connect(lambda: self.add_row(focus=True))
+        root.addWidget(add_button)
+
+        self.balance_label = QLabel("")
+        self.balance_label.setFont(font(13, 500))
+        root.addWidget(self.balance_label)
+        root.addStretch(1)
+
+        buttons = QDialogButtonBox()
+        cancel = buttons.addButton("Cancel", QDialogButtonBox.ButtonRole.RejectRole)
+        self.save_button = buttons.addButton(
+            "Save split", QDialogButtonBox.ButtonRole.AcceptRole
+        )
+        cancel.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.save_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel.setAutoDefault(False)
+        self.save_button.setProperty("role", "primary")
+        self.save_button.setDefault(True)
+        self.save_button.setAutoDefault(True)
+        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self.accept)
+        root.addWidget(buttons)
+
+        initial = list(splits or [])
+        if not initial:
+            initial = [
+                SplitDraft(category_id=None, amount=self.total),
+                SplitDraft(category_id=None, amount=0.0),
+            ]
+        elif len(initial) == 1:
+            initial.append(SplitDraft(category_id=None, amount=0.0))
+        for split in initial:
+            self.add_row(split)
+        self._update_state()
+
+    @staticmethod
+    def _stat(label_text: str, value: str) -> QWidget:
+        box = QWidget()
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(1)
+        label = QLabel(label_text.upper())
+        label.setFont(font(10, 500))
+        label.setStyleSheet(f"color:{C.MUTED};")
+        value_label = QLabel(value)
+        value_label.setFont(font(15, 600))
+        value_label.setStyleSheet(f"color:{C.TEXT};")
+        layout.addWidget(label)
+        layout.addWidget(value_label)
+        return box
+
+    def _category_metadata(self, category_id: int | None) -> tuple[str, str, str]:
+        for category in self.categories:
+            if category.id == category_id:
+                return category.full_name, category.color, category.kind
+        return "Uncategorized", "", "expense"
+
+    def add_row(
+        self, split: SplitDraft | None = None, focus: bool = False
+    ) -> SplitEditorRow:
+        row = SplitEditorRow(
+            self.categories,
+            split or SplitDraft(category_id=None, amount=0.0),
+            self._update_state,
+            self.remove_row,
+            self.rows_widget,
+        )
+        self.rows.append(row)
+        self.rows_layout.insertWidget(self.rows_layout.count() - 1, row)
+        self._update_state()
+        if focus:
+            row.category_combo.setFocus(Qt.FocusReason.OtherFocusReason)
+        return row
+
+    def remove_row(self, row: SplitEditorRow) -> None:
+        if len(self.rows) <= 1:
+            return
+        self.rows.remove(row)
+        self.rows_layout.removeWidget(row)
+        row.deleteLater()
+        self._update_state()
+
+    def _update_state(self) -> None:
+        if not self.rows:
+            return
+        assigned = sum(row.amount_spin.value() for row in self.rows)
+        remaining = self.total - assigned
+        for row in self.rows:
+            row.set_percent(
+                (row.amount_spin.value() / self.total * 100)
+                if self.total > 0
+                else 0.0
+            )
+            row.set_remove_enabled(len(self.rows) > 1)
+        self.count_label.setText(
+            f"{len(self.rows)} parts · {money(assigned)} assigned"
+        )
+        self.bar.set_parts(
+            [
+                (
+                    row.amount_spin.value(),
+                    self._category_metadata(row.category_combo.currentData())[1]
+                    or C.MUTED,
+                )
+                for row in self.rows
+                if row.amount_spin.value() > 0.005
+            ]
+        )
+        if abs(remaining) <= 0.005:
+            self.balance_label.setText(
+                f"✓ Balanced · {money(assigned)} of {money(self.total)} assigned"
+            )
+            self.balance_label.setStyleSheet(f"color:{C.GREEN};")
+        elif remaining > 0:
+            self.balance_label.setText(
+                f"Remaining to assign: {money(remaining)}"
+            )
+            self.balance_label.setStyleSheet(f"color:{C.WARNING};")
+        else:
+            self.balance_label.setText(
+                f"Over-assigned by {money(-remaining)}"
+            )
+            self.balance_label.setStyleSheet(f"color:{C.RED_BAR};")
+
+    def _distribute_remainder(self) -> None:
+        if not self.rows:
+            return
+        assigned = sum(row.amount_spin.value() for row in self.rows)
+        remaining = round(self.total - assigned, 2)
+        if abs(remaining) < 0.005:
+            return
+        last = self.rows[-1]
+        value = round(last.amount_spin.value() + remaining, 2)
+        last.amount_spin.setValue(max(0.0, value))
+
+    def _validation_error(self) -> str | None:
+        if len(self.rows) < 2:
+            return "A split transaction needs at least two allocations."
+        for index, row in enumerate(self.rows, start=1):
+            if row.category_combo.currentData() is None:
+                return f"Choose a category for split {index}."
+            if row.amount_spin.value() <= 0.005:
+                return f"Enter an amount greater than zero for split {index}."
+        assigned = sum(row.amount_spin.value() for row in self.rows)
+        if abs(assigned - self.total) > 0.005:
+            return (
+                f"The split total is {money(assigned)}, but the transaction "
+                f"amount is {money(self.total)}."
+            )
+        return None
+
+    def accept(self) -> None:
+        error = self._validation_error()
+        if error:
+            QMessageBox.warning(self, "Split is not balanced", error)
+            return
+        self._result = []
+        for row in self.rows:
+            values = row.values()
+            name, color, kind = self._category_metadata(values.category_id)
+            values.category_name = name
+            values.category_color = color
+            values.category_kind = kind
+            self._result.append(values)
+        super().accept()
+
+    def splits(self) -> list[SplitDraft]:
+        return list(self._result)
+
+
 class TransactionDialog(QDialog):
     def __init__(
         self,
@@ -257,6 +684,8 @@ class TransactionDialog(QDialog):
         self._flagged = False
         self._voided = False
         self._transfer_id = draft.transfer_id if draft else None
+        self._splits: list[SplitDraft] = list(draft.splits) if draft else []
+        self._loading = draft is not None
         self.currency_code = store.get_setting("currency_code", "MXN") or "MXN"
 
         self.setWindowTitle(
@@ -384,6 +813,37 @@ class TransactionDialog(QDialog):
         )
         root.addWidget(self.category_row)
 
+        split_wrap = QWidget()
+        split_layout = QHBoxLayout(split_wrap)
+        split_layout.setContentsMargins(0, 0, 0, 0)
+        split_layout.setSpacing(8)
+        self.split_summary = QLabel("One category")
+        self.split_summary.setFont(font(12, 400))
+        self.split_summary.setStyleSheet(f"color:{C.MUTED};")
+        split_layout.addWidget(self.split_summary, 1)
+        self.clear_split_button = QPushButton("Remove split")
+        self.clear_split_button.setProperty("role", "action")
+        self.clear_split_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clear_split_button.setFont(font(12, 400))
+        self.clear_split_button.setAutoDefault(False)
+        self.clear_split_button.clicked.connect(self._clear_split)
+        self.clear_split_button.setVisible(False)
+        split_layout.addWidget(self.clear_split_button)
+        self.split_button = QPushButton("Split…")
+        self.split_button.setProperty("role", "action")
+        self.split_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.split_button.setFont(font(12, 400))
+        self.split_button.setAutoDefault(False)
+        self.split_button.clicked.connect(self.open_split_dialog)
+        split_layout.addWidget(self.split_button)
+        self.split_row = self._field_row(
+            "Split",
+            split_wrap,
+            "Divide this transaction across several categories. The split "
+            "total must match the transaction amount.",
+        )
+        root.addWidget(self.split_row)
+
         self.status_row = self._build_status_row()
         root.addWidget(self.status_row)
 
@@ -440,6 +900,7 @@ class TransactionDialog(QDialog):
                 self.number_row,
                 self.status_row,
                 self.tags_row,
+                self.split_row,
             ):
                 widget.setVisible(False)
             self.type_buttons["transfer"].setVisible(False)
@@ -457,6 +918,7 @@ class TransactionDialog(QDialog):
             self.payment_combo.setCurrentIndex(0)
             self.date_edit.setFocus()
             self._sync_status_buttons()
+        self._sync_split_ui()
 
     # ------------------------------------------------------------------ pieces
     def _build_type_tabs(self) -> QWidget:
@@ -625,7 +1087,10 @@ class TransactionDialog(QDialog):
     def _set_type(self, kind: str, adjust_amount: bool = True) -> None:
         if kind == "transfer" and self._scheduled:
             return
+        previous = self._type
         self._type = kind
+        if previous != kind and self._splits and not self._loading:
+            self._splits = []
         button = self.type_buttons.get(kind)
         if button is not None and not button.isChecked():
             button.setChecked(True)
@@ -650,6 +1115,9 @@ class TransactionDialog(QDialog):
                 value = abs(self.amount_spin.value())
                 self.amount_spin.setValue(-value if kind == "expense" else value)
             self._rebuild_categories(kind)
+        if hasattr(self, "split_row"):
+            self.split_row.setVisible(not is_transfer and not self._scheduled)
+            self._sync_split_ui()
 
     def _rebuild_categories(self, kind: str) -> None:
         current = self.category_combo.currentData()
@@ -663,6 +1131,60 @@ class TransactionDialog(QDialog):
             index = 0
         self.category_combo.setCurrentIndex(index)
         self.category_combo.setEditText(self.category_combo.itemText(index))
+
+    # ------------------------------------------------------------------ split
+    def _sync_split_ui(self) -> None:
+        has_split = bool(self._splits)
+        if not hasattr(self, "split_button"):
+            return
+        self.category_combo.setEnabled(not has_split)
+        if has_split:
+            total = sum(abs(split.amount) for split in self._splits)
+            self.category_combo.setEditText(f"Split · {len(self._splits)} parts")
+            self.split_summary.setText(
+                f"{len(self._splits)} parts · {money(total)} assigned"
+            )
+            self.split_button.setText("Edit split…")
+            self.clear_split_button.setVisible(True)
+        else:
+            self.split_summary.setText("One category")
+            self.split_button.setText("Split…")
+            self.clear_split_button.setVisible(False)
+
+    def open_split_dialog(self) -> None:
+        if self._type == "transfer":
+            return
+        total = abs(self.amount_spin.value())
+        if total < 0.005:
+            QMessageBox.warning(
+                self, "Missing amount", "Enter the transaction amount first."
+            )
+            return
+        initial = list(self._splits)
+        if not initial:
+            initial = [
+                SplitDraft(
+                    category_id=self.category_combo.resolved_data(),
+                    amount=total,
+                ),
+                SplitDraft(category_id=None, amount=0.0),
+            ]
+        dialog = SplitDialog(
+            self.store,
+            [category for category in self.categories if category.kind == self._type],
+            total,
+            initial,
+            self.currency_code,
+            self,
+        )
+        if dialog.exec() == SplitDialog.DialogCode.Accepted:
+            self._splits = dialog.splits()
+            self._sync_split_ui()
+
+    def _clear_split(self) -> None:
+        self._splits = []
+        self._rebuild_categories(self._type)
+        self._sync_split_ui()
 
     def _normalize_amount_sign(self) -> None:
         if self._type == "expense":
@@ -794,6 +1316,8 @@ class TransactionDialog(QDialog):
             self.number_edit,
             self.payee_combo,
             self.category_combo,
+            self.split_button,
+            self.clear_split_button,
             self.memo_edit,
             self.tags_combo,
             self.cancel_button,
@@ -840,6 +1364,8 @@ class TransactionDialog(QDialog):
         self._voided = draft.voided
         self._sync_status_buttons()
         self._normalize_amount_sign()
+        self._loading = False
+        self._sync_split_ui()
         self.date_edit.setFocus()
 
     @staticmethod
@@ -878,27 +1404,92 @@ class TransactionDialog(QDialog):
             signed_amount = -abs(amount)
         else:
             payee = self.payee_combo.resolved_text()
-            category_id = self.category_combo.resolved_data()
-            typed_category = self.category_combo.resolved_text()
-            if (
-                category_id is None
-                and typed_category
-                and typed_category.casefold() != "uncategorized"
-            ):
-                try:
-                    category_id = self.store.ensure_category(
-                        typed_category, self._type
-                    )
-                except ValueError as error:
-                    QMessageBox.warning(self, "Invalid category", str(error))
-                    return
-                # Pick up the new category so the combo reflects it now.
-                self.categories = self.store.categories()
-                self._rebuild_categories(self._type)
-                index = self.category_combo.findData(category_id)
-                if index >= 0:
-                    self.category_combo.setCurrentIndex(index)
+            if self._splits:
+                category_id = None
+            else:
+                category_id = self.category_combo.resolved_data()
+                typed_category = self.category_combo.resolved_text()
+                if (
+                    category_id is None
+                    and typed_category
+                    and typed_category.casefold() != "uncategorized"
+                ):
+                    try:
+                        category_id = self.store.ensure_category(
+                            typed_category, self._type
+                        )
+                    except ValueError as error:
+                        QMessageBox.warning(self, "Invalid category", str(error))
+                        return
+                    # Pick up the new category so the combo reflects it now.
+                    self.categories = self.store.categories()
+                    self._rebuild_categories(self._type)
+                    index = self.category_combo.findData(category_id)
+                    if index >= 0:
+                        self.category_combo.setCurrentIndex(index)
             signed_amount = -abs(amount) if self._type == "expense" else abs(amount)
+
+        splits: list[SplitDraft] = []
+        if self._splits and self._type != "transfer":
+            if len(self._splits) < 2:
+                QMessageBox.warning(
+                    self,
+                    "Split is not balanced",
+                    "A split transaction needs at least two allocations.",
+                )
+                return
+            for index, split in enumerate(self._splits, start=1):
+                if split.category_id is None:
+                    QMessageBox.warning(
+                        self,
+                        "Split is not balanced",
+                        f"Choose a category for split {index}.",
+                    )
+                    return
+                if abs(split.amount) <= 0.005:
+                    QMessageBox.warning(
+                        self,
+                        "Split is not balanced",
+                        f"Enter an amount greater than zero for split {index}.",
+                    )
+                    return
+            assigned = sum(abs(split.amount) for split in self._splits)
+            if abs(assigned - abs(signed_amount)) > 0.005:
+                QMessageBox.warning(
+                    self,
+                    "Split is not balanced",
+                    f"The split total is {money(assigned)}, but the "
+                    f"transaction amount is {money(abs(signed_amount))}.",
+                )
+                return
+            sign = -1 if signed_amount < 0 else 1
+            for split in self._splits:
+                name = split.category_name
+                color = split.category_color
+                kind = split.category_kind or self._type
+                if not name:
+                    match = next(
+                        (
+                            category
+                            for category in self.categories
+                            if category.id == split.category_id
+                        ),
+                        None,
+                    )
+                    if match is not None:
+                        name, color, kind = match.full_name, match.color, match.kind
+                splits.append(
+                    SplitDraft(
+                        id=split.id,
+                        category_id=split.category_id,
+                        amount=sign * abs(split.amount),
+                        memo=split.memo.strip(),
+                        tags=split.tags.strip(),
+                        category_name=name,
+                        category_color=color,
+                        category_kind=kind,
+                    )
+                )
 
         cleared = self._cleared
         reconciled = self._reconciled
@@ -925,6 +1516,7 @@ class TransactionDialog(QDialog):
             transfer_account_id=transfer_account_id,
             transfer_id=self._transfer_id if transfer_account_id is not None else None,
             scheduled=self._scheduled,
+            splits=splits,
         )
         super().accept()
 

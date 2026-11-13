@@ -79,6 +79,7 @@ class _UndoEntry:
     label: str
     before: list[dict]
     remove_ids: list[int]
+    splits_before: list[dict]
 
 
 def ledger_date(iso: str) -> str:
@@ -160,6 +161,18 @@ class LedgerModel(QAbstractTableModel):
         row = self.rows[index.row()]
         col = index.column()
         if role == Qt.ItemDataRole.DisplayRole:
+            if row.is_split_child:
+                if col == CATEGORY:
+                    return row.category_name
+                if col == TAGS:
+                    return row.tags
+                if col == EXPENSE:
+                    return money(row.amount) if row.amount < 0 else ""
+                if col == INCOME:
+                    return money(row.amount) if row.amount > 0 else ""
+                if col == MEMO:
+                    return row.memo
+                return ""
             if col == DATE:
                 return ledger_date(row.date)
             if col == PAYEE:
@@ -182,11 +195,21 @@ class LedgerModel(QAbstractTableModel):
                 return Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
             return Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         if role == Qt.ItemDataRole.ToolTipRole:
-            detail = (
-                f"{row.date} · {row.payee}\n"
-                f"{row.category_name} · {money(row.amount)}\n"
-                f"Balance after: {money(row.balance)}"
-            )
+            if row.is_split_child:
+                detail = (
+                    f"{row.date} · {row.payee}\n"
+                    f"Split line · {row.category_name} · {money(row.amount)}"
+                )
+            else:
+                detail = (
+                    f"{row.date} · {row.payee}\n"
+                    f"{row.category_name} · {money(row.amount)}\n"
+                    f"Balance after: {money(row.balance)}"
+                )
+                if row.split_count:
+                    detail += f"\nSplit into {row.split_count} categories"
+            if row.memo:
+                detail += f"\nMemo: {row.memo}"
             if row.tags:
                 detail += f"\nTags: {row.tags}"
             return detail
@@ -223,7 +246,11 @@ class LedgerDelegate(QStyledItemDelegate):
         col = index.column()
         rect = option.rect
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
-        highlighted = not selected and row.id in self.highlight_ids
+        highlighted = (
+            not selected
+            and not row.is_split_child
+            and row.id in self.highlight_ids
+        )
 
         bg = QColor(C.ROW_SELECTED) if selected else QColor(
             C.PANEL if index.row() % 2 == 0 else C.ALT_ROW
@@ -249,6 +276,69 @@ class LedgerDelegate(QStyledItemDelegate):
             muted = QColor(C.MUTED_DARK)
         category_color = category_text_color(row, text_color, selected)
 
+        if row.is_split_child:
+            child_text = (
+                QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.TEXT_SOFT)
+            )
+            child_muted = QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.MUTED)
+            if row.voided and not selected:
+                child_text = QColor(C.MUTED_DARK)
+                child_muted = QColor(C.MUTED_DARK)
+            if col == CATEGORY:
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QColor(row.category_color or C.MUTED))
+                painter.drawEllipse(
+                    QRectF(rect.left() + pad + 4, rect.top() + 10, 7, 7)
+                )
+                self._text(
+                    painter,
+                    rect,
+                    pad + 18,
+                    row.category_name,
+                    self._value_font,
+                    child_text,
+                )
+            elif col == TAGS:
+                self._text(
+                    painter, rect, pad, row.tags, self._small_font, child_muted
+                )
+            elif col == EXPENSE and row.amount < 0:
+                color = (
+                    QColor(C.ROW_SELECTED_TEXT)
+                    if selected
+                    else QColor(C.MUTED_DARK if row.voided else C.RED_BAR)
+                )
+                self._text(
+                    painter,
+                    rect,
+                    pad,
+                    money(row.amount),
+                    self._value_font,
+                    color,
+                    Qt.AlignmentFlag.AlignRight,
+                )
+            elif col == INCOME and row.amount > 0:
+                color = (
+                    QColor(C.ROW_SELECTED_TEXT)
+                    if selected
+                    else QColor(C.MUTED_DARK if row.voided else C.GREEN)
+                )
+                self._text(
+                    painter,
+                    rect,
+                    pad,
+                    money(row.amount),
+                    self._value_font,
+                    color,
+                    Qt.AlignmentFlag.AlignRight,
+                )
+            elif col == MEMO:
+                self._text(
+                    painter, rect, pad, row.memo, self._small_font, child_muted
+                )
+            painter.restore()
+            return
+
         if col == FLAG:
             if row.flagged:
                 draw_flag(
@@ -262,7 +352,17 @@ class LedgerDelegate(QStyledItemDelegate):
         elif col == PAYEE:
             self._text(painter, rect, pad, row.payee, self._payee_font, text_color)
         elif col == CATEGORY:
-            self._text(painter, rect, pad, row.category_name, self._value_font, category_color)
+            if row.split_count:
+                self._draw_split_chip(painter, rect, row, selected)
+            else:
+                self._text(
+                    painter,
+                    rect,
+                    pad,
+                    row.category_name,
+                    self._value_font,
+                    category_color,
+                )
         elif col == TAGS:
             self._text(painter, rect, pad, row.tags, self._small_font, muted)
         elif col == STATUS:
@@ -332,6 +432,34 @@ class LedgerDelegate(QStyledItemDelegate):
             self._text(painter, rect, pad, row.memo, self._small_font, muted)
 
         painter.restore()
+
+    def _draw_split_chip(
+        self,
+        painter: QPainter,
+        rect,
+        row: TransactionRow,
+        selected: bool,
+    ) -> None:
+        text = f"Split · {row.split_count} parts"
+        metrics = QFontMetrics(self._small_font)
+        width = min(
+            metrics.horizontalAdvance(text) + 18,
+            max(40, rect.width() - 16),
+        )
+        chip = QRectF(rect.left() + 8, rect.top() + 5, width, rect.height() - 10)
+        fill = QColor(C.INFO)
+        fill.setAlpha(28 if not selected else 52)
+        painter.setBrush(fill)
+        painter.setPen(QPen(QColor(C.INFO), 1))
+        painter.drawRoundedRect(chip, 8, 8)
+        painter.setFont(self._small_font)
+        painter.setPen(
+            QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.INFO)
+        )
+        label = metrics.elidedText(
+            text, Qt.TextElideMode.ElideRight, int(chip.width() - 12)
+        )
+        painter.drawText(chip, Qt.AlignmentFlag.AlignCenter, label)
 
     @staticmethod
     def _text(
@@ -866,8 +994,29 @@ class LedgerWindow(QMainWindow):
         status_filter = self.status_combo.currentData()
         search = self.search_edit.text().strip().lower()
 
-        visible: list[TransactionRow] = []
+        parents: list[TransactionRow] = []
+        children: dict[int, list[TransactionRow]] = {}
         for row in self.all_rows:
+            if row.is_split_child:
+                if row.split_parent_id is not None:
+                    children.setdefault(row.split_parent_id, []).append(row)
+            else:
+                parents.append(row)
+
+        def searchable(row: TransactionRow) -> str:
+            return " ".join(
+                (
+                    row.payee,
+                    row.category_name,
+                    row.memo,
+                    row.payment,
+                    row.number,
+                    row.tags,
+                )
+            ).lower()
+
+        visible: list[TransactionRow] = []
+        for row in parents:
             day = date.fromisoformat(row.date)
             if start and day < start:
                 continue
@@ -894,23 +1043,14 @@ class LedgerWindow(QMainWindow):
                 continue
             if status_filter == "flagged" and not row.flagged:
                 continue
-            if search and search not in (
-                " ".join(
-                    (
-                        row.payee,
-                        row.category_name,
-                        row.memo,
-                        row.payment,
-                        row.number,
-                        row.tags,
-                    )
-                )
-            ).lower():
+            group = [row, *children.get(row.id, [])]
+            if search and not any(search in searchable(item) for item in group):
                 continue
-            visible.append(row)
+            visible.extend(group)
 
         # HomeBank shows the newest activity first while the balance column
-        # still reflects the running balance at each transaction.
+        # still reflects the running balance at each transaction. Split
+        # children share the parent's key and keep their order after it.
         visible.sort(key=lambda r: (r.date, r.id), reverse=True)
         self.model.set_rows(visible)
         self._restore_selection(selected_ids)
@@ -936,13 +1076,23 @@ class LedgerWindow(QMainWindow):
             )
 
     def _selected_rows(self) -> list[TransactionRow]:
-        rows = []
+        rows: list[TransactionRow] = []
+        parents = {
+            row.id: row for row in self.model.rows if not row.is_split_child
+        }
         selection = self.table.selectionModel()
         if selection is None:
             return rows
+        seen: set[int] = set()
         for index in selection.selectedRows(0):
-            if 0 <= index.row() < len(self.model.rows):
-                rows.append(self.model.rows[index.row()])
+            if not (0 <= index.row() < len(self.model.rows)):
+                continue
+            row = self.model.rows[index.row()]
+            parent_id = row.split_parent_id if row.is_split_child else row.id
+            parent = parents.get(parent_id)
+            if parent is not None and parent.id not in seen:
+                rows.append(parent)
+                seen.add(parent.id)
         return rows
 
     def _selected_ids(self) -> list[int]:
@@ -961,8 +1111,11 @@ class LedgerWindow(QMainWindow):
         else:
             selected_ids = {row.id for row in selected}
             selected_sum = sum(row.amount for row in selected if not row.voided)
+            parent_rows = [
+                row for row in self.model.rows if not row.is_split_child
+            ]
             ids = set(
-                closest_amount_ids(self.model.rows, selected_ids, selected_sum)
+                closest_amount_ids(parent_rows, selected_ids, selected_sum)
             )
         self._highlight_ids = ids
         self.delegate.highlight_ids = ids
@@ -990,9 +1143,10 @@ class LedgerWindow(QMainWindow):
     def _update_summary(self) -> None:
         selected = self._selected_rows()
         selected_sum = sum(row.amount for row in selected if not row.voided)
-        total_sum = sum(row.amount for row in self.model.rows if not row.voided)
+        parents = [row for row in self.model.rows if not row.is_split_child]
+        total_sum = sum(row.amount for row in parents if not row.voided)
         self.summary.set_data(
-            len(self.model.rows),
+            len(parents),
             len(selected),
             selected_sum,
             self.balance_snapshot,
@@ -1087,6 +1241,7 @@ class LedgerWindow(QMainWindow):
             payment=source.payment,
             number=source.number,
             tags=source.tags,
+            splits=list(source.splits),
         )
         dialog = self._dialog_for(draft, "Inherit Transaction")
         if dialog.exec() != TransactionDialog.DialogCode.Accepted:
@@ -1150,6 +1305,7 @@ class LedgerWindow(QMainWindow):
             tags=edit_source.tags,
             transfer_account_id=transfer_account_id,
             transfer_id=transfer_id,
+            splits=list(source.splits) if not transfer_id else [],
         )
         dialog = self._dialog_for(draft, "Edit Transaction")
         if dialog.exec() != TransactionDialog.DialogCode.Accepted:
@@ -1164,6 +1320,7 @@ class LedgerWindow(QMainWindow):
             else [source.id]
         )
         before = self.store.snapshot_transactions(before_ids)
+        splits_before = self.store.snapshot_splits(before_ids)
 
         if transfer_id:
             if new_draft.transfer_account_id is not None:
@@ -1188,19 +1345,23 @@ class LedgerWindow(QMainWindow):
         else:
             self.store.update_transaction(source.id, new_draft)
             remove_ids = [source.id]
-        self._push_undo("transaction edit", before, remove_ids)
+        self._push_undo(
+            "transaction edit", before, remove_ids, splits_before
+        )
         self.reload()
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
 
     def _bulk_edit_transactions(self, selected: list[TransactionRow]) -> None:
-        editable = [row for row in selected if not row.transfer_id]
+        editable = [
+            row for row in selected if not row.transfer_id and not row.splits
+        ]
         skipped = len(selected) - len(editable)
         if not editable:
             self._show_message(
                 "Bulk edit",
-                "The selected rows are transfers. Edit transfer legs one at a "
-                "time so both sides of the transfer stay in sync.",
+                "The selected rows are transfers or split transactions. "
+                "Edit them one at a time so their linked lines stay in sync.",
             )
             return
 
@@ -1232,7 +1393,7 @@ class LedgerWindow(QMainWindow):
             self._show_message(
                 "Bulk edit",
                 f"Updated {len(editable)} transactions.\n"
-                f"Skipped {skipped} transfer row(s).",
+                f"Skipped {skipped} transfer or split row(s).",
             )
         QTimer.singleShot(0, self._focus_table)
 
@@ -1259,6 +1420,7 @@ class LedgerWindow(QMainWindow):
             else:
                 affected_ids.add(row.id)
         before = self.store.snapshot_transactions(sorted(affected_ids))
+        splits_before = self.store.snapshot_splits(sorted(affected_ids))
         for row in selected:
             self.store.delete_transaction(row.id)
         undo_label = (
@@ -1266,7 +1428,9 @@ class LedgerWindow(QMainWindow):
             if len(selected) == 1
             else f"delete {len(selected)} transactions"
         )
-        self._push_undo(undo_label, before, sorted(affected_ids))
+        self._push_undo(
+            undo_label, before, sorted(affected_ids), splits_before
+        )
         self.reload(preserve_selection=False)
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
@@ -1364,13 +1528,18 @@ class LedgerWindow(QMainWindow):
 
     # ------------------------------------------------------------------- undo
     def _push_undo(
-        self, label: str, before: list[dict], remove_ids: list[int]
+        self,
+        label: str,
+        before: list[dict],
+        remove_ids: list[int],
+        splits_before: list[dict] | None = None,
     ) -> None:
         self._undo_stack.append(
             _UndoEntry(
                 label=label,
                 before=before,
                 remove_ids=[int(transaction_id) for transaction_id in remove_ids],
+                splits_before=list(splits_before or []),
             )
         )
         if len(self._undo_stack) > UNDO_LIMIT:
@@ -1397,7 +1566,9 @@ class LedgerWindow(QMainWindow):
             return
         entry = self._undo_stack.pop()
         try:
-            self.store.restore_transactions(entry.before, entry.remove_ids)
+            self.store.restore_transactions(
+                entry.before, entry.remove_ids, entry.splits_before
+            )
         except Exception as exc:
             self._undo_stack.append(entry)
             self._show_message("Undo failed", str(exc))
