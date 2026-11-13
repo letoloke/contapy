@@ -8,12 +8,13 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from PySide6.QtCore import QTimer, Qt, QUrl
-from PySide6.QtGui import QAction, QDesktopServices, QKeySequence
+from PySide6.QtGui import QAction, QCursor, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QSplitter,
     QVBoxLayout,
@@ -101,10 +102,18 @@ class MainWindow(QMainWindow):
             "New Scheduled Transaction…", self.new_scheduled_transaction
         )
         self.act_new_account = self._action("New Account…", self.new_account, "Ctrl+Shift+N")
-        self.act_import = self._action("Import CSV…", self.import_csv, "Ctrl+I")
+        self.act_import = self._action(
+            "Import Transactions…", self.show_import_menu, "Ctrl+I"
+        )
+        self.act_import_csv = self._action("Import CSV…", self.import_csv)
         self.act_import_airbnb = self._action("From Airbnb…", self.import_airbnb)
         self.act_import_booking = self._action("From Booking…", self.import_booking)
         self.act_import_banamex = self._action("From Banamex…", self.import_banamex)
+        self.import_menu = QMenu("Import Transactions", self)
+        self.import_menu.addAction(self.act_import_csv)
+        self.import_menu.addAction(self.act_import_airbnb)
+        self.import_menu.addAction(self.act_import_booking)
+        self.import_menu.addAction(self.act_import_banamex)
         self.act_export = self._action("Export CSV…", self.export_csv, "Ctrl+E")
         self.act_open_database = self._action(
             "Open Database…", self.open_database, "Ctrl+O"
@@ -132,10 +141,7 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self.act_new)
         file_menu.addAction(self.act_new_account)
         file_menu.addSeparator()
-        file_menu.addAction(self.act_import)
-        file_menu.addAction(self.act_import_airbnb)
-        file_menu.addAction(self.act_import_booking)
-        file_menu.addAction(self.act_import_banamex)
+        file_menu.addMenu(self.import_menu)
         file_menu.addAction(self.act_export)
         file_menu.addSeparator()
         file_menu.addAction(self.act_quit)
@@ -204,9 +210,6 @@ class MainWindow(QMainWindow):
         tools_menu.addAction(self._action("Open Data Folder", self.open_data_folder))
         tools_menu.addSeparator()
         tools_menu.addAction(self.act_import)
-        tools_menu.addAction(self.act_import_airbnb)
-        tools_menu.addAction(self.act_import_booking)
-        tools_menu.addAction(self.act_import_banamex)
         tools_menu.addAction(self.act_export)
 
         help_menu = bar.addMenu("Help")
@@ -971,6 +974,9 @@ class MainWindow(QMainWindow):
             return
         if created is not None and notify:
             self.show_toast(f"Daily backup: {created.name}")
+
+    def show_import_menu(self) -> None:
+        self.import_menu.popup(QCursor.pos())
 
     def import_csv(self) -> None:
         path, _ = QFileDialog.getOpenFileName(

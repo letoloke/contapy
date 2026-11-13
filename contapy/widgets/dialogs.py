@@ -2703,7 +2703,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
             ("Ctrl+K", "Show this shortcut list"),
             ("Ctrl+N", "New transaction"),
             ("Ctrl+Shift+N", "New account"),
-            ("Ctrl+I", "Import CSV"),
+            ("Ctrl+I", "Open the import transactions menu"),
             ("Ctrl+E", "Export CSV"),
             ("Ctrl+O", "Open database"),
             ("Ctrl+Alt+S", "Save database as"),
