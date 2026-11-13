@@ -259,6 +259,18 @@ class LedgerHintTests(unittest.TestCase):
         for transaction_id in ids:
             self.assertFalse(restored[transaction_id].reconciled)
 
+    def test_ledger_emits_activity_messages(self) -> None:
+        messages: list[str] = []
+        self.window.activity.connect(messages.append)
+        ids = [row.id for row in self.window.model.rows]
+        self.window._select_ids(ids)
+
+        self.window._set_reconciled(True)
+        self.assertIn(f"Reconciled {len(ids)} transaction(s)", messages)
+
+        self.window.undo()
+        self.assertTrue(any(message.startswith("Undid reconcile") for message in messages))
+
     def test_ledger_headers_sort_by_amount_and_keep_selection(self) -> None:
         by_amount = {row.amount: row.id for row in self.window.model.rows}
         self.window._select_ids([by_amount[-600.0]])

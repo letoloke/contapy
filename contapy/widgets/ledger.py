@@ -5,6 +5,7 @@ from __future__ import annotations
 import calendar
 from dataclasses import dataclass
 from datetime import date, timedelta
+from pathlib import Path
 
 from PySide6.QtCore import (
     QAbstractTableModel,
@@ -571,6 +572,7 @@ class LedgerSummary(QWidget):
 
 class LedgerWindow(QMainWindow):
     changed = Signal()
+    activity = Signal(str)
 
     def __init__(
         self,
@@ -1270,11 +1272,16 @@ class LedgerWindow(QMainWindow):
             ]
             self._select_ids(ids)
             self._push_undo("new transfer", [], [row.id for row in legs])
+            self._log_activity(
+                f"New transfer: {draft.payee} · {money(draft.amount)}"
+            )
         else:
             new_id = self.store.add_transaction(draft)
             self.reload(preserve_selection=False)
             self._select_ids([new_id])
             self._push_undo("new transaction", [], [new_id])
+            kind = "New split transaction" if draft.splits else "New transaction"
+            self._log_activity(f"{kind}: {draft.payee} · {money(draft.amount)}")
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
 
@@ -1315,11 +1322,22 @@ class LedgerWindow(QMainWindow):
             ]
             self._select_ids(ids)
             self._push_undo("new transfer", [], [row.id for row in legs])
+            self._log_activity(
+                f"New transfer: {new_draft.payee} · {money(new_draft.amount)}"
+            )
         else:
             new_id = self.store.add_transaction(new_draft)
             self.reload(preserve_selection=False)
             self._select_ids([new_id])
             self._push_undo("new transaction", [], [new_id])
+            kind = (
+                "Inherited split transaction"
+                if new_draft.splits
+                else "Inherited transaction"
+            )
+            self._log_activity(
+                f"{kind}: {new_draft.payee} · {money(new_draft.amount)}"
+            )
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
 
@@ -1404,6 +1422,14 @@ class LedgerWindow(QMainWindow):
         self._push_undo(
             "transaction edit", before, remove_ids, splits_before
         )
+        kind = (
+            "Edited transfer"
+            if transfer_id or new_draft.transfer_account_id is not None
+            else ("Edited split transaction" if new_draft.splits else "Edited transaction")
+        )
+        self._log_activity(
+            f"{kind}: {new_draft.payee} · {money(new_draft.amount)}"
+        )
         self.reload()
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
@@ -1443,6 +1469,7 @@ class LedgerWindow(QMainWindow):
         if changes:
             self.store.update_transactions(ids, **changes)
         self._push_undo("bulk edit", before, ids)
+        self._log_activity(f"Bulk edited {len(editable)} transaction(s)")
         self.reload()
         self.changed.emit()
         if skipped:
@@ -1487,6 +1514,12 @@ class LedgerWindow(QMainWindow):
         self._push_undo(
             undo_label, before, sorted(affected_ids), splits_before
         )
+        if len(selected) == 1:
+            self._log_activity(
+                f"Deleted transaction: {selected[0].payee} · {money(selected[0].amount)}"
+            )
+        else:
+            self._log_activity(f"Deleted {len(selected)} transactions")
         self.reload(preserve_selection=False)
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
@@ -1500,6 +1533,10 @@ class LedgerWindow(QMainWindow):
             ids, cleared=cleared, reconciled=False
         )
         self._push_undo("clear" if cleared else "unclear", before, ids)
+        self._log_activity(
+            f"{'Cleared' if cleared else 'Marked uncleared'} "
+            f"{len(ids)} transaction(s)"
+        )
         self.reload()
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
@@ -1514,6 +1551,10 @@ class LedgerWindow(QMainWindow):
         else:
             self.store.update_transaction_flags(ids, cleared=True, reconciled=False)
         self._push_undo("reconcile" if reconciled else "unreconcile", before, ids)
+        self._log_activity(
+            f"{'Reconciled' if reconciled else 'Unreconciled'} "
+            f"{len(ids)} transaction(s)"
+        )
         self.reload()
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
@@ -1527,6 +1568,9 @@ class LedgerWindow(QMainWindow):
         target = not all(row.remind for row in selected)
         self.store.update_transaction_flags(ids, remind=target)
         self._push_undo("remind change", before, ids)
+        self._log_activity(
+            f"{'Set' if target else 'Cleared'} remind on {len(ids)} transaction(s)"
+        )
         self.reload()
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
@@ -1540,6 +1584,9 @@ class LedgerWindow(QMainWindow):
         target = not all(row.flagged for row in selected)
         self.store.update_transaction_flags(ids, flagged=target)
         self._push_undo("flag change", before, ids)
+        self._log_activity(
+            f"{'Flagged' if target else 'Unflagged'} {len(ids)} transaction(s)"
+        )
         self.reload()
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
@@ -1553,6 +1600,9 @@ class LedgerWindow(QMainWindow):
         target = not all(row.voided for row in selected)
         self.store.update_transaction_flags(ids, voided=target)
         self._push_undo("void change", before, ids)
+        self._log_activity(
+            f"{'Voided' if target else 'Unvoided'} {len(ids)} transaction(s)"
+        )
         self.reload()
         self.changed.emit()
         QTimer.singleShot(0, self._focus_table)
@@ -1572,6 +1622,10 @@ class LedgerWindow(QMainWindow):
                     selected_ids, cleared=True, reconciled=True
                 )
             self._push_undo("void highlighted", before, affected_ids)
+            self._log_activity(
+                f"Voided {len(ids)} highlighted row(s) and reconciled "
+                f"{len(selected_ids)} selected row(s)"
+            )
             self.reload()
             self.changed.emit()
         finally:
@@ -1581,6 +1635,9 @@ class LedgerWindow(QMainWindow):
         self.table.viewport().update()
         self.act_void_highlighted.setEnabled(False)
         QTimer.singleShot(0, self._focus_table)
+
+    def _log_activity(self, message: str) -> None:
+        self.activity.emit(message)
 
     # ------------------------------------------------------------------- undo
     def _push_undo(
@@ -1630,6 +1687,7 @@ class LedgerWindow(QMainWindow):
             self._show_message("Undo failed", str(exc))
             self._update_undo_action()
             return
+        self._log_activity(f"Undid {entry.label}")
         self.reload()
         self.changed.emit()
         self._update_undo_action()
@@ -1674,6 +1732,9 @@ class LedgerWindow(QMainWindow):
         new_ids = self.store.transaction_ids_after(max_before)
         if new_ids:
             self._push_undo("CSV import", [], new_ids)
+        self._log_activity(
+            f"Imported {added} transactions from {Path(path).name}"
+        )
         self.reload()
         self.changed.emit()
         self._show_message(

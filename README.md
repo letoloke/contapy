@@ -262,7 +262,8 @@ The demo figures are aligned to the reference: last 30 days **$167,248.99**, rec
 ## Features beyond the screenshot
 
 - **Account ledger** — a HomeBank-style transaction window per account, with date/payee/type/status filters (including a custom date range), a search box, running balance, reconciliation/remind/flag/void icons, account balance summary, and add/edit/inherit/delete actions.
-- **Transaction editor** — Expense/Income/Transfer tabs, payment mode, number, tags, status icons, type-to-search combos, and Enter-to-save.
+- **Transaction editor** — Expense/Income/Transfer tabs, payment mode, number, tags, status icons, type-to-search combos, split allocations, and Enter-to-save.
+- **Activity history** — a Markdown action log beside the database with **View Activity History** and **Save Activity History As…** in the File menu, flushed every five minutes.
 - **CSV import** — automatic English/Spanish header detection, editable field mapping, remembered header profiles, mapped-row preview with sortable columns and per-row import checkboxes, optional automatic assignment rules, duplicate detection by memo, target-account selection and memo-to-payee fallback.
 - **Airbnb import** — converts Airbnb reservation exports (dropping payout rows and rebuilding memos) before the standard import preview.
 - **Booking import** — merges Booking payout and Sabee reservation exports, unpivots the amount columns and adds room names before the standard import preview.
@@ -313,10 +314,26 @@ the default location. `--db` and environment overrides are one-off and do not
 change what is remembered. To go back to the default database, open it from
 the same menu or delete `~/.config/contapy/config.json`.
 
-**File → Save Database As…** (`Ctrl+Shift+S`) writes a consistent snapshot to a
+**File → Save Database As…** (`Ctrl+Alt+S`) writes a consistent snapshot to a
 new location and continues working from that copy, so later edits go to the
 new file. The new path is remembered for the next launch, and the original
 database is left untouched as a safety copy.
+
+### Activity history
+
+LetoBank writes a Markdown record of user actions beside the active database:
+
+```
+~/.local/share/contapy/activity-history.md
+```
+
+- **File → View Activity History** opens the file in the system Markdown viewer.
+- **File → Save Activity History As…** (`Ctrl+Shift+S`) writes a copy to the location you choose.
+- Entries are timestamped and append across sessions.
+- Buffered actions are written every five minutes while the app is open, and immediately when the history is viewed, saved or the window closes.
+- The history covers transactions, transfers, scheduled items, imports, exports, account changes, category and rule edits, budget changes, reconciliation/void/undo actions, theme changes and database switching.
+
+Because Ctrl+Shift+S now saves the activity history, **Save Database As…** uses `Ctrl+Alt+S`.
 
 ### Daily backups
 
@@ -431,7 +448,9 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | Import / export | `Ctrl+I` / `Ctrl+E`; the import dialog auto-detects HomeBank/Spanish headers |
 | Import without automatic rules | Untick **Apply automatic assignment rules** in the import dialog |
 | Open another database | **File → Open Database…** or `Ctrl+O` |
-| Save a copy elsewhere | **File → Save Database As…** or `Ctrl+Shift+S` |
+| Save a copy elsewhere | **File → Save Database As…** or `Ctrl+Alt+S` |
+| View activity history | **File → View Activity History** |
+| Save activity history as | **File → Save Activity History As…** or `Ctrl+Shift+S` |
 | Refresh | `F5` |
 | Preferences | `Ctrl+,` |
 | Show the keyboard shortcut list | `Ctrl+K` anywhere in the app, or **Help → Keyboard Shortcuts** |
@@ -490,7 +509,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-Two hundred and one tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, bulk ledger editing, ledger undo, sortable ledger columns, Ctrl+R reconciliation in the ledger and transaction editor, split transactions (storage, editing, balanced allocation, ledger children, reports, budgets, category lists and undo), uncategorized category highlighting, responsive account-sidebar columns, closest-amount highlighting for voiding with its Alt+V hint, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, Delete-key removal, Enter-to-edit and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, the dashboard budgets panel beside the scheduled strip, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the searchable Ctrl+K shortcut list and its window-level action, HomeBank automatic-assignment import (conditions, payees, categories, payments, tags, notes, overwrite flags, duplicates and invalid references), the 70-row HomeBank bank-CSV import, custom and remembered header mappings, sortable import previews, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
+Two hundred and six tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, bulk ledger editing, ledger undo, sortable ledger columns, Markdown activity history, Ctrl+R reconciliation in the ledger and transaction editor, split transactions (storage, editing, balanced allocation, ledger children, reports, budgets, category lists and undo), uncategorized category highlighting, responsive account-sidebar columns, closest-amount highlighting for voiding with its Alt+V hint, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, Delete-key removal, Enter-to-edit and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, the dashboard budgets panel beside the scheduled strip, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the searchable Ctrl+K shortcut list and its window-level action, HomeBank automatic-assignment import (conditions, payees, categories, payments, tags, notes, overwrite flags, duplicates and invalid references), the 70-row HomeBank bank-CSV import, custom and remembered header mappings, sortable import previews, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
 
 ## Notes / limitations
 

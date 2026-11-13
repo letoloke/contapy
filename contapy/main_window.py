@@ -27,6 +27,7 @@ from .config import date_format_choice, remember_database, theme_choice
 from .dates import set_date_format
 from .db import DataStore
 from .models import ScheduledItem
+from .activity import ActivityLog, activity_log_path
 from .money import money
 from .theme import C, font, select_theme
 from .widgets.accounts import AccountsPanel
@@ -54,6 +55,9 @@ class MainWindow(QMainWindow):
     def __init__(self, store: DataStore, parent: QWidget | None = None):
         super().__init__(parent)
         self.store = store
+        self.activity = ActivityLog(activity_log_path(store.path))
+        self.activity.record("Application opened", store.path.name)
+        self._flush_activity()
         self.ledgers: dict[int, LedgerWindow] = {}
         self.reports_window: ReportsWindow | None = None
         self.budget_window: BudgetWindow | None = None
@@ -81,6 +85,11 @@ class MainWindow(QMainWindow):
         self._backup_timer.start()
         self._daily_backup()
 
+        self._activity_timer = QTimer(self)
+        self._activity_timer.setInterval(5 * 60 * 1000)
+        self._activity_timer.timeout.connect(self._flush_activity)
+        self._activity_timer.start()
+
     # ------------------------------------------------------------------ chrome
     def _build_menus(self) -> None:
         bar = self.menuBar()
@@ -101,13 +110,24 @@ class MainWindow(QMainWindow):
             "Open Database…", self.open_database, "Ctrl+O"
         )
         self.act_save_database = self._action(
-            "Save Database As…", self.save_database_as, "Ctrl+Shift+S"
+            "Save Database As…", self.save_database_as, "Ctrl+Alt+S"
+        )
+        self.act_view_activity = self._action(
+            "View Activity History", self.view_activity_history
+        )
+        self.act_save_activity = self._action(
+            "Save Activity History As…",
+            self.save_activity_history_as,
+            "Ctrl+Shift+S",
         )
         self.act_quit = self._action("Quit", self.close, "Ctrl+Q")
 
         file_menu = bar.addMenu("File")
         file_menu.addAction(self.act_open_database)
         file_menu.addAction(self.act_save_database)
+        file_menu.addSeparator()
+        file_menu.addAction(self.act_view_activity)
+        file_menu.addAction(self.act_save_activity)
         file_menu.addSeparator()
         file_menu.addAction(self.act_new)
         file_menu.addAction(self.act_new_account)
@@ -335,6 +355,9 @@ class MainWindow(QMainWindow):
         self.scheduled_panel.settingsRequested.connect(self.open_preferences)
         self.scheduled_panel.selectionChanged.connect(lambda _id: self._update_actions())
         self.budgets_panel.changed.connect(self.refresh_all)
+        self.budgets_panel.changed.connect(
+            lambda: self._record_activity("Updated budgets")
+        )
 
         self.donut_card.footer.periodChanged.connect(self._refresh_donut)
         self.donut_card.footer.modeChanged.connect(self._refresh_donut)
@@ -405,6 +428,7 @@ class MainWindow(QMainWindow):
             self.reports_window.raise_()
             self.reports_window.activateWindow()
             return
+        self._record_activity("Opened reports window")
         window = ReportsWindow(self.store, self)
         self.reports_window = window
         window.destroyed.connect(lambda _obj=None: setattr(self, "reports_window", None))
@@ -418,10 +442,12 @@ class MainWindow(QMainWindow):
             self.budget_window.raise_()
             self.budget_window.activateWindow()
             return
+        self._record_activity("Opened budgets window")
         window = BudgetWindow(self.store, self)
         self.budget_window = window
         window.destroyed.connect(lambda _obj=None: setattr(self, "budget_window", None))
         window.changed.connect(self.refresh_all)
+        window.changed.connect(lambda: self._record_activity("Updated budgets"))
         window.show()
         window.raise_()
         window.activateWindow()
@@ -436,9 +462,14 @@ class MainWindow(QMainWindow):
             return
         if self.store.account(account_id) is None:
             return
+        account = self.store.account(account_id)
+        self._record_activity(
+            "Opened account ledger", account.name if account is not None else ""
+        )
         ledger = LedgerWindow(self.store, account_id, self)
         self.ledgers[account_id] = ledger
         ledger.changed.connect(self.refresh_all)
+        ledger.activity.connect(self._record_activity)
         ledger.destroyed.connect(
             lambda _obj=None, aid=account_id: self._ledger_closed(aid)
         )
@@ -525,15 +556,27 @@ class MainWindow(QMainWindow):
             return
         if scheduled:
             self.store.add_scheduled(draft)
+            self._record_activity(
+                "Scheduled transaction",
+                f"{draft.payee} · {money(draft.amount)} · {draft.date}",
+            )
             self.show_toast(f"Scheduled {draft.payee} for {draft.date}")
             self.refresh_all()
             self.scheduled_panel.show_tab("Scheduled")
         else:
             if draft.transfer_account_id is not None:
                 self.store.add_transfer(draft, draft.transfer_account_id)
+                destination = self.store.account(draft.transfer_account_id)
+                detail = f"{draft.payee} · {money(draft.amount)}"
+                if destination is not None:
+                    detail += f" → {destination.name}"
+                self._record_activity("New transfer", detail)
                 self.show_toast("Added transfer")
             else:
                 self.store.add_transaction(draft)
+                self._record_activity(
+                    "New transaction", f"{draft.payee} · {money(draft.amount)}"
+                )
                 self.show_toast(f"Added {draft.payee} · {money(draft.amount)}")
             self.refresh_all()
             when = date.fromisoformat(draft.date)
@@ -550,6 +593,9 @@ class MainWindow(QMainWindow):
             return
         name, kind, opening = dialog.values()
         self.store.add_account(name, kind, opening)
+        self._record_activity(
+            "New account", f"{name} · {kind} · opening {money(opening)}"
+        )
         self.refresh_all()
         self.show_toast(f"Added account {name}")
 
@@ -566,6 +612,7 @@ class MainWindow(QMainWindow):
             return
         name, kind, opening = dialog.values()
         self.store.update_account(account_id, name, kind, opening)
+        self._record_activity("Edited account", name)
         self.refresh_all()
         self.show_toast(f"Saved {name}")
 
@@ -588,11 +635,18 @@ class MainWindow(QMainWindow):
         if answer != QMessageBox.StandardButton.Yes:
             return
         self.store.delete_account(account_id)
+        self._record_activity("Deleted account", account.name)
         self.refresh_all()
         self.show_toast(f"Deleted {account.name}")
 
     def _reorder_account(self, account_id: int, direction: int) -> None:
+        account = self.store.account(account_id)
         self.store.move_account(account_id, direction)
+        if account is not None:
+            self._record_activity(
+                "Moved account",
+                f"{account.name} {'up' if direction < 0 else 'down'}",
+            )
         self.refresh_all()
 
     def post_selected_schedule(self) -> None:
@@ -607,6 +661,9 @@ class MainWindow(QMainWindow):
         if item is None:
             return
         self.store.post_scheduled(item_id)
+        self._record_activity(
+            "Posted scheduled transaction", f"{item.payee} · {money(item.amount)}"
+        )
         self.refresh_all()
         self.show_toast(f"Posted {item.payee} · {money(item.amount)}")
 
@@ -624,6 +681,7 @@ class MainWindow(QMainWindow):
         if answer != QMessageBox.StandardButton.Yes:
             return
         self.store.skip_scheduled(item_id)
+        self._record_activity("Skipped scheduled transaction", item.payee)
         self.refresh_all()
         self.show_toast(f"Skipped {item.payee}")
 
@@ -649,6 +707,10 @@ class MainWindow(QMainWindow):
             return
         self.store.add_transaction(new_draft)
         self.store.skip_scheduled(item_id)
+        self._record_activity(
+            "Edited and posted scheduled transaction",
+            f"{new_draft.payee} · {money(new_draft.amount)}",
+        )
         self.refresh_all()
         self.show_toast(f"Posted {new_draft.payee} · {money(new_draft.amount)}")
 
@@ -682,14 +744,17 @@ class MainWindow(QMainWindow):
         dialog = PreferencesDialog(self.store, self)
         dialog.exec()
         if dialog.was_reset:
+            self._record_activity("Restored demo data")
             self.refresh_all()
             self.show_toast("Demo data restored")
         if dialog.changed_date_format:
+            self._record_activity("Changed date format", date_format_choice())
             set_date_format(date_format_choice())
             self.refresh_all()
             if self.reports_window is not None:
                 self.reports_window.reload()
         if dialog.changed_theme:
+            self._record_activity("Changed theme", theme_choice())
             self._rebuild_for_theme()
 
     def _rebuild_for_theme(self) -> None:
@@ -716,12 +781,14 @@ class MainWindow(QMainWindow):
         dialog = CategoriesDialog(self.store, self)
         dialog.exec()
         if dialog.changed:
+            self._record_activity("Updated categories")
             self.refresh_all()
 
     def show_rules(self) -> None:
         dialog = RulesDialog(self.store, self)
         dialog.exec()
         if dialog.changed:
+            self._record_activity("Updated assignment rules")
             self.refresh_all()
 
     def show_payees(self) -> None:
@@ -735,7 +802,55 @@ class MainWindow(QMainWindow):
         ).exec()
 
     def open_data_folder(self) -> None:
+        self._record_activity("Opened data folder")
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.store.path.parent)))
+
+    # --------------------------------------------------------------- activity
+    def _record_activity(self, action: str, detail: str = "") -> None:
+        self.activity.record(action, detail)
+
+    def _flush_activity(self, notify: bool = False) -> None:
+        try:
+            self.activity.flush()
+        except OSError as exc:
+            print(
+                f"{APP_NAME}: activity history could not be written: {exc}",
+                file=sys.stderr,
+            )
+            if notify:
+                QMessageBox.warning(
+                    self,
+                    "Could not save activity history",
+                    f"{APP_NAME} could not write:\n{self.activity.path}\n\n{exc}",
+                )
+
+    def view_activity_history(self) -> None:
+        self._record_activity("Viewed activity history")
+        self._flush_activity(notify=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.activity.path)))
+
+    def save_activity_history_as(self) -> None:
+        self._flush_activity(notify=True)
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save activity history",
+            str(self.activity.path),
+            "Markdown files (*.md);;All files (*)",
+        )
+        if not path:
+            return
+        try:
+            target = self.activity.save_as(path)
+        except OSError as exc:
+            QMessageBox.warning(
+                self,
+                "Could not save activity history",
+                f"{APP_NAME} could not save:\n{path}\n\n{exc}",
+            )
+            return
+        self._record_activity("Saved activity history", target.name)
+        self._flush_activity(notify=True)
+        self.show_toast(f"Saved activity history to {target.name}")
 
     # --------------------------------------------------------------- databases
     def open_database(self) -> None:
@@ -774,7 +889,8 @@ class MainWindow(QMainWindow):
             return
         # Continue on the copy so future edits land in the new location. The
         # original file is left untouched as a safety copy.
-        self.load_database(target)
+        if self.load_database(target):
+            self._record_activity("Saved database as", target.name)
 
     def load_database(self, path: str | Path) -> bool:
         """Switch to the database at ``path`` and remember it for next launch."""
@@ -816,8 +932,13 @@ class MainWindow(QMainWindow):
         finally:
             self._closing = False
         old_store = self.store
+        self._record_activity("Closed database", old_store.path.name)
+        self._flush_activity()
         self.store = store
         old_store.close()
+        self.activity = ActivityLog(activity_log_path(store.path))
+        self.activity.record("Opened database", target.name)
+        self._flush_activity()
 
         try:
             remember_database(target)
@@ -961,6 +1082,9 @@ class MainWindow(QMainWindow):
             detail += f", {skipped} unreadable"
         if note:
             detail += f", {note}"
+        self._record_activity(
+            "Imported transactions", f"{detail} · {Path(path).name}"
+        )
         self.show_toast(f"Import: {detail}")
         if skipped or duplicates:
             QMessageBox.information(
@@ -982,6 +1106,9 @@ class MainWindow(QMainWindow):
         if not path:
             return
         count = self.store.export_csv(path)
+        self._record_activity(
+            "Exported transactions", f"{count} · {Path(path).name}"
+        )
         self.show_toast(f"Exported {count} transactions")
 
     def show_shortcuts(self) -> None:
@@ -1036,6 +1163,8 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):  # noqa: N802
         self._closing = True
+        self._record_activity("Application closed")
+        self._flush_activity()
         self._daily_backup()
         if self.reports_window is not None:
             try:
