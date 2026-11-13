@@ -868,7 +868,7 @@ class TransactionDialog(QDialog):
         hint = QLabel(
             "Enter saves · Tab moves · Alt+E/I type"
             if scheduled
-            else "Enter saves · Tab moves · Alt+E/I/T type · Ctrl+0–5 status"
+            else "Enter saves · Tab moves · Alt+E/I/T type · Ctrl+0–5 status · Ctrl+R reconcile"
         )
         hint.setFont(font(11, 400))
         hint.setStyleSheet(f"color:{C.MUTED_DARK};")
@@ -1083,6 +1083,13 @@ class TransactionDialog(QDialog):
         ):
             shortcut = QShortcut(QKeySequence(sequence), self)
             shortcut.activated.connect(lambda k=key: self._shortcut_status(k))
+        if not self._scheduled:
+            shortcut = QShortcut(QKeySequence("Ctrl+R"), self)
+            shortcut.activated.connect(self._reconcile_shortcut)
+
+    def _reconcile_shortcut(self) -> None:
+        if not self._scheduled:
+            self._shortcut_status("reconciled")
 
     def _set_type(self, kind: str, adjust_amount: bool = True) -> None:
         if kind == "transfer" and self._scheduled:
@@ -2741,6 +2748,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
             ("Tab", "Move to the next field"),
             ("Alt+E / Alt+I / Alt+T", "Expense, Income or Transfer"),
             ("Ctrl+0–5", "No status, Flagged, Cleared, Reconciled, Remind, Voided"),
+            ("Ctrl+R", "Mark the transaction reconciled"),
             ("Esc", "Cancel"),
         ],
     ),

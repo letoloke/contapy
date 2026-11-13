@@ -12,6 +12,7 @@ from unittest import mock
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QShortcut
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QMessageBox
 
@@ -632,6 +633,26 @@ class CategoryDialogTests(unittest.TestCase):
         self.addCleanup(dialog.deleteLater)
         dialog.amount_spin.setValue(42.0)
         return dialog
+
+    def test_ctrl_r_reconciles_the_transaction_being_edited(self) -> None:
+        store = self._store()
+        dialog = self._transaction_dialog(store)
+        shortcuts = [
+            shortcut.key().toString()
+            for shortcut in dialog.findChildren(QShortcut)
+        ]
+        self.assertIn("Ctrl+R", shortcuts)
+
+        dialog._reconcile_shortcut()
+        self.assertTrue(dialog._cleared)
+        self.assertTrue(dialog._reconciled)
+
+        dialog._save()
+        draft = dialog.draft()
+        self.assertIsNotNone(draft)
+        assert draft is not None
+        self.assertTrue(draft.cleared)
+        self.assertTrue(draft.reconciled)
 
     def test_transaction_dialog_creates_a_category_from_typed_text(self) -> None:
         store = self._store()
