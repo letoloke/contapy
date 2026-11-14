@@ -684,6 +684,40 @@ class CategoryDialogTests(unittest.TestCase):
             [c.full_name for c in store.categories()],
         )
 
+    def test_partial_category_name_is_not_replaced_by_a_match(self) -> None:
+        store = self._store()
+        existing = store.add_category("Rent", "expense")
+        dialog = self._transaction_dialog(store)
+        dialog.category_combo.setEditText("Ren")
+        dialog._save()
+
+        draft = dialog.draft()
+        self.assertIsNotNone(draft)
+        assert draft is not None
+        self.assertNotEqual(draft.category_id, existing)
+        self.assertEqual(store.category(draft.category_id).name, "Ren")
+
+    def test_typed_category_survives_a_category_list_rebuild(self) -> None:
+        store = self._store()
+        dialog = self._transaction_dialog(store)
+        dialog.category_combo.setEditText("New category")
+        dialog._rebuild_categories("expense")
+        self.assertEqual(dialog.category_combo.currentText(), "New category")
+
+    def test_partial_payee_keeps_the_typed_text(self) -> None:
+        store = self._store()
+        dialog = self._transaction_dialog(store)
+        dialog.payee_combo.set_choices(
+            [("Coffee Shop", "Coffee Shop")], select_first=False
+        )
+        dialog.payee_combo.setEditText("Coff")
+        dialog._save()
+
+        draft = dialog.draft()
+        self.assertIsNotNone(draft)
+        assert draft is not None
+        self.assertEqual(draft.payee, "Coff")
+
     def test_transaction_dialog_reuses_an_existing_typed_category(self) -> None:
         store = self._store()
         existing = store.add_category("comida", "expense")

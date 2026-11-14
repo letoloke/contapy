@@ -146,6 +146,7 @@ class SearchCombo(QComboBox):
                 self.setCurrentIndex(index)
                 self.setEditText(self.itemText(index))
             else:
+                self.setCurrentIndex(-1)
                 self.setEditText(old_text)
         elif select_first and self.count():
             self.setCurrentIndex(0)
@@ -172,31 +173,31 @@ class SearchCombo(QComboBox):
         self._completer.popup().hide()
 
     def commit_completion(self) -> None:
-        popup = self._completer.popup()
-        if popup.isVisible():
-            index = popup.currentIndex()
-            if index.isValid():
-                text = str(index.data())
-                self.setEditText(text)
-                item_index = self.findText(text, Qt.MatchFlag.MatchExactly)
-                if item_index >= 0:
-                    self.setCurrentIndex(item_index)
-                popup.hide()
-                return
+        """Resolve an exact item, but never replace typed text with a guess."""
         text = self.currentText().strip()
-        if not text or not self._auto_match:
-            return
-        index = self.findText(text, Qt.MatchFlag.MatchExactly)
+        index = self.findText(
+            text,
+            Qt.MatchFlag.MatchExactly | Qt.MatchFlag.MatchCaseSensitive,
+        )
         if index < 0:
-            matches = [
-                i for i in range(self.count())
-                if self.itemText(i).lower().startswith(text.lower())
-            ]
-            if len(matches) == 1:
-                index = matches[0]
+            index = self.findText(text, Qt.MatchFlag.MatchExactly)
         if index >= 0:
             self.setCurrentIndex(index)
             self.setEditText(self.itemText(index))
+        else:
+            self.setCurrentIndex(-1)
+            self.setEditText(text)
+
+    def select_popup_completion(self) -> bool:
+        """Apply the highlighted suggestion only when the user asks for it."""
+        popup = self._completer.popup()
+        if not popup.isVisible():
+            return False
+        index = popup.currentIndex()
+        if not index.isValid():
+            return False
+        self._apply_completion(str(index.data()))
+        return True
 
     def resolved_data(self):
         self.commit_completion()
@@ -211,6 +212,13 @@ class SearchCombo(QComboBox):
     def focusInEvent(self, event):  # noqa: N802
         super().focusInEvent(event)
         self.lineEdit().selectAll()
+
+    def focusOutEvent(self, event):  # noqa: N802
+        text = self.currentText().strip()
+        super().focusOutEvent(event)
+        if text and self.findText(text, Qt.MatchFlag.MatchExactly) < 0:
+            self.setCurrentIndex(-1)
+            self.setEditText(text)
 
     def eventFilter(self, obj, event):  # noqa: N802
         if obj is self.lineEdit() and event.type() == QEvent.Type.FocusIn:
@@ -1121,18 +1129,25 @@ class TransactionDialog(QDialog):
             if adjust_amount:
                 value = abs(self.amount_spin.value())
                 self.amount_spin.setValue(-value if kind == "expense" else value)
-            self._rebuild_categories(kind)
+            self._rebuild_categories(
+                kind, preserve_text=self._loading or previous == kind
+            )
         if hasattr(self, "split_row"):
             self.split_row.setVisible(not is_transfer and not self._scheduled)
             self._sync_split_ui()
 
-    def _rebuild_categories(self, kind: str) -> None:
+    def _rebuild_categories(
+        self, kind: str, preserve_text: bool = True
+    ) -> None:
         current = self.category_combo.currentData()
+        current_text = self.category_combo.currentText().strip()
         choices = [("Uncategorized", None)]
         for category in ordered_categories(self.categories):
             if category.kind == kind:
                 choices.append((category.full_name, category.id))
-        self.category_combo.set_choices(choices, preserve_text=False)
+        self.category_combo.set_choices(choices, preserve_text=preserve_text)
+        if preserve_text and current_text:
+            return
         index = self.category_combo.findData(current)
         if index < 0:
             index = 0
@@ -1190,7 +1205,7 @@ class TransactionDialog(QDialog):
 
     def _clear_split(self) -> None:
         self._splits = []
-        self._rebuild_categories(self._type)
+        self._rebuild_categories(self._type, preserve_text=False)
         self._sync_split_ui()
 
     def _normalize_amount_sign(self) -> None:
@@ -1288,6 +1303,17 @@ class TransactionDialog(QDialog):
         for target in targets:
             target.installEventFilter(self)
 
+    def _apply_popup_completion(self, obj) -> bool:
+        for combo in (
+            self.payment_combo,
+            self.payee_combo,
+            self.category_combo,
+            self.tags_combo,
+        ):
+            if obj is combo.lineEdit() and combo.select_popup_completion():
+                return True
+        return False
+
     def eventFilter(self, obj, event):  # noqa: N802
         if event.type() == QEvent.Type.KeyPress and event.key() in (
             Qt.Key.Key_Return,
@@ -1297,6 +1323,8 @@ class TransactionDialog(QDialog):
                 Qt.KeyboardModifier.NoModifier,
                 Qt.KeyboardModifier.KeypadModifier,
             ):
+                if self._apply_popup_completion(obj):
+                    return True
                 self._commit_editors()
                 self._save()
                 return True
