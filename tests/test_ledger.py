@@ -77,6 +77,12 @@ class CategoryColorTests(unittest.TestCase):
         color = category_text_color(assigned, QColor("#ffffff"), False)
         self.assertEqual(color.name(), "#ffffff")
 
+    def test_transfer_category_uses_muted_gray(self) -> None:
+        transfer = row(1, -10)
+        transfer.transfer_id = "transfer-group"
+        color = category_text_color(transfer, QColor("#ffffff"), False)
+        self.assertEqual(color.name(), QColor(C.MUTED).name())
+
 
 class LedgerHintTests(unittest.TestCase):
     @classmethod
@@ -287,6 +293,26 @@ class LedgerHintTests(unittest.TestCase):
         self.assertTrue(
             any("memo: Oat milk" in message for message in messages)
         )
+
+    def test_transfer_legs_display_as_transfer_category(self) -> None:
+        destination = self.store.add_account("Savings", "Bank", 0)
+        group = self.store.add_transfer(
+            TransactionDraft(
+                date=date.today().isoformat(),
+                account_id=self.window.account_id,
+                payee="Transfer",
+                category_id=None,
+                amount=-100,
+            ),
+            destination,
+        )
+        self.window.reload()
+        transfer = next(
+            row for row in self.window.model.rows if row.transfer_id == group
+        )
+        self.assertEqual(transfer.category_name, "Transfer")
+        color = category_text_color(transfer, QColor("#ffffff"), False)
+        self.assertEqual(color.name(), QColor(C.MUTED).name())
 
     def test_editing_keeps_the_saved_row_selected(self) -> None:
         from contapy.widgets import ledger as ledger_module

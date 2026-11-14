@@ -1665,6 +1665,12 @@ class DataStore:
 
     @staticmethod
     def _to_transaction_row(r: sqlite3.Row, balance: float = 0.0) -> TransactionRow:
+        transfer_id = r["transfer_id"]
+        category_name = r["category_name"] or (
+            "Transfer"
+            if transfer_id and r["category_id"] is None
+            else "Uncategorized"
+        )
         return TransactionRow(
             id=r["id"],
             account_id=r["account_id"],
@@ -1672,7 +1678,7 @@ class DataStore:
             date=r["date"],
             payee=r["payee"],
             category_id=r["category_id"],
-            category_name=r["category_name"] or "Uncategorized",
+            category_name=category_name,
             category_color=theme_category_color(r["category_name"], r["category_color"]),
             category_kind=r["category_kind"] or "expense",
             amount=float(r["amount"]),
@@ -1685,7 +1691,7 @@ class DataStore:
             payment=r["payment"] or "",
             number=r["number"] or "",
             tags=r["tags"] or "",
-            transfer_id=r["transfer_id"],
+            transfer_id=transfer_id,
             balance=balance,
         )
 

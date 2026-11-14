@@ -92,6 +92,9 @@ def category_text_color(
     row: TransactionRow, text_color: QColor, selected: bool
 ) -> QColor:
     """Paint uncategorized transactions red so they are easy to spot."""
+    if row.transfer_id and row.category_id is None:
+        color = QColor(C.MUTED)
+        return color.lighter(135) if selected else color
     if row.category_id is not None:
         return text_color
     color = QColor(C.RED_BAR)
