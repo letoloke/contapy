@@ -577,6 +577,7 @@ class LedgerSummary(QWidget):
 class LedgerWindow(QMainWindow):
     changed = Signal()
     activity = Signal(str)
+    revealRequested = Signal(int, int)
 
     def __init__(
         self,
@@ -913,9 +914,6 @@ class LedgerWindow(QMainWindow):
             self.table.selectRow(0)
             self.table.setCurrentIndex(self.model.index(0, PAYEE))
         self.table.setFocus(Qt.FocusReason.OtherFocusReason)
-
-    def _focus_table_after_edit(self) -> None:
-        self._focus_table(select_first=False)
 
     def _edit_selected_from_keyboard(self) -> None:
         if not self._selected_rows():
@@ -1448,9 +1446,57 @@ class LedgerWindow(QMainWindow):
             f"{kind}: {transaction_detail(new_draft.payee, new_draft.amount, new_draft.memo)}"
         )
         self.reload(preserve_selection=False)
-        self._select_ids(saved_ids)
         self.changed.emit()
-        QTimer.singleShot(0, self._focus_table_after_edit)
+        self._select_ids(saved_ids)
+        QTimer.singleShot(
+            0, lambda: self._finish_edit_selection(saved_ids)
+        )
+
+    def _clear_filters(self) -> None:
+        for combo in (
+            self.date_combo,
+            self.payee_combo,
+            self.type_combo,
+            self.status_combo,
+        ):
+            combo.blockSignals(True)
+        self.date_combo.setCurrentIndex(0)
+        self.payee_combo.setCurrentIndex(0)
+        self.type_combo.setCurrentIndex(0)
+        self.status_combo.setCurrentIndex(0)
+        for combo in (
+            self.date_combo,
+            self.payee_combo,
+            self.type_combo,
+            self.status_combo,
+        ):
+            combo.blockSignals(False)
+        self._custom_range = None
+        self._previous_period = "All date"
+        self.search_edit.blockSignals(True)
+        self.search_edit.clear()
+        self.search_edit.blockSignals(False)
+        self._apply_filters([])
+
+    def _finish_edit_selection(self, ids: list[int]) -> None:
+        if self._select_ids(ids):
+            self._focus_table(select_first=False)
+            return
+
+        # The editor can move a transaction to another account. Follow it
+        # there instead of leaving the old ledger on the first row.
+        for transaction_id in ids:
+            row = self.store.transaction(transaction_id)
+            if row is not None and row.account_id != self.account_id:
+                self.revealRequested.emit(row.account_id, transaction_id)
+                return
+
+        # The transaction is still in this account but hidden by a date,
+        # payee, type, status or search filter. Reset the filters so the saved
+        # row can be reselected and shown.
+        self._clear_filters()
+        self._select_ids(ids)
+        self._focus_table(select_first=False)
 
     def _bulk_edit_transactions(self, selected: list[TransactionRow]) -> None:
         editable = [
@@ -1710,12 +1756,14 @@ class LedgerWindow(QMainWindow):
         self._update_undo_action()
         QTimer.singleShot(0, self._focus_table)
 
-    def _select_ids(self, ids: list[int]) -> None:
+    def _select_ids(self, ids: list[int]) -> bool:
         self._restore_selection(ids)
+        found = False
         selection = self.table.selectionModel()
         if selection is not None:
             for index, row in enumerate(self.model.rows):
                 if row.id in ids:
+                    found = True
                     model_index = self.model.index(index, PAYEE)
                     selection.setCurrentIndex(
                         model_index,
@@ -1724,6 +1772,7 @@ class LedgerWindow(QMainWindow):
                     self.table.scrollTo(model_index)
                     break
         self._selection_changed()
+        return found
 
     def import_csv(self) -> None:
         path, _ = QFileDialog.getOpenFileName(

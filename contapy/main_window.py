@@ -473,12 +473,22 @@ class MainWindow(QMainWindow):
         self.ledgers[account_id] = ledger
         ledger.changed.connect(self.refresh_all)
         ledger.activity.connect(self._record_activity)
+        ledger.revealRequested.connect(self._reveal_transaction)
         ledger.destroyed.connect(
             lambda _obj=None, aid=account_id: self._ledger_closed(aid)
         )
         ledger.show()
         ledger.raise_()
         ledger.activateWindow()
+
+    def _reveal_transaction(self, account_id: int, transaction_id: int) -> None:
+        """Follow an edited transaction into another account ledger."""
+        self.open_ledger(account_id)
+        ledger = self.ledgers.get(account_id)
+        if ledger is None:
+            return
+        ledger._select_ids([transaction_id])
+        ledger._focus_table(select_first=False)
 
     def _donut_range(self, period: str) -> tuple[date, date]:
         today = date.today()

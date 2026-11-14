@@ -324,11 +324,50 @@ class LedgerHintTests(unittest.TestCase):
         color = category_text_color(transfer, QColor("#ffffff"), False)
         self.assertEqual(color.name(), QColor(C.MUTED).name())
 
+    def test_finish_edit_reveals_row_hidden_by_filters(self) -> None:
+        target = self.window.model.rows[0]
+        self.window.status_combo.setCurrentIndex(
+            self.window.status_combo.findData("reconciled")
+        )
+        self.window._apply_filters()
+        self.assertNotIn(
+            target.id, [row.id for row in self.window.model.rows]
+        )
+
+        self.window._finish_edit_selection([target.id])
+
+        self.assertIsNone(self.window.status_combo.currentData())
+        self.assertEqual(self.window._selected_ids(), [target.id])
+        self.assertIn(target.id, [row.id for row in self.window.model.rows])
+
+    def test_finish_edit_follows_transaction_to_another_account(self) -> None:
+        destination = self.store.add_account("Savings", "Bank", 0)
+        transaction_id = self.store.add_transaction(
+            TransactionDraft(
+                date=date.today().isoformat(),
+                account_id=destination,
+                payee="Moved",
+                category_id=None,
+                amount=-10,
+            )
+        )
+        moved: list[tuple[int, int]] = []
+        self.window.revealRequested.connect(
+            lambda account_id, transaction: moved.append(
+                (account_id, transaction)
+            )
+        )
+
+        self.window._finish_edit_selection([transaction_id])
+
+        self.assertEqual(moved, [(destination, transaction_id)])
+
     def test_editing_keeps_the_saved_row_selected(self) -> None:
         from contapy.widgets import ledger as ledger_module
 
         target = self.window.model.rows[0]
         self.window._select_ids([target.id])
+        self.window.changed.connect(self.window.reload)
 
         class FakeDialog:
             DialogCode = QDialog.DialogCode
@@ -378,6 +417,7 @@ class LedgerHintTests(unittest.TestCase):
             if row.transfer_id == group and row.account_id == account_id
         )
         self.window._select_ids([leg.id])
+        self.window.changed.connect(self.window.reload)
 
         class FakeDialog:
             DialogCode = QDialog.DialogCode
