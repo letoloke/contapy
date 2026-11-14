@@ -83,6 +83,16 @@ class CategoryColorTests(unittest.TestCase):
         color = category_text_color(transfer, QColor("#ffffff"), False)
         self.assertEqual(color.name(), QColor(C.MUTED).name())
 
+    def test_voided_category_uses_muted_gray(self) -> None:
+        voided = row(1, -10, voided=True)
+        voided.category_id = 7
+        color = category_text_color(voided, QColor("#ffffff"), False)
+        self.assertEqual(color.name(), QColor(C.MUTED).name())
+
+        uncategorized = row(2, -10, voided=True)
+        color = category_text_color(uncategorized, QColor("#ffffff"), False)
+        self.assertEqual(color.name(), QColor(C.MUTED).name())
+
 
 class LedgerHintTests(unittest.TestCase):
     @classmethod
