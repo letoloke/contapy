@@ -905,11 +905,14 @@ class LedgerWindow(QMainWindow):
     def focus_table(self) -> None:
         self._focus_table()
 
-    def _focus_table(self) -> None:
-        if self.model.rowCount() and not self._selected_rows():
+    def _focus_table(self, select_first: bool = True) -> None:
+        if select_first and self.model.rowCount() and not self._selected_rows():
             self.table.selectRow(0)
             self.table.setCurrentIndex(self.model.index(0, PAYEE))
         self.table.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _focus_table_after_edit(self) -> None:
+        self._focus_table(select_first=False)
 
     def _edit_selected_from_keyboard(self) -> None:
         if not self._selected_rows():
@@ -1404,24 +1407,32 @@ class LedgerWindow(QMainWindow):
                 self.store.update_transfer(
                     transfer_id, new_draft, new_draft.transfer_account_id
                 )
-                remove_ids = [
-                    row.id for row in self.store.transfer_legs(transfer_id)
+                legs = self.store.transfer_legs(transfer_id)
+                remove_ids = [row.id for row in legs]
+                saved_ids = [
+                    row.id
+                    for row in legs
+                    if row.account_id == self.account_id
                 ]
             else:
                 self.store.delete_transaction(source.id)
                 new_id = self.store.add_transaction(new_draft)
                 remove_ids = [new_id]
+                saved_ids = [new_id]
         elif new_draft.transfer_account_id is not None:
             self.store.delete_transaction(source.id)
             group = self.store.add_transfer(
                 new_draft, new_draft.transfer_account_id
             )
-            remove_ids = [
-                row.id for row in self.store.transfer_legs(group)
+            legs = self.store.transfer_legs(group)
+            remove_ids = [row.id for row in legs]
+            saved_ids = [
+                row.id for row in legs if row.account_id == self.account_id
             ]
         else:
             self.store.update_transaction(source.id, new_draft)
             remove_ids = [source.id]
+            saved_ids = [source.id]
         self._push_undo(
             "transaction edit", before, remove_ids, splits_before
         )
@@ -1433,9 +1444,10 @@ class LedgerWindow(QMainWindow):
         self._log_activity(
             f"{kind}: {transaction_detail(new_draft.payee, new_draft.amount, new_draft.memo)}"
         )
-        self.reload()
+        self.reload(preserve_selection=False)
+        self._select_ids(saved_ids)
         self.changed.emit()
-        QTimer.singleShot(0, self._focus_table)
+        QTimer.singleShot(0, self._focus_table_after_edit)
 
     def _bulk_edit_transactions(self, selected: list[TransactionRow]) -> None:
         editable = [
@@ -1697,6 +1709,17 @@ class LedgerWindow(QMainWindow):
 
     def _select_ids(self, ids: list[int]) -> None:
         self._restore_selection(ids)
+        selection = self.table.selectionModel()
+        if selection is not None:
+            for index, row in enumerate(self.model.rows):
+                if row.id in ids:
+                    model_index = self.model.index(index, PAYEE)
+                    selection.setCurrentIndex(
+                        model_index,
+                        QItemSelectionModel.SelectionFlag.NoUpdate,
+                    )
+                    self.table.scrollTo(model_index)
+                    break
         self._selection_changed()
 
     def import_csv(self) -> None:

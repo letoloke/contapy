@@ -288,6 +288,93 @@ class LedgerHintTests(unittest.TestCase):
             any("memo: Oat milk" in message for message in messages)
         )
 
+    def test_editing_keeps_the_saved_row_selected(self) -> None:
+        from contapy.widgets import ledger as ledger_module
+
+        target = self.window.model.rows[0]
+        self.window._select_ids([target.id])
+
+        class FakeDialog:
+            DialogCode = QDialog.DialogCode
+
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def exec(self) -> QDialog.DialogCode:
+                return QDialog.DialogCode.Accepted
+
+            def draft(self) -> TransactionDraft:
+                return TransactionDraft(
+                    date=target.date,
+                    account_id=target.account_id,
+                    payee="Edited payee",
+                    category_id=target.category_id,
+                    amount=target.amount,
+                )
+
+        with mock.patch.object(ledger_module, "TransactionDialog", FakeDialog):
+            self.window.edit_transaction()
+
+        self.assertEqual(self.window._selected_ids(), [target.id])
+        current = self.window.table.currentIndex()
+        self.assertTrue(current.isValid())
+        self.assertEqual(self.window.model.rows[current.row()].id, target.id)
+
+    def test_editing_a_transfer_reselects_its_new_leg(self) -> None:
+        from contapy.widgets import ledger as ledger_module
+
+        destination = self.store.add_account("Savings", "Bank", 0)
+        group = self.store.add_transfer(
+            TransactionDraft(
+                date=date(2020, 1, 1).isoformat(),
+                account_id=self.window.account_id,
+                payee="Transfer",
+                category_id=None,
+                amount=-100,
+            ),
+            destination,
+        )
+        account_id = self.window.account_id
+        self.window.reload()
+        leg = next(
+            row
+            for row in self.window.model.rows
+            if row.transfer_id == group and row.account_id == account_id
+        )
+        self.window._select_ids([leg.id])
+
+        class FakeDialog:
+            DialogCode = QDialog.DialogCode
+
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def exec(self) -> QDialog.DialogCode:
+                return QDialog.DialogCode.Accepted
+
+            def draft(self) -> TransactionDraft:
+                return TransactionDraft(
+                    date=date(2020, 1, 1).isoformat(),
+                    account_id=account_id,
+                    payee="Transfer",
+                    category_id=None,
+                    amount=-150,
+                    transfer_account_id=destination,
+                    transfer_id=group,
+                )
+
+        with mock.patch.object(ledger_module, "TransactionDialog", FakeDialog):
+            self.window.edit_transaction()
+
+        selected = self.window._selected_rows()
+        self.assertEqual(len(selected), 1)
+        self.assertEqual(selected[0].transfer_id, group)
+        self.assertEqual(selected[0].account_id, self.window.account_id)
+        self.assertAlmostEqual(selected[0].amount, -150)
+        current = self.window.table.currentIndex()
+        self.assertTrue(current.isValid())
+        self.assertEqual(self.window.model.rows[current.row()].id, selected[0].id)
+
     def test_ledger_emits_activity_messages(self) -> None:
         messages: list[str] = []
         self.window.activity.connect(messages.append)
