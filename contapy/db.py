@@ -1306,8 +1306,10 @@ class DataStore:
         self.conn.commit()
 
     # ----------------------------------------------------------- transactions
-    def add_transaction(self, draft: TransactionDraft) -> int:
-        if not draft.splits:
+    def add_transaction(
+        self, draft: TransactionDraft, *, apply_rules: bool = True
+    ) -> int:
+        if apply_rules and not draft.splits:
             draft = self.apply_rules(draft)
         cleared = draft.reconciled or draft.cleared
         cur = self.conn.execute(

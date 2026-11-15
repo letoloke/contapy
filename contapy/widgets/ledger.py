@@ -43,7 +43,7 @@ from ..activity import transaction_detail
 from ..config import ledger_status_choice
 from ..dates import format_date
 from ..db import DataStore
-from ..models import Account, Balance, TransactionRow
+from ..models import Account, Balance, SplitDraft, TransactionDraft, TransactionRow
 from ..money import money
 from ..theme import C, CLEARED, font
 from .dialogs import BulkEditDialog, DateRangeDialog, TransactionDialog
@@ -74,6 +74,7 @@ HEADERS = (
 FILTER_DAY = 24
 CUSTOM_RANGE = "Custom range…"
 UNDO_LIMIT = 50
+_COPIED_TRANSACTIONS: list[TransactionDraft] = []
 
 
 @dataclass(slots=True)
@@ -644,7 +645,32 @@ class LedgerWindow(QMainWindow):
         account_menu.addSeparator()
         account_menu.addAction(self.act_close)
 
+        self.act_copy = QAction("Copy Transaction", self)
+        self.act_copy.setShortcut(QKeySequence("Ctrl+C"))
+        self.act_copy.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self.act_copy.triggered.connect(
+            lambda _checked=False: self.copy_transactions()
+        )
+        self.act_paste = QAction("Paste Transaction", self)
+        self.act_paste.setShortcut(QKeySequence("Ctrl+V"))
+        self.act_paste.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self.act_paste.triggered.connect(
+            lambda _checked=False: self.paste_transactions()
+        )
+        self.act_copy_memo = QAction("Copy Memo", self)
+        self.act_copy_memo.setShortcut(QKeySequence("Ctrl+Shift+C"))
+        self.act_copy_memo.setShortcutContext(
+            Qt.ShortcutContext.WidgetWithChildrenShortcut
+        )
+        self.act_copy_memo.triggered.connect(
+            lambda _checked=False: self.copy_memos()
+        )
+
         edit_menu = bar.addMenu("Edit")
+        edit_menu.addAction(self.act_copy)
+        edit_menu.addAction(self.act_paste)
+        edit_menu.addAction(self.act_copy_memo)
+        edit_menu.addSeparator()
         edit_menu.addAction(self.act_undo)
         edit_menu.addSeparator()
         edit_menu.addAction(self.act_edit)
@@ -762,6 +788,8 @@ class LedgerWindow(QMainWindow):
         self.table.setShowGrid(False)
         self.table.setWordWrap(False)
         self.table.setSortingEnabled(False)
+        for action in (self.act_copy, self.act_paste, self.act_copy_memo):
+            self.table.addAction(action)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(27)
         header = self.table.horizontalHeader()
@@ -1241,6 +1269,8 @@ class LedgerWindow(QMainWindow):
             button.setEnabled(has_selection)
         for action in (self.act_edit, self.act_inherit, self.act_delete):
             action.setEnabled(has_selection)
+        self.act_copy.setEnabled(has_selection)
+        self.act_copy_memo.setEnabled(has_selection)
         self.act_select_all.setEnabled(bool(self.model.rows))
 
     # ---------------------------------------------------------------- actions
@@ -1766,6 +1796,103 @@ class LedgerWindow(QMainWindow):
                     break
         self._selection_changed()
         return found
+
+    # ------------------------------------------------------------- clipboard
+    def _show_hint(self, text: str) -> None:
+        self.keyboard_hint.setText(text)
+        self.keyboard_hint.setStyleSheet(f"color:{C.MUTED};")
+
+    def _copy_draft(
+        self, row: TransactionRow | TransactionDraft, account_id: int
+    ) -> TransactionDraft:
+        return TransactionDraft(
+            date=row.date,
+            account_id=account_id,
+            payee=row.payee,
+            category_id=row.category_id,
+            amount=row.amount,
+            memo=row.memo,
+            cleared=row.cleared,
+            reconciled=row.reconciled,
+            remind=row.remind,
+            flagged=row.flagged,
+            voided=row.voided,
+            payment=row.payment,
+            number=row.number,
+            tags=row.tags,
+            splits=[
+                SplitDraft(
+                    id=0,
+                    category_id=split.category_id,
+                    amount=split.amount,
+                    memo=split.memo,
+                    tags=split.tags,
+                    category_name=split.category_name,
+                    category_color=split.category_color,
+                    category_kind=split.category_kind,
+                )
+                for split in row.splits
+            ],
+        )
+
+    def copy_transactions(self) -> None:
+        selected = self._selected_rows()
+        if not selected:
+            return
+        copied: list[TransactionDraft] = []
+        skipped = 0
+        for row in selected:
+            if row.transfer_id:
+                skipped += 1
+                continue
+            copied.append(self._copy_draft(row, self.account_id))
+        if not copied:
+            self._show_hint(
+                "Transfers cannot be copied — edit the transfer instead"
+            )
+            return
+        _COPIED_TRANSACTIONS[:] = copied
+        self._log_activity(f"Copied {len(copied)} transaction(s)")
+        if skipped:
+            self._show_hint(
+                f"Copied {len(copied)} · skipped {skipped} transfer row(s)"
+            )
+        else:
+            self._show_hint(
+                f"Copied {len(copied)} transaction(s) — Ctrl+V to paste"
+            )
+
+    def copy_memos(self) -> None:
+        selected = self._selected_rows()
+        if not selected:
+            return
+        memos = [row.memo.strip() for row in selected if row.memo.strip()]
+        if not memos:
+            self._show_hint("No memo on the selected transaction(s)")
+            return
+        QApplication.clipboard().setText("\n".join(memos))
+        self._log_activity("Copied transaction memo")
+        self._show_hint("Memo copied to clipboard")
+
+    def paste_transactions(self) -> None:
+        if not _COPIED_TRANSACTIONS:
+            self._show_hint("No copied transaction — press Ctrl+C first")
+            return
+        new_ids: list[int] = []
+        try:
+            for source in _COPIED_TRANSACTIONS:
+                draft = self._copy_draft(source, self.account_id)
+                new_ids.append(
+                    self.store.add_transaction(draft, apply_rules=False)
+                )
+        except Exception as exc:  # pragma: no cover - database failure path
+            QMessageBox.warning(self, "Paste failed", str(exc))
+            return
+        self._log_activity(
+            f"Pasted {len(new_ids)} transaction(s) into this account"
+        )
+        self._keep_selection_after_change(new_ids)
+        self._show_hint(f"Pasted {len(new_ids)} transaction(s)")
 
     def import_csv(self) -> None:
         path, _ = QFileDialog.getOpenFileName(

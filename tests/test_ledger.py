@@ -17,7 +17,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from contapy.db import DataStore
-from contapy.models import TransactionDraft, TransactionRow
+from contapy.models import SplitDraft, TransactionDraft, TransactionRow
 from contapy.theme import C
 from contapy.widgets.dialogs import BulkEditDialog, DateRangeDialog
 from contapy.widgets.ledger import (
@@ -100,6 +100,10 @@ class LedgerHintTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self) -> None:
+        from contapy.widgets import ledger as ledger_module
+
+        ledger_module._COPIED_TRANSACTIONS.clear()
+        self.addCleanup(ledger_module._COPIED_TRANSACTIONS.clear)
         self.tmp = tempfile.TemporaryDirectory()
         self.store = DataStore(Path(self.tmp.name) / "hint.db", seed=False)
         account = self.store.add_account("Checking", "Bank", 1_000)
@@ -488,6 +492,116 @@ class LedgerHintTests(unittest.TestCase):
             [-400.0, -600.0, -1_000.0],
         )
         self.assertEqual(self.window._selected_ids(), [by_amount[-600.0]])
+
+    def test_copy_memo_uses_the_system_clipboard(self) -> None:
+        target = self.window.model.rows[0]
+        self.store.update_transaction(
+            target.id,
+            TransactionDraft(
+                date=target.date,
+                account_id=target.account_id,
+                payee=target.payee,
+                category_id=target.category_id,
+                amount=target.amount,
+                memo="Remember the receipt",
+            ),
+        )
+        self.window.reload()
+        self.window._select_ids([target.id])
+        QApplication.clipboard().setText("")
+
+        self.window.copy_memos()
+
+        self.assertEqual(
+            QApplication.clipboard().text(), "Remember the receipt"
+        )
+
+    def test_copy_and_paste_transaction_in_the_same_account(self) -> None:
+        target = self.window.model.rows[0]
+        before = {
+            row.id for row in self.store.ledger_rows(self.window.account_id)
+        }
+        self.window._select_ids([target.id])
+
+        self.window.copy_transactions()
+        self.window.paste_transactions()
+
+        after = {
+            row.id for row in self.store.ledger_rows(self.window.account_id)
+        }
+        new_ids = after - before
+        self.assertEqual(len(new_ids), 1)
+        pasted = {
+            row.id: row for row in self.store.ledger_rows(self.window.account_id)
+        }[next(iter(new_ids))]
+        self.assertEqual(pasted.payee, target.payee)
+        self.assertEqual(pasted.amount, target.amount)
+        self.assertEqual(pasted.category_id, target.category_id)
+        self.assertEqual(pasted.memo, target.memo)
+        self.assertEqual(self.window._selected_ids(), list(new_ids))
+
+    def test_copy_and_paste_transaction_into_another_account(self) -> None:
+        other_account = self.store.add_account("Savings", "Bank", 0)
+        other_window = LedgerWindow(self.store, other_account)
+        self.addCleanup(other_window.close)
+        target = self.window.model.rows[0]
+        self.window._select_ids([target.id])
+
+        self.window.copy_transactions()
+        other_window.paste_transactions()
+
+        rows = self.store.ledger_rows(other_account)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].payee, target.payee)
+        self.assertEqual(rows[0].amount, target.amount)
+        self.assertEqual(other_window._selected_ids(), [rows[0].id])
+
+    def test_copy_and_paste_split_transaction_keeps_allocations(self) -> None:
+        category_a = self.store.add_category("Copy A", "expense")
+        category_b = self.store.add_category("Copy B", "expense")
+        split_id = self.store.add_transaction(
+            TransactionDraft(
+                date=date.today().isoformat(),
+                account_id=self.window.account_id,
+                payee="Split copy",
+                category_id=None,
+                amount=-100,
+                splits=[
+                    SplitDraft(category_a, -60),
+                    SplitDraft(category_b, -40),
+                ],
+            )
+        )
+        self.window.reload()
+        self.window._select_ids([split_id])
+
+        self.window.copy_transactions()
+        self.window.paste_transactions()
+
+        rows = [
+            row
+            for row in self.store.ledger_rows(self.window.account_id)
+            if row.payee == "Split copy"
+            and row.id != split_id
+            and not row.is_split_child
+        ]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(len(rows[0].splits), 2)
+        self.assertAlmostEqual(
+            sum(split.amount for split in rows[0].splits), -100
+        )
+
+    def test_copy_shortcuts_are_ledger_scoped(self) -> None:
+        self.assertEqual(self.window.act_copy.shortcut().toString(), "Ctrl+C")
+        self.assertEqual(
+            self.window.act_paste.shortcut().toString(), "Ctrl+V"
+        )
+        self.assertEqual(
+            self.window.act_copy_memo.shortcut().toString(), "Ctrl+Shift+C"
+        )
+        self.assertIn(self.window.act_copy, self.window.table.actions())
+        self.assertIn(self.window.act_paste, self.window.table.actions())
+        self.assertIn(self.window.act_copy_memo, self.window.table.actions())
 
     def test_ctrl_z_undoes_a_flag_change(self) -> None:
         ids = [row.id for row in self.window.model.rows]

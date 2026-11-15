@@ -2761,6 +2761,9 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
             ("Delete", "Delete the selected transaction"),
             ("Ctrl+Z", "Undo the last ledger change"),
             ("Ctrl+R", "Reconcile the selected transactions"),
+            ("Ctrl+C", "Copy the selected transaction(s)"),
+            ("Ctrl+V", "Paste copied transaction(s) into this account"),
+            ("Ctrl+Shift+C", "Copy the selected memo(s)"),
             ("Ctrl+N", "New transaction"),
             ("Ctrl+D", "Inherit a new transaction from the selection"),
             (
