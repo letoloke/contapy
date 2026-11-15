@@ -37,12 +37,12 @@ from .widgets.budgets import BudgetWindow, BudgetsPanel
 from .widgets.charts import ChartCard, DonutChart, SpendingRevenueChart
 from .widgets.import_dialog import CsvImportDialog
 from .widgets.ledger import LedgerWindow
+from .widgets.payees import PayeesDialog
 from .widgets.reports import ReportsWindow
 from .widgets.rules import RulesDialog
 from .widgets.dialogs import (
     AccountDialog,
     CategoriesDialog,
-    ListDialog,
     PreferencesDialog,
     ShortcutsDialog,
     TransactionDialog,
@@ -812,14 +812,11 @@ class MainWindow(QMainWindow):
             self.refresh_all()
 
     def show_payees(self) -> None:
-        payees = self.store.payees()
-        rows = [(payee, "") for payee in payees]
-        ListDialog(
-            "Payees",
-            f"{len(payees)} payees across posted and scheduled transactions.",
-            rows,
-            self,
-        ).exec()
+        dialog = PayeesDialog(self.store, self)
+        dialog.exec()
+        if dialog.changed:
+            self._record_activity("Updated payees")
+            self.refresh_all()
 
     def open_data_folder(self) -> None:
         self._record_activity("Opened data folder")

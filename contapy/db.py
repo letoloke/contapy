@@ -32,6 +32,7 @@ from .models import (
     BudgetStatus,
     Category,
     MonthFlow,
+    Payee,
     ReportRow,
     Rule,
     ScheduledItem,
@@ -102,6 +103,15 @@ CREATE TABLE IF NOT EXISTS budgets (
     amount      REAL NOT NULL DEFAULT 0,
     updated_at  TEXT NOT NULL DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS payees (
+    id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    name  TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT ''
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payees_name
+    ON payees(name COLLATE NOCASE);
 
 CREATE TABLE IF NOT EXISTS transactions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -233,6 +243,40 @@ CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(date);
 CREATE INDEX IF NOT EXISTS idx_tx_account ON transactions(account_id);
 CREATE INDEX IF NOT EXISTS idx_tx_category ON transactions(category_id);
 CREATE INDEX IF NOT EXISTS idx_sched_date ON scheduled(next_date);
+
+-- Register existing free-text payees once, then keep the registry in sync.
+INSERT OR IGNORE INTO payees(name)
+SELECT DISTINCT TRIM(payee) FROM transactions WHERE TRIM(payee) <> ''
+UNION
+SELECT DISTINCT TRIM(payee) FROM scheduled WHERE TRIM(payee) <> '';
+
+CREATE TRIGGER IF NOT EXISTS payees_after_transaction_insert
+AFTER INSERT ON transactions
+WHEN TRIM(NEW.payee) <> ''
+BEGIN
+    INSERT OR IGNORE INTO payees(name) VALUES (TRIM(NEW.payee));
+END;
+
+CREATE TRIGGER IF NOT EXISTS payees_after_transaction_update
+AFTER UPDATE OF payee ON transactions
+WHEN TRIM(NEW.payee) <> ''
+BEGIN
+    INSERT OR IGNORE INTO payees(name) VALUES (TRIM(NEW.payee));
+END;
+
+CREATE TRIGGER IF NOT EXISTS payees_after_scheduled_insert
+AFTER INSERT ON scheduled
+WHEN TRIM(NEW.payee) <> ''
+BEGIN
+    INSERT OR IGNORE INTO payees(name) VALUES (TRIM(NEW.payee));
+END;
+
+CREATE TRIGGER IF NOT EXISTS payees_after_scheduled_update
+AFTER UPDATE OF payee ON scheduled
+WHEN TRIM(NEW.payee) <> ''
+BEGIN
+    INSERT OR IGNORE INTO payees(name) VALUES (TRIM(NEW.payee));
+END;
 """
 
 KIND_LABELS = ["Bank", "Cash", "Credit card", "Savings"]
@@ -1841,11 +1885,149 @@ class DataStore:
         return sorted(values)
 
     def payees(self) -> list[str]:
+        return [
+            str(row["name"])
+            for row in self._rows(
+                "SELECT name FROM payees ORDER BY name COLLATE NOCASE"
+            )
+        ]
+
+    def payee_records(self) -> list[Payee]:
+        """Registered payees with posted + scheduled transaction counts."""
         rows = self._rows(
-            "SELECT payee FROM transactions WHERE payee <> '' "
-            "UNION SELECT payee FROM scheduled WHERE payee <> '' ORDER BY 1"
+            """
+            SELECT p.id, p.name, p.notes,
+                   (SELECT COUNT(*) FROM transactions t
+                    WHERE TRIM(t.payee) = p.name COLLATE NOCASE) +
+                   (SELECT COUNT(*) FROM scheduled s
+                    WHERE TRIM(s.payee) = p.name COLLATE NOCASE)
+                   AS transaction_count
+            FROM payees p
+            ORDER BY p.name COLLATE NOCASE, p.id
+            """
         )
-        return [r[0] for r in rows]
+        return [
+            Payee(
+                id=int(row["id"]),
+                name=row["name"],
+                notes=row["notes"] or "",
+                transaction_count=int(row["transaction_count"]),
+            )
+            for row in rows
+        ]
+
+    def payee(self, payee_id: int) -> Payee | None:
+        row = self.conn.execute(
+            "SELECT id, name, notes FROM payees WHERE id = ?",
+            (int(payee_id),),
+        ).fetchone()
+        if row is None:
+            return None
+        return Payee(
+            id=int(row["id"]),
+            name=row["name"],
+            notes=row["notes"] or "",
+            transaction_count=self.payee_usage(int(row["id"])),
+        )
+
+    def payee_by_name(self, name: str) -> Payee | None:
+        row = self.conn.execute(
+            "SELECT id FROM payees WHERE name = ? COLLATE NOCASE",
+            (name.strip(),),
+        ).fetchone()
+        return self.payee(int(row["id"])) if row is not None else None
+
+    def payee_usage(self, payee_id: int) -> int:
+        row = self.conn.execute(
+            "SELECT name FROM payees WHERE id = ?",
+            (int(payee_id),),
+        ).fetchone()
+        if row is None:
+            return 0
+        name = row["name"]
+        count = self.conn.execute(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM transactions
+                 WHERE TRIM(payee) = ? COLLATE NOCASE) +
+                (SELECT COUNT(*) FROM scheduled
+                 WHERE TRIM(payee) = ? COLLATE NOCASE)
+            """,
+            (name, name),
+        ).fetchone()
+        return int(count[0])
+
+    def add_payee(self, name: str, notes: str = "") -> int:
+        name = name.strip()
+        if not name:
+            raise ValueError("Payee name cannot be empty.")
+        if self.payee_by_name(name) is not None:
+            raise ValueError("A payee with that name already exists.")
+        cur = self.conn.execute(
+            "INSERT INTO payees(name, notes) VALUES (?, ?)",
+            (name, notes.strip()),
+        )
+        self.conn.commit()
+        return int(cur.lastrowid)
+
+    def update_payee(self, payee_id: int, name: str, notes: str = "") -> None:
+        current = self.payee(payee_id)
+        if current is None:
+            raise ValueError("That payee no longer exists.")
+        name = name.strip()
+        if not name:
+            raise ValueError("Payee name cannot be empty.")
+        existing = self.payee_by_name(name)
+        if existing is not None and existing.id != int(payee_id):
+            raise ValueError("A payee with that name already exists.")
+        with self.conn:
+            self.conn.execute(
+                "UPDATE payees SET name = ?, notes = ? WHERE id = ?",
+                (name, notes.strip(), int(payee_id)),
+            )
+            if name != current.name:
+                self.conn.execute(
+                    "UPDATE transactions SET payee = ? "
+                    "WHERE TRIM(payee) = ? COLLATE NOCASE",
+                    (name, current.name),
+                )
+                self.conn.execute(
+                    "UPDATE scheduled SET payee = ? "
+                    "WHERE TRIM(payee) = ? COLLATE NOCASE",
+                    (name, current.name),
+                )
+
+    def delete_payee(
+        self, payee_id: int, replacement_id: int | None = None
+    ) -> int:
+        """Delete a payee, optionally reassigning its transactions first."""
+        payee = self.payee(payee_id)
+        if payee is None:
+            raise ValueError("That payee no longer exists.")
+        usage = self.payee_usage(payee_id)
+        with self.conn:
+            if usage:
+                if replacement_id is None:
+                    raise ValueError(
+                        "Choose a replacement payee for the associated transactions."
+                    )
+                if int(replacement_id) == int(payee_id):
+                    raise ValueError("Choose a different replacement payee.")
+                replacement = self.payee(int(replacement_id))
+                if replacement is None:
+                    raise ValueError("The replacement payee no longer exists.")
+                self.conn.execute(
+                    "UPDATE transactions SET payee = ? "
+                    "WHERE TRIM(payee) = ? COLLATE NOCASE",
+                    (replacement.name, payee.name),
+                )
+                self.conn.execute(
+                    "UPDATE scheduled SET payee = ? "
+                    "WHERE TRIM(payee) = ? COLLATE NOCASE",
+                    (replacement.name, payee.name),
+                )
+            self.conn.execute("DELETE FROM payees WHERE id = ?", (int(payee_id),))
+        return usage
 
     # ----------------------------------------------------------------- rules
     @staticmethod

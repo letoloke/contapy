@@ -107,6 +107,20 @@ The transaction editor has a **Split…** row. It opens the split editor, where 
 
 Scheduled transactions and transfers are not split in this version.
 
+## Payees
+
+**Manage → Payees…** opens the payee manager. It lists every registered payee with its optional notes and the number of posted plus scheduled transactions linked to it.
+
+- **New…** creates a payee with a unique name and optional notes.
+- **Edit…** renames the payee and updates every linked transaction and scheduled item immediately.
+- Names are unique case-insensitively, so `Cafe` and `cafe` cannot both exist.
+- **Delete** on an unused payee asks for confirmation and removes it.
+- **Delete** on a payee with linked transactions opens a reassignment dialog. Choose another payee, then **Reassign & delete**; every linked posted and scheduled transaction is moved to the replacement before the old payee is removed.
+- If no other payee exists, the manager asks you to create one first instead of leaving orphaned references.
+- Double-click a payee to edit it, or select one and press `Delete`.
+
+The registry updates automatically when transactions, schedules, imports, transfers or rules introduce a new payee name.
+
 ## Subcategories
 
 **Manage → Categories…** now opens a category manager instead of a read-only
@@ -271,6 +285,7 @@ The demo figures are aligned to the reference: last 30 days **$167,248.99**, rec
 - **Banamex import** — converts saved Banamex HTML statements (dates, memos and amounts) before the standard import preview.
 - **Reports window** — HomeBank-style Display panel, Category/Payee/Account and monthly grouping, Expense/Income types, date presets and custom ranges, search and account filters, and table, pie and bar views.
 - **Budgets window** — monthly per-category expense budgets with progress bars, remaining/over amounts, month navigation, a configurable day-of-month period start and six-month trend charts that zoom into a larger dialog; the dashboard embeds a compact version beside the scheduled strip.
+- **Payee manager** — registered payees with posted/scheduled counts, unique names, optional notes, safe rename propagation and reassignment-before-delete for linked transactions.
 - **Automatic assignment rules** — a rules manager with Condition (memo/payee search, case-sensitive and regex matching, optional amount filter with AND/OR) and Assignments (payee, category, payment, tags and notes, each with overwrite-or-fill-empty behavior); rules run on newly added and imported transactions.
 - **Subcategories** — a category manager with separate Expense/Income tabs, add/edit/delete, per-category transaction lists with search and subcategory roll-up, two-level `Parent : Child` categories everywhere (editor, ledger, CSV import/export), and roll-ups in the donut, report charts and budgets.
 - Schedule one-off bills; post or skip them from the home strip.
@@ -511,13 +526,13 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-Two hundred and twenty tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, bulk ledger editing, ledger undo, sortable ledger columns, post-edit reselection across filters and accounts, strict payee/category typing, Markdown activity history, Ctrl+R reconciliation in the ledger and transaction editor, split transactions (storage, editing, balanced allocation, ledger children, reports, budgets, category lists and undo), uncategorized category highlighting, transfer and voided category labels, responsive account-sidebar columns, closest-amount highlighting for voiding with its Alt+V hint, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, Delete-key removal, Enter-to-edit and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, the dashboard budgets panel beside the scheduled strip, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the searchable Ctrl+K shortcut list and its window-level action, HomeBank automatic-assignment import (conditions, payees, categories, payments, tags, notes, overwrite flags, duplicates and invalid references), the 70-row HomeBank bank-CSV import, custom and remembered header mappings, the Ctrl+I import menu, sortable import previews, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
+Two hundred and thirty-one tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, bulk ledger editing, ledger undo, sortable ledger columns, post-edit reselection across filters and accounts, payee CRUD and reassignment, strict payee/category typing, Markdown activity history, Ctrl+R reconciliation in the ledger and transaction editor, split transactions (storage, editing, balanced allocation, ledger children, reports, budgets, category lists and undo), uncategorized category highlighting, transfer and voided category labels, responsive account-sidebar columns, closest-amount highlighting for voiding with its Alt+V hint, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, Delete-key removal, Enter-to-edit and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, the dashboard budgets panel beside the scheduled strip, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the searchable Ctrl+K shortcut list and its window-level action, HomeBank automatic-assignment import (conditions, payees, categories, payments, tags, notes, overwrite flags, duplicates and invalid references), the 70-row HomeBank bank-CSV import, custom and remembered header mappings, the Ctrl+I import menu, sortable import previews, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
 
 ## Notes / limitations
 
 - One currency; amounts display with `$`, and the transaction editor labels the configured code (`MXN` by default). No bank syncing.
 - Schedules are one-off; there is no recurrence engine yet.
-- Splits, payee matching and HomeBank's Budget/Statistics report windows are not implemented yet.
+- HomeBank's Budget/Statistics report windows are not implemented yet.
 - Internal transfers are stored as two linked legs; CSV export writes those legs separately, and re-importing does not relink them.
 - The UI is English while the seeded demo data is Spanish, mirroring the reference.
 - Written and tested on Linux/Wayland with Python 3.14, PySide6 6.12 and Qt 6.12; it should run anywhere PySide6 does.

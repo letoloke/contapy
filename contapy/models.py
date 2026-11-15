@@ -22,6 +22,14 @@ class Account:
 
 
 @dataclass(slots=True)
+class Payee:
+    id: int
+    name: str
+    notes: str = ""
+    transaction_count: int = 0
+
+
+@dataclass(slots=True)
 class Category:
     id: int
     name: str
