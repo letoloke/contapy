@@ -1445,11 +1445,15 @@ class LedgerWindow(QMainWindow):
         self._log_activity(
             f"{kind}: {transaction_detail(new_draft.payee, new_draft.amount, new_draft.memo)}"
         )
+        self._keep_selection_after_change(saved_ids)
+
+    def _keep_selection_after_change(self, ids: list[int]) -> None:
+        """Reload, let the main window refresh, then restore the selection."""
         self.reload(preserve_selection=False)
         self.changed.emit()
-        self._select_ids(saved_ids)
+        self._select_ids(ids)
         QTimer.singleShot(
-            0, lambda: self._finish_edit_selection(saved_ids)
+            0, lambda: self._finish_selection_after_change(ids)
         )
 
     def _clear_filters(self) -> None:
@@ -1478,7 +1482,10 @@ class LedgerWindow(QMainWindow):
         self.search_edit.blockSignals(False)
         self._apply_filters([])
 
-    def _finish_edit_selection(self, ids: list[int]) -> None:
+    def _finish_selection_after_change(self, ids: list[int]) -> None:
+        if not ids:
+            self._focus_table(select_first=False)
+            return
         if self._select_ids(ids):
             self._focus_table(select_first=False)
             return
@@ -1534,15 +1541,13 @@ class LedgerWindow(QMainWindow):
             self.store.update_transactions(ids, **changes)
         self._push_undo("bulk edit", before, ids)
         self._log_activity(f"Bulk edited {len(editable)} transaction(s)")
-        self.reload()
-        self.changed.emit()
         if skipped:
             self._show_message(
                 "Bulk edit",
                 f"Updated {len(editable)} transactions.\n"
                 f"Skipped {skipped} transfer or split row(s).",
             )
-        QTimer.singleShot(0, self._focus_table)
+        self._keep_selection_after_change(ids)
 
     def delete_transaction(self) -> None:
         selected = self._selected_rows()
@@ -1600,9 +1605,7 @@ class LedgerWindow(QMainWindow):
             f"{'Cleared' if cleared else 'Marked uncleared'} "
             f"{len(ids)} transaction(s)"
         )
-        self.reload()
-        self.changed.emit()
-        QTimer.singleShot(0, self._focus_table)
+        self._keep_selection_after_change(ids)
 
     def _set_reconciled(self, reconciled: bool) -> None:
         ids = self._selected_ids()
@@ -1618,9 +1621,7 @@ class LedgerWindow(QMainWindow):
             f"{'Reconciled' if reconciled else 'Unreconciled'} "
             f"{len(ids)} transaction(s)"
         )
-        self.reload()
-        self.changed.emit()
-        QTimer.singleShot(0, self._focus_table)
+        self._keep_selection_after_change(ids)
 
     def _toggle_remind(self) -> None:
         selected = self._selected_rows()
@@ -1634,9 +1635,7 @@ class LedgerWindow(QMainWindow):
         self._log_activity(
             f"{'Set' if target else 'Cleared'} remind on {len(ids)} transaction(s)"
         )
-        self.reload()
-        self.changed.emit()
-        QTimer.singleShot(0, self._focus_table)
+        self._keep_selection_after_change(ids)
 
     def _toggle_flag(self) -> None:
         selected = self._selected_rows()
@@ -1650,9 +1649,7 @@ class LedgerWindow(QMainWindow):
         self._log_activity(
             f"{'Flagged' if target else 'Unflagged'} {len(ids)} transaction(s)"
         )
-        self.reload()
-        self.changed.emit()
-        QTimer.singleShot(0, self._focus_table)
+        self._keep_selection_after_change(ids)
 
     def _toggle_void(self) -> None:
         selected = self._selected_rows()
@@ -1666,9 +1663,7 @@ class LedgerWindow(QMainWindow):
         self._log_activity(
             f"{'Voided' if target else 'Unvoided'} {len(ids)} transaction(s)"
         )
-        self.reload()
-        self.changed.emit()
-        QTimer.singleShot(0, self._focus_table)
+        self._keep_selection_after_change(ids)
 
     def _void_highlighted(self) -> None:
         ids = sorted(self._highlight_ids)
@@ -1689,15 +1684,13 @@ class LedgerWindow(QMainWindow):
                 f"Voided {len(ids)} highlighted row(s) and reconciled "
                 f"{len(selected_ids)} selected row(s)"
             )
-            self.reload()
-            self.changed.emit()
+            self._keep_selection_after_change(selected_ids)
         finally:
             self._suspend_highlight = False
         self._highlight_ids = set()
         self.delegate.highlight_ids = set()
         self.table.viewport().update()
         self.act_void_highlighted.setEnabled(False)
-        QTimer.singleShot(0, self._focus_table)
 
     def _log_activity(self, message: str) -> None:
         self.activity.emit(message)

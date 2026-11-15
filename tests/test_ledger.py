@@ -256,6 +256,7 @@ class LedgerHintTests(unittest.TestCase):
     def test_ctrl_r_reconciles_the_selection(self) -> None:
         ids = [row.id for row in self.window.model.rows]
         self.window._select_ids(ids)
+        self.window.changed.connect(self.window.reload)
         self.assertEqual(self.window.act_reconcile.shortcut().toString(), "Ctrl+R")
 
         self.window.act_reconcile.trigger()
@@ -266,6 +267,10 @@ class LedgerHintTests(unittest.TestCase):
         for transaction_id in ids:
             self.assertTrue(rows[transaction_id].cleared)
             self.assertTrue(rows[transaction_id].reconciled)
+        self.assertEqual(self.window._selected_ids(), ids)
+        current = self.window.table.currentIndex()
+        self.assertTrue(current.isValid())
+        self.assertIn(self.window.model.rows[current.row()].id, ids)
         self.assertIn("reconcile", self.window.act_undo.text())
 
         self.window.undo()
@@ -334,7 +339,7 @@ class LedgerHintTests(unittest.TestCase):
             target.id, [row.id for row in self.window.model.rows]
         )
 
-        self.window._finish_edit_selection([target.id])
+        self.window._finish_selection_after_change([target.id])
 
         self.assertIsNone(self.window.status_combo.currentData())
         self.assertEqual(self.window._selected_ids(), [target.id])
@@ -358,7 +363,7 @@ class LedgerHintTests(unittest.TestCase):
             )
         )
 
-        self.window._finish_edit_selection([transaction_id])
+        self.window._finish_selection_after_change([transaction_id])
 
         self.assertEqual(moved, [(destination, transaction_id)])
 
