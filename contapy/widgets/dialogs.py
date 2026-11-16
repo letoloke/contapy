@@ -2818,7 +2818,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
             ("Ctrl+D", "Inherit a new transaction from the selection"),
             (
                 "Alt+V",
-                "Void the highlighted closest amounts and reconcile the selected rows",
+                "Void the highlighted exact-amount matches and reconcile the selected rows",
             ),
             ("Ctrl+W / Esc", "Close the ledger"),
         ],

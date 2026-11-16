@@ -110,23 +110,19 @@ def category_text_color(
     return color.lighter(135) if selected else color
 
 
-def closest_amount_ids(
+def exact_amount_ids(
     rows: list[TransactionRow],
     selected_ids: set[int],
     total: float,
     tolerance: float = 0.005,
 ) -> list[int]:
-    """Ids of unselected, non-voided rows whose amount is closest to ``total``."""
-    candidates = [
-        row for row in rows if row.id not in selected_ids and not row.voided
-    ]
-    if not candidates:
-        return []
-    best = min(abs(row.amount - total) for row in candidates)
+    """Ids of unselected, non-voided rows whose amount exactly matches ``total``."""
     return [
         row.id
-        for row in candidates
-        if abs(abs(row.amount - total) - best) <= tolerance
+        for row in rows
+        if row.id not in selected_ids
+        and not row.voided
+        and abs(row.amount - total) <= tolerance
     ]
 
 
@@ -1238,7 +1234,7 @@ class LedgerWindow(QMainWindow):
         self._refresh_highlight()
 
     def _refresh_highlight(self) -> None:
-        """Highlight unselected amounts closest to the selected total."""
+        """Highlight unselected amounts matching the selected total exactly."""
         selected = self._selected_rows()
         if self._suspend_highlight or len(selected) < 2:
             ids: set[int] = set()
@@ -1249,7 +1245,7 @@ class LedgerWindow(QMainWindow):
                 row for row in self.model.rows if not row.is_split_child
             ]
             ids = set(
-                closest_amount_ids(parent_rows, selected_ids, selected_sum)
+                exact_amount_ids(parent_rows, selected_ids, selected_sum)
             )
         self._highlight_ids = ids
         self.delegate.highlight_ids = ids

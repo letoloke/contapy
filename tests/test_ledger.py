@@ -26,8 +26,8 @@ from contapy.widgets.ledger import (
     HEADERS,
     LedgerWindow,
     category_text_color,
-    closest_amount_ids,
     date_bounds,
+    exact_amount_ids,
 )
 
 
@@ -900,33 +900,38 @@ class LedgerHintTests(unittest.TestCase):
         self.assertNotIn("Alt+V", self.window.keyboard_hint.text())
 
 
-class ClosestAmountTests(unittest.TestCase):
-    def test_picks_the_unselected_amount_closest_to_the_total(self) -> None:
+class ExactAmountTests(unittest.TestCase):
+    def test_picks_only_the_exact_match_not_a_near_amount(self) -> None:
         rows = [row(1, -400), row(2, -600), row(3, -1_000), row(4, -990), row(5, 50)]
         self.assertEqual(
-            closest_amount_ids(rows, {1, 2}, -1_000),
+            exact_amount_ids(rows, {1, 2}, -1_000),
             [3],
         )
 
-    def test_returns_every_tie_at_the_closest_distance(self) -> None:
+    def test_returns_every_exact_match(self) -> None:
         rows = [row(1, -400), row(2, -600), row(3, -1_000), row(4, -1_000)]
         self.assertEqual(
-            closest_amount_ids(rows, {1, 2}, -1_000),
+            exact_amount_ids(rows, {1, 2}, -1_000),
             [3, 4],
         )
 
-    def test_ignores_selected_and_voided_rows(self) -> None:
+    def test_ignores_selected_voided_and_near_amounts(self) -> None:
         rows = [
             row(1, -400),
             row(2, -600),
             row(3, -1_000, voided=True),
-            row(4, -900),
+            row(4, -1_000),
+            row(5, -1_000),
+            row(6, -999.99),
         ]
-        self.assertEqual(closest_amount_ids(rows, {1, 2}, -1_000), [4])
+        self.assertEqual(
+            exact_amount_ids(rows, {1, 2, 5}, -1_000),
+            [4],
+        )
 
-    def test_no_candidates_means_no_highlight(self) -> None:
-        rows = [row(1, -400, voided=True), row(2, -600)]
-        self.assertEqual(closest_amount_ids(rows, {2}, -600), [])
+    def test_no_exact_match_means_no_highlight(self) -> None:
+        rows = [row(1, -400), row(2, -600), row(3, -999.99)]
+        self.assertEqual(exact_amount_ids(rows, {1, 2}, -1_000), [])
 
 
 if __name__ == "__main__":
