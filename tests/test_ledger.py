@@ -20,7 +20,7 @@ from contapy.db import DataStore
 from contapy.models import (
     Rule,
     SplitDraft,
-    TemplateValues,
+    Template,
     TransactionDraft,
     TransactionRow,
 )
@@ -915,7 +915,8 @@ class LedgerHintTests(unittest.TestCase):
         self.assertTrue(self.window.act_apply_template.isEnabled())
         self.assertTrue(self.window.apply_template_btn.isEnabled())
 
-        values = TemplateValues(
+        template = Template(
+            name="Batch",
             payee="Batch payee",
             payee_overwrite=True,
             tags="bulk",
@@ -925,19 +926,19 @@ class LedgerHintTests(unittest.TestCase):
         class FakeTemplateDialog:
             count = 0
 
-            def __init__(self, store, count, parent=None) -> None:
+            def __init__(self, store, parent=None, *, count=None) -> None:
                 FakeTemplateDialog.count = count
 
             def exec(self) -> QDialog.DialogCode:
                 return QDialog.DialogCode.Accepted
 
-            def template_values(self) -> TemplateValues:
-                return values
+            def template_values(self) -> Template:
+                return template
 
         changed_emitted: list[bool] = []
         self.window.changed.connect(lambda: changed_emitted.append(True))
         with mock.patch(
-            "contapy.widgets.ledger.ApplyTemplateDialog", FakeTemplateDialog
+            "contapy.widgets.ledger.TemplatesDialog", FakeTemplateDialog
         ):
             self.window.apply_template_to_selected()
 

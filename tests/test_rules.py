@@ -6,23 +6,25 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from contapy.db import DataStore
 from contapy.models import (
     Rule,
     SplitDraft,
-    TemplateValues,
+    Template,
     TransactionDraft,
 )
 from contapy.widgets.rules import (
-    ApplyTemplateDialog,
     RuleDialog,
     RulesDialog,
+    TemplateDialog,
+    TemplatesDialog,
 )
 
 _APP: QApplication | None = None
@@ -576,6 +578,48 @@ class TemplateStoreTests(unittest.TestCase):
         values.update(kwargs)
         return TransactionDraft(**values)
 
+    def test_templates_round_trip_update_and_delete(self) -> None:
+        first = self.store.add_template(
+            Template(name="Coffee", payee="Café", tags="food")
+        )
+        second = self.store.add_template(
+            Template(
+                name="Rent",
+                payment="Bank transfer",
+                memo="Monthly",
+                memo_mode="append",
+            )
+        )
+
+        self.assertEqual(
+            [template.name for template in self.store.templates()],
+            ["Coffee", "Rent"],
+        )
+        loaded = self.store.template(second)
+        assert loaded is not None
+        self.assertEqual(loaded.payment, "Bank transfer")
+        self.assertEqual(loaded.memo_mode, "append")
+
+        loaded.payee = "Landlord"
+        loaded.payee_overwrite = True
+        loaded.category_id = self.expense
+        loaded.category_set = True
+        loaded.category_overwrite = True
+        self.store.update_template(loaded)
+        updated = self.store.template(second)
+        assert updated is not None
+        self.assertEqual(updated.payee, "Landlord")
+        self.assertTrue(updated.payee_overwrite)
+        self.assertEqual(updated.category_id, self.expense)
+        self.assertTrue(updated.category_set)
+        self.assertTrue(updated.category_overwrite)
+
+        self.store.delete_template(first)
+        self.assertIsNone(self.store.template(first))
+        self.assertEqual(
+            [template.name for template in self.store.templates()], ["Rent"]
+        )
+
     def test_only_selected_rows_change_and_overwrite_is_per_field(self) -> None:
         empty = self.store.add_transaction(self.draft())
         filled = self.store.add_transaction(
@@ -591,7 +635,7 @@ class TemplateStoreTests(unittest.TestCase):
 
         changed = self.store.apply_template_to_transactions(
             [empty, filled],
-            TemplateValues(
+            Template(
                 payee="New payee",
                 payee_overwrite=False,
                 category_id=self.expense,
@@ -638,7 +682,7 @@ class TemplateStoreTests(unittest.TestCase):
 
         changed = self.store.apply_template_to_transactions(
             [transaction_id],
-            TemplateValues(
+            Template(
                 payee="New",
                 payee_overwrite=True,
                 category_id=None,
@@ -676,7 +720,7 @@ class TemplateStoreTests(unittest.TestCase):
 
         changed = self.store.apply_template_to_transactions(
             [*transfer_ids, split_id],
-            TemplateValues(payee="Changed", payee_overwrite=True),
+            Template(payee="Changed", payee_overwrite=True),
         )
 
         self.assertEqual(changed, [])
@@ -695,7 +739,7 @@ class TemplateStoreTests(unittest.TestCase):
 
         changed = self.store.apply_template_to_transactions(
             [transaction_id],
-            TemplateValues(
+            Template(
                 payee="Ignored",
                 payee_overwrite=False,
                 memo="Ignored",
@@ -706,14 +750,14 @@ class TemplateStoreTests(unittest.TestCase):
         self.assertEqual(changed, [])
 
 
-class ApplyTemplateDialogTests(unittest.TestCase):
+class TemplateDialogTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         app()
 
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
-        self.store = DataStore(Path(self.tmp.name) / "batch-ui.db", seed=False)
+        self.store = DataStore(Path(self.tmp.name) / "template-ui.db", seed=False)
         self.store.add_account("Checking", "Bank", 100)
         self.category = self.store.ensure_category("Food : Coffee", "expense")
 
@@ -721,10 +765,11 @@ class ApplyTemplateDialogTests(unittest.TestCase):
         self.store.close()
         self.tmp.cleanup()
 
-    def test_dialog_returns_template_values_and_memo_modes(self) -> None:
-        dialog = ApplyTemplateDialog(self.store, 3)
+    def test_editor_returns_template_values_and_memo_modes(self) -> None:
+        dialog = TemplateDialog(self.store)
         self.addCleanup(dialog.deleteLater)
 
+        dialog.name_edit.setText("Coffee")
         dialog.payee_combo.setEditText("Café")
         dialog.payee_overwrite.setChecked(True)
         dialog.category_combo.setCurrentIndex(
@@ -739,6 +784,7 @@ class ApplyTemplateDialogTests(unittest.TestCase):
 
         values = dialog.values()
 
+        self.assertEqual(values.name, "Coffee")
         self.assertEqual(values.payee, "Café")
         self.assertTrue(values.payee_overwrite)
         self.assertEqual(values.category_id, self.category)
@@ -750,15 +796,36 @@ class ApplyTemplateDialogTests(unittest.TestCase):
         self.assertEqual(values.memo_mode, "append")
         self.assertTrue(values.has_values())
 
-    def test_blank_dialog_has_no_values_to_apply(self) -> None:
-        dialog = ApplyTemplateDialog(self.store, 1)
+    def test_editor_populates_an_existing_template(self) -> None:
+        dialog = TemplateDialog(
+            self.store,
+            Template(
+                id=7,
+                name="Coffee",
+                sort_order=3,
+                payee="Café",
+                payee_overwrite=True,
+                category_id=self.category,
+                category_set=True,
+                category_overwrite=False,
+                payment="Cash",
+                tags="food",
+                memo="Imported",
+                memo_mode="append",
+            ),
+        )
         self.addCleanup(dialog.deleteLater)
 
-        self.assertFalse(dialog.values().has_values())
-        self.assertEqual(dialog.values().memo_mode, "empty")
+        values = dialog.values()
+
+        self.assertEqual(values.id, 7)
+        self.assertEqual(values.sort_order, 3)
+        self.assertEqual(values.name, "Coffee")
+        self.assertEqual(values.category_id, self.category)
+        self.assertEqual(values.memo_mode, "append")
 
     def test_typed_uncategorized_clears_the_category(self) -> None:
-        dialog = ApplyTemplateDialog(self.store, 1)
+        dialog = TemplateDialog(self.store)
         self.addCleanup(dialog.deleteLater)
 
         dialog.category_combo.setEditText("Uncategorized")
@@ -766,3 +833,57 @@ class ApplyTemplateDialogTests(unittest.TestCase):
 
         self.assertTrue(values.category_set)
         self.assertIsNone(values.category_id)
+
+    def test_manager_lists_searches_and_deletes_templates(self) -> None:
+        coffee = self.store.add_template(
+            Template(name="Coffee", payee="Café", tags="food")
+        )
+        rent = self.store.add_template(
+            Template(name="Rent", payment="Bank transfer")
+        )
+        dialog = TemplatesDialog(self.store)
+        self.addCleanup(dialog.deleteLater)
+        self.assertFalse(dialog.pick_mode)
+        self.assertEqual(dialog.listing.count(), 2)
+        self.assertIn("Coffee", dialog.listing.item(0).text())
+        self.assertIn("Payee → Café", dialog.listing.item(0).text())
+
+        dialog.search_edit.setText("bank transfer")
+        self.assertEqual(dialog.listing.count(), 1)
+        self.assertIn("Rent", dialog.listing.item(0).text())
+
+        dialog.search_edit.clear()
+        dialog.listing.setCurrentRow(0)
+        with mock.patch.object(
+            QMessageBox,
+            "question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ):
+            dialog.delete_template()
+
+        self.assertTrue(dialog.changed)
+        self.assertIsNone(self.store.template(coffee))
+        self.assertIsNotNone(self.store.template(rent))
+
+    def test_picker_applies_the_selected_saved_template(self) -> None:
+        self.store.add_template(
+            Template(name="Coffee", payee="Café", tags="food")
+        )
+        dialog = TemplatesDialog(self.store, count=3)
+        self.addCleanup(dialog.deleteLater)
+        self.assertTrue(dialog.pick_mode)
+        self.assertEqual(
+            dialog.windowTitle(), "Apply Template to 3 transaction(s)"
+        )
+        self.assertFalse(dialog.apply_button.isEnabled())
+
+        dialog.listing.setCurrentRow(0)
+        self.assertTrue(dialog.apply_button.isEnabled())
+        dialog._apply()
+
+        self.assertEqual(dialog.result(), QDialog.DialogCode.Accepted)
+        selected = dialog.template_values()
+        assert selected is not None
+        self.assertEqual(selected.name, "Coffee")
+        self.assertEqual(selected.payee, "Café")
+        self.assertEqual(selected.tags, "food")

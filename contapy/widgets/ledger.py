@@ -65,7 +65,7 @@ from .icons import (
     draw_void,
 )
 from .import_dialog import CsvImportDialog
-from .rules import ApplyTemplateDialog
+from .rules import TemplatesDialog
 
 ROWS = 10
 FLAG, DATE, PAYEE, CATEGORY, TAGS, STATUS, EXPENSE, INCOME, BALANCE, MEMO = range(ROWS)
@@ -1897,11 +1897,11 @@ class LedgerWindow(QMainWindow):
             )
             return
 
-        dialog = ApplyTemplateDialog(self.store, len(eligible), self)
+        dialog = TemplatesDialog(self.store, self, count=len(eligible))
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        values = dialog.template_values()
-        if values is None:
+        template = dialog.template_values()
+        if template is None:
             return
 
         selected_ids = self._selected_ids()
@@ -1910,7 +1910,7 @@ class LedgerWindow(QMainWindow):
         splits_before = self.store.snapshot_splits(ids)
         try:
             changed_ids = self.store.apply_template_to_transactions(
-                ids, values
+                ids, template
             )
         except Exception as exc:
             self.store.restore_transactions(before, ids, splits_before)
@@ -1925,7 +1925,8 @@ class LedgerWindow(QMainWindow):
 
         self._push_undo("apply template", before, ids, splits_before)
         self._log_activity(
-            f"Applied template to {len(changed_ids)} transaction(s)"
+            f"Applied template “{template.name}” to "
+            f"{len(changed_ids)} transaction(s)"
         )
         self._keep_selection_after_change(selected_ids)
         hint = f"Template applied · {len(changed_ids)} changed"

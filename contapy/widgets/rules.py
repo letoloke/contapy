@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..db import DataStore
-from ..models import Rule, TemplateValues, ordered_categories
+from ..models import Rule, Template, ordered_categories
 from ..theme import C, font
 from ..xhb_rules import import_xhb_rules
 from .dialogs import SearchCombo
@@ -149,7 +149,7 @@ class _AssignmentFieldsMixin:
             self.memo_mode.addItem("Fill empty", "empty")
             self.memo_mode.addItem("Append", "append")
             self.memo_mode.addItem("Overwrite", "overwrite")
-            self.memo_mode.setFixedWidth(108)
+            self.memo_mode.setFixedWidth(128)
             self._assignment_row(grid, 4, "Notes", self.memo_edit, self.memo_mode)
         else:
             self.memo_edit.setPlaceholderText("Default note added to the memo")
@@ -433,20 +433,20 @@ class RuleDialog(_AssignmentFieldsMixin, QDialog):
         return self._rule
 
 
-class ApplyTemplateDialog(_AssignmentFieldsMixin, QDialog):
-    """Apply a template directly to a set of selected transactions."""
+class TemplateDialog(_AssignmentFieldsMixin, QDialog):
+    """Create or edit one saved template of assignment values."""
 
     def __init__(
         self,
         store: DataStore,
-        count: int,
+        template: Template | None = None,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self.store = store
-        self.count = count
-        self._values: TemplateValues | None = None
-        self.setWindowTitle(f"Apply Template to {count} transaction(s)")
+        self.template_model = template
+        self._template: Template | None = None
+        self.setWindowTitle("Edit Template" if template else "New Template")
         self.setModal(True)
         self.setMinimumWidth(620)
 
@@ -454,20 +454,27 @@ class ApplyTemplateDialog(_AssignmentFieldsMixin, QDialog):
         root.setContentsMargins(20, 18, 20, 16)
         root.setSpacing(10)
 
-        heading = QLabel("Apply template")
+        heading = QLabel("Edit template" if template else "New template")
         heading.setFont(font(18, 600))
         root.addWidget(heading)
 
         intro = QLabel(
-            f"Apply this template directly to the {count} selected "
-            "transaction(s). There are no rule conditions. Leave a field blank "
-            "to skip it; with Overwrite unchecked a value only fills a field "
-            "that is still empty."
+            "A template stores Payee, Category, Payment, Tags and Notes values "
+            "that can be applied to any selected ledger transactions. Unlike a "
+            "rule, a template has no matching condition."
         )
         intro.setWordWrap(True)
         intro.setFont(font(13, 400))
         intro.setStyleSheet(f"color:{C.MUTED};")
         root.addWidget(intro)
+
+        name_row = QHBoxLayout()
+        name_row.setSpacing(8)
+        name_row.addWidget(_label("Name"))
+        self.name_edit = QLineEdit()
+        self.name_edit.setPlaceholderText("Template name, e.g. Coffee shop")
+        name_row.addWidget(self.name_edit, 1)
+        root.addLayout(name_row)
 
         assignments, assignments_layout = _section(
             "Assignments",
@@ -479,23 +486,54 @@ class ApplyTemplateDialog(_AssignmentFieldsMixin, QDialog):
 
         buttons = QDialogButtonBox()
         cancel = buttons.addButton("Cancel", QDialogButtonBox.ButtonRole.RejectRole)
-        apply_button = buttons.addButton(
-            f"Apply to {count}", QDialogButtonBox.ButtonRole.AcceptRole
-        )
-        for button in (cancel, apply_button):
+        save = buttons.addButton("Save", QDialogButtonBox.ButtonRole.AcceptRole)
+        for button in (cancel, save):
             button.setCursor(Qt.CursorShape.PointingHandCursor)
         cancel.setAutoDefault(False)
-        apply_button.setProperty("role", "primary")
-        apply_button.setAutoDefault(True)
-        apply_button.setDefault(True)
+        save.setProperty("role", "primary")
+        save.setAutoDefault(True)
+        save.setDefault(True)
         buttons.rejected.connect(self.reject)
         buttons.accepted.connect(self._save)
         root.addWidget(buttons)
 
-    def values(self) -> TemplateValues:
-        """Values to apply, distinguishing blank fields from cleared ones."""
+        if template is not None:
+            self._populate(template)
+
+    def _populate(self, template: Template) -> None:
+        self.name_edit.setText(template.name)
+        self.payee_combo.setEditText(template.payee)
+        self.payee_overwrite.setChecked(template.payee_overwrite)
+        if template.category_set:
+            if template.category_id is not None:
+                index = self.category_combo.findData(template.category_id)
+                if index >= 0:
+                    self.category_combo.setCurrentIndex(index)
+                    self.category_combo.setEditText(
+                        self.category_combo.itemText(index)
+                    )
+            else:
+                self.category_combo.setEditText("Uncategorized")
+        self.category_overwrite.setChecked(template.category_overwrite)
+        self.payment_combo.setEditText(template.payment)
+        self.payment_overwrite.setChecked(template.payment_overwrite)
+        self.tags_combo.setEditText(template.tags)
+        self.tags_overwrite.setChecked(template.tags_overwrite)
+        self.memo_edit.setText(template.memo)
+        index = self.memo_mode.findData(template.memo_mode)
+        self.memo_mode.setCurrentIndex(index if index >= 0 else 0)
+
+    def values(self) -> Template:
+        """Build the template from the current form values."""
         category_text = self.category_combo.resolved_text()
-        return TemplateValues(
+        return Template(
+            id=self.template_model.id if self.template_model is not None else 0,
+            name=self.name_edit.text().strip(),
+            sort_order=(
+                self.template_model.sort_order
+                if self.template_model is not None
+                else 0
+            ),
             payee=self.payee_combo.resolved_text(),
             payee_overwrite=self.payee_overwrite.isChecked(),
             category_id=self._resolved_category(),
@@ -524,19 +562,290 @@ class ApplyTemplateDialog(_AssignmentFieldsMixin, QDialog):
                 "category or type Uncategorized.",
             )
             return
-        values = self.values()
-        if not values.has_values():
+        template = self.values()
+        if not template.name:
+            QMessageBox.warning(
+                self, "Incomplete template", "Give the template a name."
+            )
+            return
+        if not template.has_values():
             QMessageBox.warning(
                 self,
-                "Nothing to apply",
+                "Incomplete template",
                 "Fill in at least one of Payee, Category, Payment, Tags or Notes.",
             )
             return
-        self._values = values
+        self._template = template
         super().accept()
 
-    def template_values(self) -> TemplateValues | None:
-        return self._values
+    def template(self) -> Template | None:
+        return self._template
+
+
+class TemplatesDialog(QDialog):
+    """Manage saved templates, optionally choosing one to apply."""
+
+    def __init__(
+        self,
+        store: DataStore,
+        parent: QWidget | None = None,
+        *,
+        count: int | None = None,
+    ):
+        super().__init__(parent)
+        self.store = store
+        self.count = count
+        self.pick_mode = count is not None
+        self.changed = False
+        self._selected: Template | None = None
+        if self.pick_mode:
+            self.setWindowTitle(
+                f"Apply Template to {count} transaction(s)"
+            )
+        else:
+            self.setWindowTitle("Templates")
+        self.setModal(True)
+        self.setMinimumSize(560, 520)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(20, 18, 20, 16)
+        root.setSpacing(10)
+
+        heading = QLabel("Apply template" if self.pick_mode else "Templates")
+        heading.setFont(font(18, 600))
+        root.addWidget(heading)
+
+        if self.pick_mode:
+            subtitle_text = (
+                f"Choose a saved template to apply to the {count} selected "
+                "transaction(s). Templates assign values directly; they have no "
+                "matching conditions."
+            )
+        else:
+            subtitle_text = (
+                "Templates are reusable sets of Payee, Category, Payment, Tags "
+                "and Notes values. Apply one from an account ledger."
+            )
+        subtitle = QLabel(subtitle_text)
+        subtitle.setWordWrap(True)
+        subtitle.setFont(font(13, 400))
+        subtitle.setStyleSheet(f"color:{C.MUTED};")
+        root.addWidget(subtitle)
+
+        self.search_edit = QLineEdit()
+        self.search_edit.setPlaceholderText(
+            "Search templates by name or assignment…"
+        )
+        self.search_edit.setClearButtonEnabled(True)
+        self.search_edit.setFont(font(13, 400))
+        self.search_edit.textChanged.connect(self._search_changed)
+        root.addWidget(self.search_edit)
+        find_shortcut = QShortcut(QKeySequence("Ctrl+F"), self)
+        find_shortcut.activated.connect(self._focus_search)
+
+        self.listing = QListWidget()
+        self.listing.setFont(font(13, 400))
+        self.listing.setSpacing(2)
+        self.listing.setWordWrap(True)
+        self.listing.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.listing.itemDoubleClicked.connect(
+            lambda _item: self._item_activated()
+        )
+        self.listing.itemSelectionChanged.connect(self._update_buttons)
+        for key in ("Return", "Enter"):
+            shortcut = QShortcut(QKeySequence(key), self.listing)
+            shortcut.activated.connect(self._item_activated)
+        root.addWidget(self.listing, 1)
+
+        self.empty_hint = QLabel("")
+        self.empty_hint.setWordWrap(True)
+        self.empty_hint.setFont(font(12, 400))
+        self.empty_hint.setStyleSheet(f"color:{C.MUTED};")
+        root.addWidget(self.empty_hint)
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        self.new_button = QPushButton("New…")
+        self.edit_button = QPushButton("Edit…")
+        self.delete_button = QPushButton("Delete")
+        for button in (
+            self.new_button,
+            self.edit_button,
+            self.delete_button,
+        ):
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setFont(font(13, 400))
+        self.new_button.setProperty("role", "primary")
+        self.new_button.clicked.connect(self.new_template)
+        self.edit_button.clicked.connect(self.edit_template)
+        self.delete_button.clicked.connect(self.delete_template)
+        buttons.addWidget(self.new_button)
+        buttons.addWidget(self.edit_button)
+        buttons.addWidget(self.delete_button)
+        buttons.addStretch(1)
+
+        self.apply_button: QPushButton | None = None
+        if self.pick_mode:
+            cancel = QPushButton("Cancel")
+            cancel.setCursor(Qt.CursorShape.PointingHandCursor)
+            cancel.setFont(font(13, 400))
+            cancel.setAutoDefault(False)
+            cancel.clicked.connect(self.reject)
+            self.apply_button = QPushButton(f"Apply to {count}")
+            self.apply_button.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.apply_button.setFont(font(13, 400))
+            self.apply_button.setProperty("role", "primary")
+            self.apply_button.setAutoDefault(True)
+            self.apply_button.setDefault(True)
+            self.apply_button.clicked.connect(self._apply)
+            buttons.addWidget(cancel)
+            buttons.addWidget(self.apply_button)
+        else:
+            close = QPushButton("Close")
+            close.setCursor(Qt.CursorShape.PointingHandCursor)
+            close.setFont(font(13, 400))
+            close.setAutoDefault(False)
+            close.clicked.connect(self.accept)
+            buttons.addWidget(close)
+        root.addLayout(buttons)
+
+        self._reload_list()
+
+    def _focus_search(self) -> None:
+        self.search_edit.setFocus(Qt.FocusReason.ShortcutFocusReason)
+        self.search_edit.selectAll()
+
+    def _search_changed(self, _text: str) -> None:
+        self._reload_list(select_id=self._current_id())
+
+    def _reload_list(self, select_id: int | None = None) -> None:
+        query = self.search_edit.text().strip().casefold()
+        templates = self.store.templates()
+        self.listing.clear()
+        for template in templates:
+            summary = self._summary(template)
+            if query and query not in summary.casefold():
+                continue
+            item = QListWidgetItem(summary)
+            item.setData(Qt.ItemDataRole.UserRole, template.id)
+            self.listing.addItem(item)
+            if select_id is not None and template.id == select_id:
+                self.listing.setCurrentItem(item)
+        if not templates:
+            self.empty_hint.setText(
+                "No templates yet. Use New… to create one."
+            )
+        elif self.listing.count() == 0:
+            self.empty_hint.setText("No templates match this search.")
+        else:
+            self.empty_hint.setText("")
+        self._update_buttons()
+
+    def _summary(self, template: Template) -> str:
+        parts: list[str] = []
+        if template.payee:
+            parts.append(f"Payee → {template.payee}")
+        if template.category_set:
+            if template.category_id is None:
+                parts.append("Category → Uncategorized")
+            else:
+                category = self.store.category(template.category_id)
+                parts.append(
+                    f"Category → {category.full_name}"
+                    if category is not None
+                    else "Category → Uncategorized"
+                )
+        if template.payment:
+            parts.append(f"Payment → {template.payment}")
+        if template.tags:
+            parts.append(f"Tags → {template.tags}")
+        if template.memo:
+            mode = {"append": " (append)", "overwrite": " (overwrite)"}.get(
+                template.memo_mode, ""
+            )
+            parts.append(f"Notes → {template.memo}{mode}")
+        assigned = " · ".join(parts) if parts else "No assignments"
+        return f"{template.name}\n{assigned}"
+
+    def _current_id(self) -> int | None:
+        item = self.listing.currentItem()
+        return int(item.data(Qt.ItemDataRole.UserRole)) if item is not None else None
+
+    def _update_buttons(self) -> None:
+        has_selection = self.listing.currentItem() is not None
+        self.edit_button.setEnabled(has_selection)
+        self.delete_button.setEnabled(has_selection)
+        if self.apply_button is not None:
+            self.apply_button.setEnabled(has_selection)
+
+    def _item_activated(self) -> None:
+        if self.pick_mode:
+            self._apply()
+        else:
+            self.edit_template()
+
+    def new_template(self) -> None:
+        dialog = TemplateDialog(self.store, parent=self)
+        if (
+            dialog.exec() == QDialog.DialogCode.Accepted
+            and dialog.template() is not None
+        ):
+            template_id = self.store.add_template(dialog.template())
+            self.changed = True
+            self._reload_list(template_id)
+
+    def edit_template(self) -> None:
+        template_id = self._current_id()
+        if template_id is None:
+            return
+        template = self.store.template(template_id)
+        if template is None:
+            return
+        dialog = TemplateDialog(self.store, template, self)
+        if (
+            dialog.exec() == QDialog.DialogCode.Accepted
+            and dialog.template() is not None
+        ):
+            self.store.update_template(dialog.template())
+            self.changed = True
+            self._reload_list(template_id)
+
+    def delete_template(self) -> None:
+        template_id = self._current_id()
+        if template_id is None:
+            return
+        template = self.store.template(template_id)
+        if template is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            "Delete template?",
+            f"Delete “{template.name}”?\n\nThis only removes the template; "
+            "transactions it already changed keep their values.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self.store.delete_template(template_id)
+        self.changed = True
+        self._reload_list()
+
+    def _apply(self) -> None:
+        template_id = self._current_id()
+        if template_id is None:
+            return
+        template = self.store.template(template_id)
+        if template is None:
+            return
+        self._selected = template
+        self.accept()
+
+    def template_values(self) -> Template | None:
+        """The template chosen for application, after the dialog is accepted."""
+        return self._selected
 
 
 class RulesDialog(QDialog):

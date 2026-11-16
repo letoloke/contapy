@@ -28,7 +28,6 @@ from .csv_io import (
 )
 from .models import (
     Account,
-    TemplateValues,
     Balance,
     BudgetStatus,
     Category,
@@ -39,6 +38,7 @@ from .models import (
     ScheduledItem,
     Slice,
     SplitDraft,
+    Template,
     TransactionDraft,
     TransactionRow,
 )
@@ -231,6 +231,23 @@ CREATE TABLE IF NOT EXISTS rules (
     tags_overwrite    INTEGER NOT NULL DEFAULT 0,
     assign_memo       TEXT NOT NULL DEFAULT '',
     memo_overwrite    INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS templates (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    name               TEXT NOT NULL DEFAULT '',
+    sort_order         INTEGER NOT NULL DEFAULT 0,
+    payee              TEXT NOT NULL DEFAULT '',
+    payee_overwrite    INTEGER NOT NULL DEFAULT 0,
+    category_id        INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+    category_set       INTEGER NOT NULL DEFAULT 0,
+    category_overwrite INTEGER NOT NULL DEFAULT 0,
+    payment            TEXT NOT NULL DEFAULT '',
+    payment_overwrite  INTEGER NOT NULL DEFAULT 0,
+    tags               TEXT NOT NULL DEFAULT '',
+    tags_overwrite     INTEGER NOT NULL DEFAULT 0,
+    memo               TEXT NOT NULL DEFAULT '',
+    memo_mode          TEXT NOT NULL DEFAULT 'empty'
 );
 
 CREATE TABLE IF NOT EXISTS import_profiles (
@@ -2236,9 +2253,103 @@ class DataStore:
                 changed.append(int(transaction_id))
         return changed
 
+    # --------------------------------------------------------------- templates
+    @staticmethod
+    def _template_from_row(row: sqlite3.Row) -> Template:
+        return Template(
+            id=int(row["id"]),
+            name=row["name"],
+            sort_order=int(row["sort_order"]),
+            payee=row["payee"],
+            payee_overwrite=bool(row["payee_overwrite"]),
+            category_id=row["category_id"],
+            category_set=bool(row["category_set"]),
+            category_overwrite=bool(row["category_overwrite"]),
+            payment=row["payment"],
+            payment_overwrite=bool(row["payment_overwrite"]),
+            tags=row["tags"],
+            tags_overwrite=bool(row["tags_overwrite"]),
+            memo=row["memo"],
+            memo_mode=row["memo_mode"] or "empty",
+        )
+
+    def templates(self) -> list[Template]:
+        """All saved templates in display order."""
+        return [
+            self._template_from_row(row)
+            for row in self._rows(
+                "SELECT * FROM templates ORDER BY sort_order, id"
+            )
+        ]
+
+    def template(self, template_id: int) -> Template | None:
+        row = self.conn.execute(
+            "SELECT * FROM templates WHERE id=?", (template_id,)
+        ).fetchone()
+        return self._template_from_row(row) if row is not None else None
+
+    def add_template(self, template: Template) -> int:
+        order = template.sort_order
+        if not order:
+            row = self.conn.execute(
+                "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM templates"
+            ).fetchone()
+            order = int(row[0])
+        cur = self.conn.execute(
+            "INSERT INTO templates(name, sort_order, payee, payee_overwrite, "
+            "category_id, category_set, category_overwrite, payment, "
+            "payment_overwrite, tags, tags_overwrite, memo, memo_mode) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                template.name,
+                order,
+                template.payee,
+                1 if template.payee_overwrite else 0,
+                template.category_id,
+                1 if template.category_set else 0,
+                1 if template.category_overwrite else 0,
+                template.payment,
+                1 if template.payment_overwrite else 0,
+                template.tags,
+                1 if template.tags_overwrite else 0,
+                template.memo,
+                template.memo_mode,
+            ),
+        )
+        self.conn.commit()
+        return int(cur.lastrowid)
+
+    def update_template(self, template: Template) -> None:
+        self.conn.execute(
+            "UPDATE templates SET name=?, payee=?, payee_overwrite=?, "
+            "category_id=?, category_set=?, category_overwrite=?, payment=?, "
+            "payment_overwrite=?, tags=?, tags_overwrite=?, memo=?, "
+            "memo_mode=? WHERE id=?",
+            (
+                template.name,
+                template.payee,
+                1 if template.payee_overwrite else 0,
+                template.category_id,
+                1 if template.category_set else 0,
+                1 if template.category_overwrite else 0,
+                template.payment,
+                1 if template.payment_overwrite else 0,
+                template.tags,
+                1 if template.tags_overwrite else 0,
+                template.memo,
+                template.memo_mode,
+                template.id,
+            ),
+        )
+        self.conn.commit()
+
+    def delete_template(self, template_id: int) -> None:
+        self.conn.execute("DELETE FROM templates WHERE id=?", (template_id,))
+        self.conn.commit()
+
     @staticmethod
     def _template_changes(
-        row: sqlite3.Row, values: TemplateValues
+        row: sqlite3.Row, values: Template
     ) -> dict[str, object]:
         """Column updates for one transaction, honouring overwrite/fill rules."""
         updates: dict[str, object] = {}
@@ -2281,7 +2392,7 @@ class DataStore:
     def apply_template_to_transactions(
         self,
         transaction_ids: list[int],
-        values: TemplateValues,
+        values: Template,
     ) -> list[int]:
         """Apply template values directly to existing transactions.
 

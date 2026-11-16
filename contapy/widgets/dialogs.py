@@ -2818,7 +2818,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
             ("Ctrl+D", "Inherit a new transaction from the selection"),
             (
                 "Right-click / Apply Template…",
-                "Apply payee, category, payment, tags and notes to the selection",
+                "Choose a saved template and apply it to the selection",
             ),
             (
                 "Alt+V",
@@ -2831,6 +2831,16 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
         "Rules window",
         [
             ("Ctrl+F", "Focus the rule search box"),
+        ],
+    ),
+    (
+        "Templates window",
+        [
+            (
+                "Enter / double-click",
+                "Apply the selected template from the ledger, or edit it from Manage",
+            ),
+            ("Ctrl+F", "Focus the template search box"),
         ],
     ),
     (

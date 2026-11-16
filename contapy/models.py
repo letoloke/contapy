@@ -320,15 +320,19 @@ class Rule:
 
 
 @dataclass(slots=True)
-class TemplateValues:
-    """Values from a template applied directly to selected transactions.
+class Template:
+    """A saved set of assignment values applied directly to transactions.
 
-    Unlike a :class:`Rule`, this has no condition. Each text field is skipped
-    when empty. ``overwrite`` replaces the current value; otherwise the value
-    is only written where the transaction field is still empty. ``category_set``
-    distinguishes "leave the category alone" from "set Uncategorized".
+    Unlike a :class:`Rule`, a template has no condition. Each text field is
+    skipped when empty. ``overwrite`` replaces the current value; otherwise the
+    value is only written where the transaction field is still empty.
+    ``category_set`` distinguishes "leave the category alone" from "set
+    Uncategorized".
     """
 
+    id: int = 0
+    name: str = ""
+    sort_order: int = 0
     payee: str = ""
     payee_overwrite: bool = False
     category_id: int | None = None
