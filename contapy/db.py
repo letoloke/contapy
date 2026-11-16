@@ -28,7 +28,7 @@ from .csv_io import (
 )
 from .models import (
     Account,
-    AssignmentValues,
+    TemplateValues,
     Balance,
     BudgetStatus,
     Category,
@@ -2237,8 +2237,8 @@ class DataStore:
         return changed
 
     @staticmethod
-    def _assignment_changes(
-        row: sqlite3.Row, values: AssignmentValues
+    def _template_changes(
+        row: sqlite3.Row, values: TemplateValues
     ) -> dict[str, object]:
         """Column updates for one transaction, honouring overwrite/fill rules."""
         updates: dict[str, object] = {}
@@ -2278,12 +2278,12 @@ class DataStore:
                 updates["memo"] = new_memo
         return updates
 
-    def apply_assignments_to_transactions(
+    def apply_template_to_transactions(
         self,
         transaction_ids: list[int],
-        values: AssignmentValues,
+        values: TemplateValues,
     ) -> list[int]:
-        """Apply manual values directly to existing transactions.
+        """Apply template values directly to existing transactions.
 
         Transfer legs and split transactions are skipped because changing one
         side or the parent would break their linked data. All updates run in a
@@ -2318,7 +2318,7 @@ class DataStore:
                 f"FROM transactions WHERE id IN ({placeholders})",
                 chunk,
             ):
-                updates = self._assignment_changes(row, values)
+                updates = self._template_changes(row, values)
                 if updates:
                     changes[int(row["id"])] = updates
         if not changes:

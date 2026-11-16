@@ -320,8 +320,8 @@ class Rule:
 
 
 @dataclass(slots=True)
-class AssignmentValues:
-    """Manual values applied directly to selected transactions.
+class TemplateValues:
+    """Values from a template applied directly to selected transactions.
 
     Unlike a :class:`Rule`, this has no condition. Each text field is skipped
     when empty. ``overwrite`` replaces the current value; otherwise the value

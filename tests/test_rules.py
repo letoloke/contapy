@@ -14,12 +14,16 @@ from PySide6.QtWidgets import QApplication
 
 from contapy.db import DataStore
 from contapy.models import (
-    AssignmentValues,
     Rule,
     SplitDraft,
+    TemplateValues,
     TransactionDraft,
 )
-from contapy.widgets.rules import BatchApplyDialog, RuleDialog, RulesDialog
+from contapy.widgets.rules import (
+    ApplyTemplateDialog,
+    RuleDialog,
+    RulesDialog,
+)
 
 _APP: QApplication | None = None
 
@@ -548,7 +552,7 @@ class RuleDialogTests(unittest.TestCase):
         self.assertTrue(dialog.changed)
 
 
-class BatchAssignmentStoreTests(unittest.TestCase):
+class TemplateStoreTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.store = DataStore(Path(self.tmp.name) / "batch.db", seed=False)
@@ -585,9 +589,9 @@ class BatchAssignmentStoreTests(unittest.TestCase):
         )
         untouched = self.store.add_transaction(self.draft(payee="Untouched"))
 
-        changed = self.store.apply_assignments_to_transactions(
+        changed = self.store.apply_template_to_transactions(
             [empty, filled],
-            AssignmentValues(
+            TemplateValues(
                 payee="New payee",
                 payee_overwrite=False,
                 category_id=self.expense,
@@ -632,9 +636,9 @@ class BatchAssignmentStoreTests(unittest.TestCase):
             )
         )
 
-        changed = self.store.apply_assignments_to_transactions(
+        changed = self.store.apply_template_to_transactions(
             [transaction_id],
-            AssignmentValues(
+            TemplateValues(
                 payee="New",
                 payee_overwrite=True,
                 category_id=None,
@@ -670,9 +674,9 @@ class BatchAssignmentStoreTests(unittest.TestCase):
             )
         )
 
-        changed = self.store.apply_assignments_to_transactions(
+        changed = self.store.apply_template_to_transactions(
             [*transfer_ids, split_id],
-            AssignmentValues(payee="Changed", payee_overwrite=True),
+            TemplateValues(payee="Changed", payee_overwrite=True),
         )
 
         self.assertEqual(changed, [])
@@ -689,9 +693,9 @@ class BatchAssignmentStoreTests(unittest.TestCase):
             self.draft(payee="Already set", memo="Already noted")
         )
 
-        changed = self.store.apply_assignments_to_transactions(
+        changed = self.store.apply_template_to_transactions(
             [transaction_id],
-            AssignmentValues(
+            TemplateValues(
                 payee="Ignored",
                 payee_overwrite=False,
                 memo="Ignored",
@@ -702,7 +706,7 @@ class BatchAssignmentStoreTests(unittest.TestCase):
         self.assertEqual(changed, [])
 
 
-class BatchApplyDialogTests(unittest.TestCase):
+class ApplyTemplateDialogTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         app()
@@ -717,8 +721,8 @@ class BatchApplyDialogTests(unittest.TestCase):
         self.store.close()
         self.tmp.cleanup()
 
-    def test_dialog_returns_assignment_values_and_memo_modes(self) -> None:
-        dialog = BatchApplyDialog(self.store, 3)
+    def test_dialog_returns_template_values_and_memo_modes(self) -> None:
+        dialog = ApplyTemplateDialog(self.store, 3)
         self.addCleanup(dialog.deleteLater)
 
         dialog.payee_combo.setEditText("Café")
@@ -747,14 +751,14 @@ class BatchApplyDialogTests(unittest.TestCase):
         self.assertTrue(values.has_values())
 
     def test_blank_dialog_has_no_values_to_apply(self) -> None:
-        dialog = BatchApplyDialog(self.store, 1)
+        dialog = ApplyTemplateDialog(self.store, 1)
         self.addCleanup(dialog.deleteLater)
 
         self.assertFalse(dialog.values().has_values())
         self.assertEqual(dialog.values().memo_mode, "empty")
 
     def test_typed_uncategorized_clears_the_category(self) -> None:
-        dialog = BatchApplyDialog(self.store, 1)
+        dialog = ApplyTemplateDialog(self.store, 1)
         self.addCleanup(dialog.deleteLater)
 
         dialog.category_combo.setEditText("Uncategorized")

@@ -2817,7 +2817,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
             ("Ctrl+N", "New transaction"),
             ("Ctrl+D", "Inherit a new transaction from the selection"),
             (
-                "Right-click / Apply Values…",
+                "Right-click / Apply Template…",
                 "Apply payee, category, payment, tags and notes to the selection",
             ),
             (

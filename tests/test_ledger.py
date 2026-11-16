@@ -18,9 +18,9 @@ from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from contapy.db import DataStore
 from contapy.models import (
-    AssignmentValues,
     Rule,
     SplitDraft,
+    TemplateValues,
     TransactionDraft,
     TransactionRow,
 )
@@ -905,43 +905,43 @@ class LedgerHintTests(unittest.TestCase):
         self.window.table.clearSelection()
         self.assertNotIn("Alt+V", self.window.keyboard_hint.text())
 
-    def test_apply_values_updates_selection_and_pushes_undo(self) -> None:
-        self.assertFalse(self.window.act_apply_values.isEnabled())
-        self.assertFalse(self.window.apply_values_btn.isEnabled())
+    def test_apply_template_updates_selection_and_pushes_undo(self) -> None:
+        self.assertFalse(self.window.act_apply_template.isEnabled())
+        self.assertFalse(self.window.apply_template_btn.isEnabled())
         by_amount = {row.amount: row.id for row in self.window.model.rows}
         selected_ids = [by_amount[-400.0], by_amount[-600.0]]
         untouched_id = by_amount[-1_000.0]
         self.window._select_ids(selected_ids)
-        self.assertTrue(self.window.act_apply_values.isEnabled())
-        self.assertTrue(self.window.apply_values_btn.isEnabled())
+        self.assertTrue(self.window.act_apply_template.isEnabled())
+        self.assertTrue(self.window.apply_template_btn.isEnabled())
 
-        values = AssignmentValues(
+        values = TemplateValues(
             payee="Batch payee",
             payee_overwrite=True,
             tags="bulk",
             tags_overwrite=True,
         )
 
-        class FakeBatchDialog:
+        class FakeTemplateDialog:
             count = 0
 
             def __init__(self, store, count, parent=None) -> None:
-                FakeBatchDialog.count = count
+                FakeTemplateDialog.count = count
 
             def exec(self) -> QDialog.DialogCode:
                 return QDialog.DialogCode.Accepted
 
-            def assignment_values(self) -> AssignmentValues:
+            def template_values(self) -> TemplateValues:
                 return values
 
         changed_emitted: list[bool] = []
         self.window.changed.connect(lambda: changed_emitted.append(True))
         with mock.patch(
-            "contapy.widgets.ledger.BatchApplyDialog", FakeBatchDialog
+            "contapy.widgets.ledger.ApplyTemplateDialog", FakeTemplateDialog
         ):
-            self.window.apply_values_to_selected()
+            self.window.apply_template_to_selected()
 
-        self.assertEqual(FakeBatchDialog.count, 2)
+        self.assertEqual(FakeTemplateDialog.count, 2)
         rows = {
             row.id: row for row in self.store.ledger_rows(self.window.account_id)
         }
@@ -951,7 +951,7 @@ class LedgerHintTests(unittest.TestCase):
         self.assertEqual(rows[untouched_id].payee, "Test")
         self.assertEqual(rows[untouched_id].tags, "")
         self.assertEqual(
-            self.window.act_undo.text(), "Undo apply values"
+            self.window.act_undo.text(), "Undo apply template"
         )
         self.assertEqual(set(self.window._selected_ids()), set(selected_ids))
         self.assertTrue(changed_emitted)

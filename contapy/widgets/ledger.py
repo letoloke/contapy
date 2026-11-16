@@ -65,7 +65,7 @@ from .icons import (
     draw_void,
 )
 from .import_dialog import CsvImportDialog
-from .rules import BatchApplyDialog
+from .rules import ApplyTemplateDialog
 
 ROWS = 10
 FLAG, DATE, PAYEE, CATEGORY, TAGS, STATUS, EXPENSE, INCOME, BALANCE, MEMO = range(ROWS)
@@ -633,8 +633,8 @@ class LedgerWindow(QMainWindow):
 
         self.act_new = self._action("New Transaction…", self.add_transaction, "Ctrl+N")
         self.act_edit = self._action("Edit Transaction…", self.edit_transaction)
-        self.act_apply_values = self._action(
-            "Apply Values…", self.apply_values_to_selected
+        self.act_apply_template = self._action(
+            "Apply Template…", self.apply_template_to_selected
         )
         self.act_inherit = self._action("Inherit Transaction…", self.inherit_transaction, "Ctrl+D")
         self.act_delete = self._action("Delete Transaction", self.delete_transaction)
@@ -692,7 +692,7 @@ class LedgerWindow(QMainWindow):
         edit_menu.addAction(self.act_undo)
         edit_menu.addSeparator()
         edit_menu.addAction(self.act_edit)
-        edit_menu.addAction(self.act_apply_values)
+        edit_menu.addAction(self.act_apply_template)
         edit_menu.addAction(self.act_inherit)
         edit_menu.addAction(self.act_delete)
         edit_menu.addSeparator()
@@ -881,13 +881,13 @@ class LedgerWindow(QMainWindow):
         self.inherit_btn = QPushButton("Inherit")
         self.edit_btn = QPushButton("Edit")
         self.delete_btn = QPushButton("Delete")
-        self.apply_values_btn = QPushButton("Apply Values…")
+        self.apply_template_btn = QPushButton("Apply Template…")
         for button in (
             self.add_btn,
             self.inherit_btn,
             self.edit_btn,
             self.delete_btn,
-            self.apply_values_btn,
+            self.apply_template_btn,
         ):
             button.setProperty("role", "action")
             button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -897,7 +897,7 @@ class LedgerWindow(QMainWindow):
         self.inherit_btn.setFixedWidth(72)
         self.edit_btn.setFixedWidth(58)
         self.delete_btn.setFixedWidth(66)
-        self.apply_values_btn.setFixedWidth(112)
+        self.apply_template_btn.setFixedWidth(128)
 
         action_layout.addWidget(self._separator())
 
@@ -952,7 +952,7 @@ class LedgerWindow(QMainWindow):
         self.inherit_btn.clicked.connect(self.inherit_transaction)
         self.edit_btn.clicked.connect(self.edit_transaction)
         self.delete_btn.clicked.connect(self.delete_transaction)
-        self.apply_values_btn.clicked.connect(self.apply_values_to_selected)
+        self.apply_template_btn.clicked.connect(self.apply_template_to_selected)
         self.clear_btn.clicked.connect(lambda: self._set_cleared(True))
         self.reconcile_btn.clicked.connect(lambda: self._set_reconciled(True))
         self.remind_btn.clicked.connect(self._toggle_remind)
@@ -1311,7 +1311,7 @@ class LedgerWindow(QMainWindow):
             self.inherit_btn,
             self.edit_btn,
             self.delete_btn,
-            self.apply_values_btn,
+            self.apply_template_btn,
             self.clear_btn,
             self.reconcile_btn,
             self.remind_btn,
@@ -1321,7 +1321,7 @@ class LedgerWindow(QMainWindow):
             button.setEnabled(has_selection)
         for action in (
             self.act_edit,
-            self.act_apply_values,
+            self.act_apply_template,
             self.act_inherit,
             self.act_delete,
         ):
@@ -1349,7 +1349,7 @@ class LedgerWindow(QMainWindow):
                 )
         menu = QMenu(self)
         menu.addAction(self.act_edit)
-        menu.addAction(self.act_apply_values)
+        menu.addAction(self.act_apply_template)
         menu.addAction(self.act_inherit)
         menu.addAction(self.act_delete)
         menu.addSeparator()
@@ -1884,23 +1884,23 @@ class LedgerWindow(QMainWindow):
             parents, "transaction(s) in this account"
         )
 
-    def apply_values_to_selected(self) -> None:
-        """Apply manual assignment values to the selected transactions."""
+    def apply_template_to_selected(self) -> None:
+        """Apply a template to the selected transactions."""
         selected = self._selected_rows()
         eligible = self._rule_eligible(selected)
         skipped = len(selected) - len(eligible)
         if not eligible:
             self._show_message(
-                "Apply values",
+                "Apply template",
                 "No eligible transactions. Transfer legs, split transactions "
                 "and their child rows cannot be changed by the ledger action.",
             )
             return
 
-        dialog = BatchApplyDialog(self.store, len(eligible), self)
+        dialog = ApplyTemplateDialog(self.store, len(eligible), self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        values = dialog.assignment_values()
+        values = dialog.template_values()
         if values is None:
             return
 
@@ -1909,26 +1909,26 @@ class LedgerWindow(QMainWindow):
         before = self.store.snapshot_transactions(ids)
         splits_before = self.store.snapshot_splits(ids)
         try:
-            changed_ids = self.store.apply_assignments_to_transactions(
+            changed_ids = self.store.apply_template_to_transactions(
                 ids, values
             )
         except Exception as exc:
             self.store.restore_transactions(before, ids, splits_before)
-            QMessageBox.warning(self, "Apply values failed", str(exc))
+            QMessageBox.warning(self, "Apply template failed", str(exc))
             return
         if not changed_ids:
-            hint = "Values made no changes"
+            hint = "Template made no changes"
             if skipped:
                 hint += f" · {skipped} skipped"
             self._show_hint(hint)
             return
 
-        self._push_undo("apply values", before, ids, splits_before)
+        self._push_undo("apply template", before, ids, splits_before)
         self._log_activity(
-            f"Applied values to {len(changed_ids)} transaction(s)"
+            f"Applied template to {len(changed_ids)} transaction(s)"
         )
         self._keep_selection_after_change(selected_ids)
-        hint = f"Values applied · {len(changed_ids)} changed"
+        hint = f"Template applied · {len(changed_ids)} changed"
         if skipped:
             hint += f" · {skipped} skipped"
         self._show_hint(hint)

@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..db import DataStore
-from ..models import AssignmentValues, Rule, ordered_categories
+from ..models import Rule, TemplateValues, ordered_categories
 from ..theme import C, font
 from ..xhb_rules import import_xhb_rules
 from .dialogs import SearchCombo
@@ -433,8 +433,8 @@ class RuleDialog(_AssignmentFieldsMixin, QDialog):
         return self._rule
 
 
-class BatchApplyDialog(_AssignmentFieldsMixin, QDialog):
-    """Apply assignment values directly to a set of selected transactions."""
+class ApplyTemplateDialog(_AssignmentFieldsMixin, QDialog):
+    """Apply a template directly to a set of selected transactions."""
 
     def __init__(
         self,
@@ -445,8 +445,8 @@ class BatchApplyDialog(_AssignmentFieldsMixin, QDialog):
         super().__init__(parent)
         self.store = store
         self.count = count
-        self._values: AssignmentValues | None = None
-        self.setWindowTitle(f"Apply Values to {count} transaction(s)")
+        self._values: TemplateValues | None = None
+        self.setWindowTitle(f"Apply Template to {count} transaction(s)")
         self.setModal(True)
         self.setMinimumWidth(620)
 
@@ -454,12 +454,12 @@ class BatchApplyDialog(_AssignmentFieldsMixin, QDialog):
         root.setContentsMargins(20, 18, 20, 16)
         root.setSpacing(10)
 
-        heading = QLabel("Apply values")
+        heading = QLabel("Apply template")
         heading.setFont(font(18, 600))
         root.addWidget(heading)
 
         intro = QLabel(
-            f"Apply these values directly to the {count} selected "
+            f"Apply this template directly to the {count} selected "
             "transaction(s). There are no rule conditions. Leave a field blank "
             "to skip it; with Overwrite unchecked a value only fills a field "
             "that is still empty."
@@ -492,10 +492,10 @@ class BatchApplyDialog(_AssignmentFieldsMixin, QDialog):
         buttons.accepted.connect(self._save)
         root.addWidget(buttons)
 
-    def values(self) -> AssignmentValues:
+    def values(self) -> TemplateValues:
         """Values to apply, distinguishing blank fields from cleared ones."""
         category_text = self.category_combo.resolved_text()
-        return AssignmentValues(
+        return TemplateValues(
             payee=self.payee_combo.resolved_text(),
             payee_overwrite=self.payee_overwrite.isChecked(),
             category_id=self._resolved_category(),
@@ -535,7 +535,7 @@ class BatchApplyDialog(_AssignmentFieldsMixin, QDialog):
         self._values = values
         super().accept()
 
-    def assignment_values(self) -> AssignmentValues | None:
+    def template_values(self) -> TemplateValues | None:
         return self._values
 
 
