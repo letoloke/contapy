@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLineEdit, QVBoxLayout, QWidget
 
 from contapy.theme import apply_theme
 from contapy.widgets.dialogs import SearchCombo
@@ -21,8 +21,10 @@ class SearchComboSelectionTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
         apply_theme(cls.app)
 
-    def combo(self) -> SearchCombo:
-        widget = SearchCombo("Type a payee")
+    def combo(self, *, keep_text_unselected: bool = True) -> SearchCombo:
+        widget = SearchCombo(
+            "Type a payee", keep_text_unselected=keep_text_unselected
+        )
         widget.set_choices(
             [("Coffee Shop", "Coffee Shop")], select_first=False
         )
@@ -58,3 +60,26 @@ class SearchComboSelectionTests(unittest.TestCase):
         self.assertEqual(combo.currentText(), "Zzz more")
         self.assertEqual(combo.lineEdit().selectedText(), "")
         self.assertEqual(combo.lineEdit().cursorPosition(), len("Zzz more"))
+
+    def test_leaving_a_custom_value_does_not_steal_focus_back(self) -> None:
+        container = QWidget()
+        self.addCleanup(container.close)
+        self.addCleanup(container.deleteLater)
+        layout = QVBoxLayout(container)
+        combo = SearchCombo("Type a payee")
+        other = QLineEdit()
+        layout.addWidget(combo)
+        layout.addWidget(other)
+        container.show()
+        container.raise_()
+        container.activateWindow()
+        QTest.qWait(20)
+        combo.setEditText("Custom payee")
+        combo.lineEdit().setFocus()
+        QTest.qWait(20)
+
+        other.setFocus()
+        QTest.qWait(20)
+
+        self.assertIs(container.focusWidget(), other)
+        self.assertEqual(combo.currentText(), "Custom payee")

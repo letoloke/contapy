@@ -261,7 +261,8 @@ class RuleDialog(QDialog):
         self._assignment_row(grid, 0, "Payee", self.payee_combo, self.payee_overwrite)
 
         self.category_combo = SearchCombo(
-            "Leave blank, or type a category / Parent : Child"
+            "Leave blank, or type a category / Parent : Child",
+            keep_text_unselected=True,
         )
         self.category_combo.set_choices(
             [

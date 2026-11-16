@@ -94,9 +94,11 @@ class SearchCombo(QComboBox):
         placeholder: str = "",
         parent: QWidget | None = None,
         auto_match: bool = True,
+        keep_text_unselected: bool = False,
     ):
         super().__init__(parent)
         self._auto_match = auto_match
+        self._keep_text_unselected = keep_text_unselected
         self.setEditable(True)
         self.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -210,6 +212,8 @@ class SearchCombo(QComboBox):
 
     def focusInEvent(self, event):  # noqa: N802
         super().focusInEvent(event)
+        if not self._keep_text_unselected:
+            return
         line = self.lineEdit()
         if event.reason() in (
             Qt.FocusReason.TabFocusReason,
@@ -223,14 +227,6 @@ class SearchCombo(QComboBox):
             position = line.cursorPosition()
             line.deselect()
             line.setCursorPosition(position)
-
-    def focusOutEvent(self, event):  # noqa: N802
-        text = self.currentText().strip()
-        super().focusOutEvent(event)
-        if text and self.findText(text, Qt.MatchFlag.MatchExactly) < 0:
-            self.setCurrentIndex(-1)
-            self.setEditText(text)
-            self.lineEdit().end(False)
 
 
 def _info_button(text: str, parent: QWidget) -> IconButton:
@@ -816,7 +812,8 @@ class TransactionDialog(QDialog):
         root.addWidget(self.payee_row)
 
         self.category_combo = SearchCombo(
-            "Type a category, or Parent : Child to add one"
+            "Type a category, or Parent : Child to add one",
+            keep_text_unselected=True,
         )
         self._rebuild_categories("expense")
         self.category_row = self._field_row(
