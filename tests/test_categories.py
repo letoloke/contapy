@@ -420,6 +420,45 @@ class CategoryDialogTests(unittest.TestCase):
         dialog._reload_list(select_id=child)
         self.assertEqual(dialog._selected_category().full_name, "Bills : Water")
 
+    def test_categories_dialog_searches_both_tabs(self) -> None:
+        store = self._store()
+        bills = store.add_category("Bills", "expense")
+        store.add_category("Electricity", "expense", bills)
+        store.add_category("Salary", "income")
+        dialog = CategoriesDialog(store)
+        self.addCleanup(dialog.deleteLater)
+
+        dialog.search_edit.setText("electricity")
+        self.assertEqual(
+            [
+                dialog.expense_listing.item(i).text().split("\n")[0]
+                for i in range(dialog.expense_listing.count())
+            ],
+            ["Bills : Electricity"],
+        )
+        self.assertEqual(dialog.income_listing.count(), 0)
+        self.assertEqual(dialog.tabs.tabText(0), "Expense (1/2)")
+        self.assertEqual(dialog.tabs.tabText(1), "Income (0/1)")
+
+        dialog.search_edit.setText("salary")
+        self.assertEqual(dialog.expense_listing.count(), 0)
+        self.assertEqual(
+            [
+                dialog.income_listing.item(i).text().split("\n")[0]
+                for i in range(dialog.income_listing.count())
+            ],
+            ["Salary"],
+        )
+        self.assertIs(dialog.tabs.currentWidget(), dialog.income_listing)
+
+        dialog.search_edit.setText("no matching category")
+        self.assertEqual(dialog.expense_listing.count(), 0)
+        self.assertEqual(dialog.income_listing.count(), 0)
+
+        dialog.search_edit.clear()
+        self.assertEqual(dialog.tabs.tabText(0), "Expense (2)")
+        self.assertEqual(dialog.tabs.tabText(1), "Income (1)")
+
     def test_new_category_dialog_opens_on_the_active_tab_type(self) -> None:
         store = self._store()
         dialog = CategoryDialog(store, kind="income")

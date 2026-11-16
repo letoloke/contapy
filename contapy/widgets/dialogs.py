@@ -2419,6 +2419,17 @@ class CategoriesDialog(QDialog):
         sub.setStyleSheet(f"color:{C.MUTED};")
         root.addWidget(sub)
 
+        self.search_edit = QLineEdit()
+        self.search_edit.setPlaceholderText(
+            "Search categories by name or parent…"
+        )
+        self.search_edit.setClearButtonEnabled(True)
+        self.search_edit.setFont(font(13, 400))
+        self.search_edit.textChanged.connect(self._search_changed)
+        root.addWidget(self.search_edit)
+        find_shortcut = QShortcut(QKeySequence("Ctrl+F"), self)
+        find_shortcut.activated.connect(self._focus_search)
+
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
         self.tabs.tabBar().setDrawBase(False)
@@ -2485,8 +2496,17 @@ class CategoriesDialog(QDialog):
     def _current_kind(self) -> str:
         return "income" if self.tabs.currentWidget() is self.income_listing else "expense"
 
+    def _focus_search(self) -> None:
+        self.search_edit.setFocus(Qt.FocusReason.ShortcutFocusReason)
+        self.search_edit.selectAll()
+
+    def _search_changed(self, _text: str) -> None:
+        selected = self._selected_category()
+        self._reload_list(select_id=selected.id if selected is not None else None)
+
     def _reload_list(self, select_id: int | None = None) -> None:
         categories = ordered_categories(self.store.categories())
+        query = self.search_edit.text().strip().casefold()
         subs_by_parent: dict[int, int] = {}
         for category in categories:
             if category.parent_id is not None:
@@ -2499,18 +2519,42 @@ class CategoriesDialog(QDialog):
             "income": self.income_listing,
         }
         counts = {"expense": 0, "income": 0}
+        visible = {"expense": 0, "income": 0}
         for listing in listings.values():
             listing.clear()
         for category in categories:
             kind = "income" if category.kind == "income" else "expense"
+            counts[kind] += 1
+            if query and query not in category.full_name.casefold():
+                continue
             detail = ""
             if category.parent_id is None and subs_by_parent.get(category.id):
                 detail = f"{subs_by_parent[category.id]} subcategories"
             listings[kind].addItem(self._item(category, detail))
-            counts[kind] += 1
+            visible[kind] += 1
 
-        self.tabs.setTabText(0, f"Expense ({counts['expense']})")
-        self.tabs.setTabText(1, f"Income ({counts['income']})")
+        if query:
+            self.tabs.setTabText(
+                0, f"Expense ({visible['expense']}/{counts['expense']})"
+            )
+            self.tabs.setTabText(
+                1, f"Income ({visible['income']}/{counts['income']})"
+            )
+            if (
+                self.tabs.currentIndex() == 0
+                and visible["expense"] == 0
+                and visible["income"] > 0
+            ):
+                self.tabs.setCurrentIndex(1)
+            elif (
+                self.tabs.currentIndex() == 1
+                and visible["income"] == 0
+                and visible["expense"] > 0
+            ):
+                self.tabs.setCurrentIndex(0)
+        else:
+            self.tabs.setTabText(0, f"Expense ({counts['expense']})")
+            self.tabs.setTabText(1, f"Income ({counts['income']})")
 
         if select_id is not None:
             self._select_category(select_id)
@@ -2803,6 +2847,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
         [
             ("Enter", "Edit the selected category"),
             ("Delete", "Delete the selected category"),
+            ("Ctrl+F", "Focus the category search box"),
         ],
     ),
     (
