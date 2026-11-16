@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPushButton,
     QStyle,
@@ -55,7 +56,6 @@ from ..models import Account, Balance, SplitDraft, TransactionDraft, Transaction
 from ..money import money
 from ..theme import C, CLEARED, font
 from .dialogs import BulkEditDialog, DateRangeDialog, TransactionDialog
-from .import_dialog import CsvImportDialog
 from .icons import (
     IconButton,
     draw_bell,
@@ -64,6 +64,8 @@ from .icons import (
     draw_reconciled,
     draw_void,
 )
+from .import_dialog import CsvImportDialog
+from .rules import BatchApplyDialog
 
 ROWS = 10
 FLAG, DATE, PAYEE, CATEGORY, TAGS, STATUS, EXPENSE, INCOME, BALANCE, MEMO = range(ROWS)
@@ -631,6 +633,9 @@ class LedgerWindow(QMainWindow):
 
         self.act_new = self._action("New Transaction…", self.add_transaction, "Ctrl+N")
         self.act_edit = self._action("Edit Transaction…", self.edit_transaction)
+        self.act_apply_values = self._action(
+            "Apply Values…", self.apply_values_to_selected
+        )
         self.act_inherit = self._action("Inherit Transaction…", self.inherit_transaction, "Ctrl+D")
         self.act_delete = self._action("Delete Transaction", self.delete_transaction)
         self.act_select_all = self._action("Select All", self._select_all)
@@ -687,6 +692,7 @@ class LedgerWindow(QMainWindow):
         edit_menu.addAction(self.act_undo)
         edit_menu.addSeparator()
         edit_menu.addAction(self.act_edit)
+        edit_menu.addAction(self.act_apply_values)
         edit_menu.addAction(self.act_inherit)
         edit_menu.addAction(self.act_delete)
         edit_menu.addSeparator()
@@ -821,6 +827,8 @@ class LedgerWindow(QMainWindow):
             self.act_copy_amount,
         ):
             self.table.addAction(action)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
         self.edit_key = QShortcut(QKeySequence("E"), self.table)
         self.edit_key.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.edit_key.activated.connect(self.edit_transaction)
@@ -873,7 +881,14 @@ class LedgerWindow(QMainWindow):
         self.inherit_btn = QPushButton("Inherit")
         self.edit_btn = QPushButton("Edit")
         self.delete_btn = QPushButton("Delete")
-        for button in (self.add_btn, self.inherit_btn, self.edit_btn, self.delete_btn):
+        self.apply_values_btn = QPushButton("Apply Values…")
+        for button in (
+            self.add_btn,
+            self.inherit_btn,
+            self.edit_btn,
+            self.delete_btn,
+            self.apply_values_btn,
+        ):
             button.setProperty("role", "action")
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setFont(font(13, 400))
@@ -882,6 +897,7 @@ class LedgerWindow(QMainWindow):
         self.inherit_btn.setFixedWidth(72)
         self.edit_btn.setFixedWidth(58)
         self.delete_btn.setFixedWidth(66)
+        self.apply_values_btn.setFixedWidth(112)
 
         action_layout.addWidget(self._separator())
 
@@ -936,6 +952,7 @@ class LedgerWindow(QMainWindow):
         self.inherit_btn.clicked.connect(self.inherit_transaction)
         self.edit_btn.clicked.connect(self.edit_transaction)
         self.delete_btn.clicked.connect(self.delete_transaction)
+        self.apply_values_btn.clicked.connect(self.apply_values_to_selected)
         self.clear_btn.clicked.connect(lambda: self._set_cleared(True))
         self.reconcile_btn.clicked.connect(lambda: self._set_reconciled(True))
         self.remind_btn.clicked.connect(self._toggle_remind)
@@ -1294,6 +1311,7 @@ class LedgerWindow(QMainWindow):
             self.inherit_btn,
             self.edit_btn,
             self.delete_btn,
+            self.apply_values_btn,
             self.clear_btn,
             self.reconcile_btn,
             self.remind_btn,
@@ -1301,7 +1319,12 @@ class LedgerWindow(QMainWindow):
             self.void_btn,
         ):
             button.setEnabled(has_selection)
-        for action in (self.act_edit, self.act_inherit, self.act_delete):
+        for action in (
+            self.act_edit,
+            self.act_apply_values,
+            self.act_inherit,
+            self.act_delete,
+        ):
             action.setEnabled(has_selection)
         self.act_copy.setEnabled(has_selection)
         self.act_copy_memo.setEnabled(has_selection)
@@ -1313,6 +1336,28 @@ class LedgerWindow(QMainWindow):
     # ---------------------------------------------------------------- actions
     def _select_all(self) -> None:
         self.table.selectAll()
+
+    def _show_context_menu(self, pos) -> None:
+        index = self.table.indexAt(pos)
+        selection = self.table.selectionModel()
+        if index.isValid() and selection is not None:
+            selected_rows = {i.row() for i in selection.selectedRows(0)}
+            if index.row() not in selected_rows:
+                self.table.selectRow(index.row())
+                selection.setCurrentIndex(
+                    index, QItemSelectionModel.SelectionFlag.NoUpdate
+                )
+        menu = QMenu(self)
+        menu.addAction(self.act_edit)
+        menu.addAction(self.act_apply_values)
+        menu.addAction(self.act_inherit)
+        menu.addAction(self.act_delete)
+        menu.addSeparator()
+        menu.addAction(self.act_copy)
+        menu.addAction(self.act_paste)
+        menu.addSeparator()
+        menu.addAction(self.act_select_all)
+        menu.exec(self.table.viewport().mapToGlobal(pos))
 
     def _dialog_for(self, draft, title: str) -> TransactionDialog:
         return TransactionDialog(
@@ -1838,6 +1883,55 @@ class LedgerWindow(QMainWindow):
         self._apply_rules_to_rows(
             parents, "transaction(s) in this account"
         )
+
+    def apply_values_to_selected(self) -> None:
+        """Apply manual assignment values to the selected transactions."""
+        selected = self._selected_rows()
+        eligible = self._rule_eligible(selected)
+        skipped = len(selected) - len(eligible)
+        if not eligible:
+            self._show_message(
+                "Apply values",
+                "No eligible transactions. Transfer legs, split transactions "
+                "and their child rows cannot be changed by the ledger action.",
+            )
+            return
+
+        dialog = BatchApplyDialog(self.store, len(eligible), self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        values = dialog.assignment_values()
+        if values is None:
+            return
+
+        selected_ids = self._selected_ids()
+        ids = [row.id for row in eligible]
+        before = self.store.snapshot_transactions(ids)
+        splits_before = self.store.snapshot_splits(ids)
+        try:
+            changed_ids = self.store.apply_assignments_to_transactions(
+                ids, values
+            )
+        except Exception as exc:
+            self.store.restore_transactions(before, ids, splits_before)
+            QMessageBox.warning(self, "Apply values failed", str(exc))
+            return
+        if not changed_ids:
+            hint = "Values made no changes"
+            if skipped:
+                hint += f" · {skipped} skipped"
+            self._show_hint(hint)
+            return
+
+        self._push_undo("apply values", before, ids, splits_before)
+        self._log_activity(
+            f"Applied values to {len(changed_ids)} transaction(s)"
+        )
+        self._keep_selection_after_change(selected_ids)
+        hint = f"Values applied · {len(changed_ids)} changed"
+        if skipped:
+            hint += f" · {skipped} skipped"
+        self._show_hint(hint)
 
     def _log_activity(self, message: str) -> None:
         self.activity.emit(message)

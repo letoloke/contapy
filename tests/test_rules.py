@@ -13,8 +13,13 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from contapy.db import DataStore
-from contapy.models import Rule, SplitDraft, TransactionDraft
-from contapy.widgets.rules import RuleDialog, RulesDialog
+from contapy.models import (
+    AssignmentValues,
+    Rule,
+    SplitDraft,
+    TransactionDraft,
+)
+from contapy.widgets.rules import BatchApplyDialog, RuleDialog, RulesDialog
 
 _APP: QApplication | None = None
 
@@ -541,3 +546,219 @@ class RuleDialogTests(unittest.TestCase):
         item.setCheckState(Qt.CheckState.Unchecked)
         self.assertFalse(self.store.rule(rule_id).enabled)
         self.assertTrue(dialog.changed)
+
+
+class BatchAssignmentStoreTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = DataStore(Path(self.tmp.name) / "batch.db", seed=False)
+        self.account = self.store.add_account("Checking", "Bank", 1_000)
+        self.expense = self.store.ensure_category("Bills : Electricity", "expense")
+        self.other = self.store.ensure_category("Coffee", "expense")
+
+    def tearDown(self) -> None:
+        self.store.close()
+        self.tmp.cleanup()
+
+    def draft(self, **kwargs) -> TransactionDraft:
+        values = {
+            "date": "2026-11-11",
+            "account_id": self.account,
+            "payee": "",
+            "category_id": None,
+            "amount": -50.0,
+            "memo": "",
+        }
+        values.update(kwargs)
+        return TransactionDraft(**values)
+
+    def test_only_selected_rows_change_and_overwrite_is_per_field(self) -> None:
+        empty = self.store.add_transaction(self.draft())
+        filled = self.store.add_transaction(
+            self.draft(
+                payee="Old payee",
+                category_id=self.other,
+                payment="Cash",
+                tags="old",
+                memo="Existing memo",
+            )
+        )
+        untouched = self.store.add_transaction(self.draft(payee="Untouched"))
+
+        changed = self.store.apply_assignments_to_transactions(
+            [empty, filled],
+            AssignmentValues(
+                payee="New payee",
+                payee_overwrite=False,
+                category_id=self.expense,
+                category_set=True,
+                category_overwrite=True,
+                payment="Card",
+                payment_overwrite=False,
+                tags="tag",
+                tags_overwrite=False,
+                memo="note",
+                memo_mode="append",
+            ),
+        )
+
+        self.assertEqual(changed, [empty, filled])
+        first = self.store.transaction(empty)
+        second = self.store.transaction(filled)
+        third = self.store.transaction(untouched)
+        assert first is not None and second is not None and third is not None
+        self.assertEqual(first.payee, "New payee")
+        self.assertEqual(first.category_id, self.expense)
+        self.assertEqual(first.payment, "Card")
+        self.assertEqual(first.tags, "tag")
+        self.assertEqual(first.memo, "note")
+
+        self.assertEqual(second.payee, "Old payee")
+        self.assertEqual(second.category_id, self.expense)
+        self.assertEqual(second.payment, "Cash")
+        self.assertEqual(second.tags, "old")
+        self.assertEqual(second.memo, "Existing memo note")
+
+        self.assertEqual(third.payee, "Untouched")
+        self.assertIsNone(third.category_id)
+        self.assertEqual(third.memo, "")
+
+    def test_overwrite_can_clear_a_category_and_replace_a_memo(self) -> None:
+        transaction_id = self.store.add_transaction(
+            self.draft(
+                payee="Old",
+                category_id=self.other,
+                memo="Old memo",
+            )
+        )
+
+        changed = self.store.apply_assignments_to_transactions(
+            [transaction_id],
+            AssignmentValues(
+                payee="New",
+                payee_overwrite=True,
+                category_id=None,
+                category_set=True,
+                category_overwrite=True,
+                memo="Replacement",
+                memo_mode="overwrite",
+            ),
+        )
+
+        self.assertEqual(changed, [transaction_id])
+        row = self.store.transaction(transaction_id)
+        assert row is not None
+        self.assertEqual(row.payee, "New")
+        self.assertIsNone(row.category_id)
+        self.assertEqual(row.memo, "Replacement")
+
+    def test_transfers_and_splits_are_skipped(self) -> None:
+        destination = self.store.add_account("Savings", "Bank", 0)
+        group = self.store.add_transfer(
+            self.draft(payee="Transfer", amount=-100),
+            destination,
+        )
+        transfer_ids = [row.id for row in self.store.transfer_legs(group)]
+        split_id = self.store.add_transaction(
+            self.draft(
+                payee="Split",
+                amount=-100,
+                splits=[
+                    SplitDraft(self.expense, -60),
+                    SplitDraft(self.expense, -40),
+                ],
+            )
+        )
+
+        changed = self.store.apply_assignments_to_transactions(
+            [*transfer_ids, split_id],
+            AssignmentValues(payee="Changed", payee_overwrite=True),
+        )
+
+        self.assertEqual(changed, [])
+        for transaction_id in transfer_ids:
+            leg = self.store.transaction(transaction_id)
+            assert leg is not None
+            self.assertEqual(leg.payee, "Transfer")
+        split = self.store.transaction(split_id)
+        assert split is not None
+        self.assertEqual(split.payee, "Split")
+
+    def test_values_that_would_not_change_anything_are_not_reported(self) -> None:
+        transaction_id = self.store.add_transaction(
+            self.draft(payee="Already set", memo="Already noted")
+        )
+
+        changed = self.store.apply_assignments_to_transactions(
+            [transaction_id],
+            AssignmentValues(
+                payee="Ignored",
+                payee_overwrite=False,
+                memo="Ignored",
+                memo_mode="empty",
+            ),
+        )
+
+        self.assertEqual(changed, [])
+
+
+class BatchApplyDialogTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        app()
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = DataStore(Path(self.tmp.name) / "batch-ui.db", seed=False)
+        self.store.add_account("Checking", "Bank", 100)
+        self.category = self.store.ensure_category("Food : Coffee", "expense")
+
+    def tearDown(self) -> None:
+        self.store.close()
+        self.tmp.cleanup()
+
+    def test_dialog_returns_assignment_values_and_memo_modes(self) -> None:
+        dialog = BatchApplyDialog(self.store, 3)
+        self.addCleanup(dialog.deleteLater)
+
+        dialog.payee_combo.setEditText("Café")
+        dialog.payee_overwrite.setChecked(True)
+        dialog.category_combo.setCurrentIndex(
+            dialog.category_combo.findData(self.category)
+        )
+        dialog.category_combo.setEditText("Food : Coffee")
+        dialog.category_overwrite.setChecked(False)
+        dialog.payment_combo.setEditText("Cash")
+        dialog.tags_combo.setEditText("food coffee")
+        dialog.memo_edit.setText("Imported")
+        dialog.memo_mode.setCurrentIndex(dialog.memo_mode.findData("append"))
+
+        values = dialog.values()
+
+        self.assertEqual(values.payee, "Café")
+        self.assertTrue(values.payee_overwrite)
+        self.assertEqual(values.category_id, self.category)
+        self.assertTrue(values.category_set)
+        self.assertFalse(values.category_overwrite)
+        self.assertEqual(values.payment, "Cash")
+        self.assertEqual(values.tags, "food coffee")
+        self.assertEqual(values.memo, "Imported")
+        self.assertEqual(values.memo_mode, "append")
+        self.assertTrue(values.has_values())
+
+    def test_blank_dialog_has_no_values_to_apply(self) -> None:
+        dialog = BatchApplyDialog(self.store, 1)
+        self.addCleanup(dialog.deleteLater)
+
+        self.assertFalse(dialog.values().has_values())
+        self.assertEqual(dialog.values().memo_mode, "empty")
+
+    def test_typed_uncategorized_clears_the_category(self) -> None:
+        dialog = BatchApplyDialog(self.store, 1)
+        self.addCleanup(dialog.deleteLater)
+
+        dialog.category_combo.setEditText("Uncategorized")
+        values = dialog.values()
+
+        self.assertTrue(values.category_set)
+        self.assertIsNone(values.category_id)

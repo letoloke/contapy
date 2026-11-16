@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..db import DataStore
-from ..models import Rule, ordered_categories
+from ..models import AssignmentValues, Rule, ordered_categories
 from ..theme import C, font
 from ..xhb_rules import import_xhb_rules
 from .dialogs import SearchCombo
@@ -75,7 +75,119 @@ def _overwrite_check(tooltip: str) -> QCheckBox:
     return check
 
 
-class RuleDialog(QDialog):
+class _AssignmentFieldsMixin:
+    """Shared Payee/Category/Payment/Tags/Notes assignment form."""
+
+    store: DataStore
+
+    # ----------------------------------------------------------- assignments
+    def _build_assignments(
+        self, layout: QVBoxLayout, *, memo_modes: bool = False
+    ) -> None:
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(5)
+
+        self.payee_combo = SearchCombo(
+            "Leave blank to keep the payee", auto_match=False
+        )
+        self.payee_combo.set_choices(
+            [(payee, payee) for payee in self.store.payees()], select_first=False
+        )
+        self.payee_overwrite = _overwrite_check(
+            "Replace the existing payee instead of only filling an empty one."
+        )
+        self._assignment_row(grid, 0, "Payee", self.payee_combo, self.payee_overwrite)
+
+        self.category_combo = SearchCombo(
+            "Leave blank, or type a category / Parent : Child",
+            keep_text_unselected=True,
+        )
+        self.category_combo.set_choices(
+            [
+                (category.full_name, category.id)
+                for category in ordered_categories(self.store.categories())
+            ],
+            select_first=False,
+        )
+        self.category_overwrite = _overwrite_check(
+            "Replace the existing category instead of only filling an empty one."
+        )
+        self._assignment_row(
+            grid, 1, "Category", self.category_combo, self.category_overwrite
+        )
+
+        self.payment_combo = SearchCombo(
+            "Leave blank to keep the payment type", auto_match=False
+        )
+        self.payment_combo.set_choices(
+            [(payment, payment) for payment in self.store.payments()],
+            select_first=False,
+        )
+        self.payment_overwrite = _overwrite_check(
+            "Replace the existing payment type instead of only filling it."
+        )
+        self._assignment_row(
+            grid, 2, "Payment", self.payment_combo, self.payment_overwrite
+        )
+
+        self.tags_combo = SearchCombo("Space-separated tags", auto_match=False)
+        self.tags_combo.set_choices(
+            [(tag, tag) for tag in self.store.tags()], select_first=False
+        )
+        self.tags_overwrite = _overwrite_check(
+            "Replace the existing tags instead of only filling them."
+        )
+        self._assignment_row(grid, 3, "Tags", self.tags_combo, self.tags_overwrite)
+
+        self.memo_edit = QLineEdit()
+        if memo_modes:
+            self.memo_edit.setPlaceholderText(
+                "Note to fill, append or replace"
+            )
+            self.memo_mode = QComboBox()
+            self.memo_mode.addItem("Fill empty", "empty")
+            self.memo_mode.addItem("Append", "append")
+            self.memo_mode.addItem("Overwrite", "overwrite")
+            self.memo_mode.setFixedWidth(108)
+            self._assignment_row(grid, 4, "Notes", self.memo_edit, self.memo_mode)
+        else:
+            self.memo_edit.setPlaceholderText("Default note added to the memo")
+            self.memo_overwrite = _overwrite_check(
+                "Replace the existing memo instead of only filling an empty one."
+            )
+            self._assignment_row(
+                grid, 4, "Notes", self.memo_edit, self.memo_overwrite
+            )
+
+        layout.addLayout(grid)
+
+    def _assignment_row(
+        self,
+        grid: QGridLayout,
+        row: int,
+        text: str,
+        widget: QWidget,
+        overwrite: QWidget,
+    ) -> None:
+        grid.addWidget(_label(text), row, 0)
+        grid.addWidget(widget, row, 1)
+        grid.addWidget(overwrite, row, 2)
+
+    def _resolved_category(self) -> int | None:
+        category_id = self.category_combo.resolved_data()
+        typed = self.category_combo.resolved_text()
+        if category_id is not None or not typed:
+            return category_id
+        if typed.casefold() == "uncategorized":
+            return None
+        try:
+            return self.store.ensure_category(typed, "expense")
+        except ValueError:
+            return None
+
+
+class RuleDialog(_AssignmentFieldsMixin, QDialog):
     """Create or edit one assignment rule."""
 
     def __init__(
@@ -245,81 +357,6 @@ class RuleDialog(QDialog):
         self.case_check.setEnabled(has_text)
         self.regex_check.setEnabled(has_text)
 
-    # ----------------------------------------------------------- assignments
-    def _build_assignments(self, layout: QVBoxLayout) -> None:
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(5)
-
-        self.payee_combo = SearchCombo("Leave blank to keep the payee", auto_match=False)
-        self.payee_combo.set_choices(
-            [(payee, payee) for payee in self.store.payees()], select_first=False
-        )
-        self.payee_overwrite = _overwrite_check(
-            "Replace the existing payee instead of only filling an empty one."
-        )
-        self._assignment_row(grid, 0, "Payee", self.payee_combo, self.payee_overwrite)
-
-        self.category_combo = SearchCombo(
-            "Leave blank, or type a category / Parent : Child",
-            keep_text_unselected=True,
-        )
-        self.category_combo.set_choices(
-            [
-                (category.full_name, category.id)
-                for category in ordered_categories(self.store.categories())
-            ],
-            select_first=False,
-        )
-        self.category_overwrite = _overwrite_check(
-            "Replace the existing category instead of only filling an empty one."
-        )
-        self._assignment_row(
-            grid, 1, "Category", self.category_combo, self.category_overwrite
-        )
-
-        self.payment_combo = SearchCombo("Leave blank to keep the payment type", auto_match=False)
-        self.payment_combo.set_choices(
-            [(payment, payment) for payment in self.store.payments()],
-            select_first=False,
-        )
-        self.payment_overwrite = _overwrite_check(
-            "Replace the existing payment type instead of only filling it."
-        )
-        self._assignment_row(
-            grid, 2, "Payment", self.payment_combo, self.payment_overwrite
-        )
-
-        self.tags_combo = SearchCombo("Space-separated tags", auto_match=False)
-        self.tags_combo.set_choices(
-            [(tag, tag) for tag in self.store.tags()], select_first=False
-        )
-        self.tags_overwrite = _overwrite_check(
-            "Replace the existing tags instead of only filling them."
-        )
-        self._assignment_row(grid, 3, "Tags", self.tags_combo, self.tags_overwrite)
-
-        self.memo_edit = QLineEdit()
-        self.memo_edit.setPlaceholderText("Default note added to the memo")
-        self.memo_overwrite = _overwrite_check(
-            "Replace the existing memo instead of only filling an empty one."
-        )
-        self._assignment_row(grid, 4, "Notes", self.memo_edit, self.memo_overwrite)
-
-        layout.addLayout(grid)
-
-    def _assignment_row(
-        self,
-        grid: QGridLayout,
-        row: int,
-        text: str,
-        widget: QWidget,
-        overwrite: QCheckBox,
-    ) -> None:
-        grid.addWidget(_label(text), row, 0)
-        grid.addWidget(widget, row, 1)
-        grid.addWidget(overwrite, row, 2)
-
     # --------------------------------------------------------------- values
     def _populate(self, rule: Rule) -> None:
         self.name_edit.setText(rule.name)
@@ -350,18 +387,6 @@ class RuleDialog(QDialog):
         self.memo_overwrite.setChecked(rule.memo_overwrite)
         self._search_changed(rule.search)
         self._amount_toggled(rule.amount_enabled)
-
-    def _resolved_category(self) -> int | None:
-        category_id = self.category_combo.resolved_data()
-        typed = self.category_combo.resolved_text()
-        if category_id is not None or not typed:
-            return category_id
-        if typed.casefold() == "uncategorized":
-            return None
-        try:
-            return self.store.ensure_category(typed, "expense")
-        except ValueError:
-            return None
 
     def values(self) -> Rule:
         """Build the rule from the current form values."""
@@ -406,6 +431,112 @@ class RuleDialog(QDialog):
 
     def rule(self) -> Rule | None:
         return self._rule
+
+
+class BatchApplyDialog(_AssignmentFieldsMixin, QDialog):
+    """Apply assignment values directly to a set of selected transactions."""
+
+    def __init__(
+        self,
+        store: DataStore,
+        count: int,
+        parent: QWidget | None = None,
+    ):
+        super().__init__(parent)
+        self.store = store
+        self.count = count
+        self._values: AssignmentValues | None = None
+        self.setWindowTitle(f"Apply Values to {count} transaction(s)")
+        self.setModal(True)
+        self.setMinimumWidth(620)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(20, 18, 20, 16)
+        root.setSpacing(10)
+
+        heading = QLabel("Apply values")
+        heading.setFont(font(18, 600))
+        root.addWidget(heading)
+
+        intro = QLabel(
+            f"Apply these values directly to the {count} selected "
+            "transaction(s). There are no rule conditions. Leave a field blank "
+            "to skip it; with Overwrite unchecked a value only fills a field "
+            "that is still empty."
+        )
+        intro.setWordWrap(True)
+        intro.setFont(font(13, 400))
+        intro.setStyleSheet(f"color:{C.MUTED};")
+        root.addWidget(intro)
+
+        assignments, assignments_layout = _section(
+            "Assignments",
+            "Overwrite forces the value; otherwise a field is only filled when empty.",
+            self,
+        )
+        self._build_assignments(assignments_layout, memo_modes=True)
+        root.addWidget(assignments)
+
+        buttons = QDialogButtonBox()
+        cancel = buttons.addButton("Cancel", QDialogButtonBox.ButtonRole.RejectRole)
+        apply_button = buttons.addButton(
+            f"Apply to {count}", QDialogButtonBox.ButtonRole.AcceptRole
+        )
+        for button in (cancel, apply_button):
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel.setAutoDefault(False)
+        apply_button.setProperty("role", "primary")
+        apply_button.setAutoDefault(True)
+        apply_button.setDefault(True)
+        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self._save)
+        root.addWidget(buttons)
+
+    def values(self) -> AssignmentValues:
+        """Values to apply, distinguishing blank fields from cleared ones."""
+        category_text = self.category_combo.resolved_text()
+        return AssignmentValues(
+            payee=self.payee_combo.resolved_text(),
+            payee_overwrite=self.payee_overwrite.isChecked(),
+            category_id=self._resolved_category(),
+            category_set=bool(category_text),
+            category_overwrite=self.category_overwrite.isChecked(),
+            payment=self.payment_combo.resolved_text(),
+            payment_overwrite=self.payment_overwrite.isChecked(),
+            tags=self.tags_combo.resolved_text(),
+            tags_overwrite=self.tags_overwrite.isChecked(),
+            memo=self.memo_edit.text().strip(),
+            memo_mode=self.memo_mode.currentData(),
+        )
+
+    def _save(self) -> None:
+        category_text = self.category_combo.resolved_text()
+        category_id = self._resolved_category()
+        if (
+            category_text
+            and category_id is None
+            and category_text.casefold() != "uncategorized"
+        ):
+            QMessageBox.warning(
+                self,
+                "Invalid category",
+                f"“{category_text}” is not a valid category. Choose an existing "
+                "category or type Uncategorized.",
+            )
+            return
+        values = self.values()
+        if not values.has_values():
+            QMessageBox.warning(
+                self,
+                "Nothing to apply",
+                "Fill in at least one of Payee, Category, Payment, Tags or Notes.",
+            )
+            return
+        self._values = values
+        super().accept()
+
+    def assignment_values(self) -> AssignmentValues | None:
+        return self._values
 
 
 class RulesDialog(QDialog):

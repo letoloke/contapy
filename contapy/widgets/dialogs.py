@@ -2817,6 +2817,10 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
             ("Ctrl+N", "New transaction"),
             ("Ctrl+D", "Inherit a new transaction from the selection"),
             (
+                "Right-click / Apply Values…",
+                "Apply payee, category, payment, tags and notes to the selection",
+            ),
+            (
                 "Alt+V",
                 "Void the highlighted exact-amount matches and reconcile the selected rows",
             ),

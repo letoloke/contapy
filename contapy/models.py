@@ -317,3 +317,35 @@ class Rule:
                 re.compile(self.search)
             except re.error as error:
                 raise ValueError(f"Invalid regular expression: {error}") from error
+
+
+@dataclass(slots=True)
+class AssignmentValues:
+    """Manual values applied directly to selected transactions.
+
+    Unlike a :class:`Rule`, this has no condition. Each text field is skipped
+    when empty. ``overwrite`` replaces the current value; otherwise the value
+    is only written where the transaction field is still empty. ``category_set``
+    distinguishes "leave the category alone" from "set Uncategorized".
+    """
+
+    payee: str = ""
+    payee_overwrite: bool = False
+    category_id: int | None = None
+    category_set: bool = False
+    category_overwrite: bool = False
+    payment: str = ""
+    payment_overwrite: bool = False
+    tags: str = ""
+    tags_overwrite: bool = False
+    memo: str = ""
+    memo_mode: str = "empty"  # "empty", "append" or "overwrite"
+
+    def has_values(self) -> bool:
+        return bool(
+            self.payee
+            or self.category_set
+            or self.payment
+            or self.tags
+            or self.memo
+        )

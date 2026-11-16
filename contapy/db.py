@@ -28,6 +28,7 @@ from .csv_io import (
 )
 from .models import (
     Account,
+    AssignmentValues,
     Balance,
     BudgetStatus,
     Category,
@@ -2234,6 +2235,113 @@ class DataStore:
                 self.update_transaction(int(transaction_id), draft)
                 changed.append(int(transaction_id))
         return changed
+
+    @staticmethod
+    def _assignment_changes(
+        row: sqlite3.Row, values: AssignmentValues
+    ) -> dict[str, object]:
+        """Column updates for one transaction, honouring overwrite/fill rules."""
+        updates: dict[str, object] = {}
+
+        def is_empty(value: object) -> bool:
+            return not str(value or "").strip()
+
+        if values.payee and (
+            values.payee_overwrite or is_empty(row["payee"])
+        ):
+            if str(row["payee"] or "").strip() != values.payee:
+                updates["payee"] = values.payee
+        if values.category_set and (
+            values.category_overwrite or row["category_id"] is None
+        ):
+            if row["category_id"] != values.category_id:
+                updates["category_id"] = values.category_id
+        if values.payment and (
+            values.payment_overwrite or is_empty(row["payment"])
+        ):
+            if str(row["payment"] or "").strip() != values.payment:
+                updates["payment"] = values.payment
+        if values.tags and (values.tags_overwrite or is_empty(row["tags"])):
+            if str(row["tags"] or "").strip() != values.tags:
+                updates["tags"] = values.tags
+        if values.memo:
+            current = str(row["memo"] or "").strip()
+            if values.memo_mode == "overwrite":
+                new_memo: str | None = values.memo
+            elif values.memo_mode == "append":
+                new_memo = (
+                    values.memo if not current else f"{current} {values.memo}"
+                )
+            else:
+                new_memo = values.memo if not current else None
+            if new_memo is not None and str(row["memo"] or "") != new_memo:
+                updates["memo"] = new_memo
+        return updates
+
+    def apply_assignments_to_transactions(
+        self,
+        transaction_ids: list[int],
+        values: AssignmentValues,
+    ) -> list[int]:
+        """Apply manual values directly to existing transactions.
+
+        Transfer legs and split transactions are skipped because changing one
+        side or the parent would break their linked data. All updates run in a
+        single database transaction. Returns the ids that actually changed.
+        """
+        ids = sorted({int(transaction_id) for transaction_id in transaction_ids})
+        if not ids or not values.has_values():
+            return []
+
+        eligible: set[int] = set()
+        for start in range(0, len(ids), 500):
+            chunk = ids[start : start + 500]
+            placeholders = ",".join("?" for _ in chunk)
+            for row in self.conn.execute(
+                f"SELECT t.id FROM transactions t "
+                f"WHERE t.id IN ({placeholders}) AND t.transfer_id IS NULL "
+                f"AND NOT EXISTS (SELECT 1 FROM transaction_splits s "
+                f"WHERE s.transaction_id = t.id)",
+                chunk,
+            ):
+                eligible.add(int(row[0]))
+        if not eligible:
+            return []
+        ids = [transaction_id for transaction_id in ids if transaction_id in eligible]
+
+        changes: dict[int, dict[str, object]] = {}
+        for start in range(0, len(ids), 500):
+            chunk = ids[start : start + 500]
+            placeholders = ",".join("?" for _ in chunk)
+            for row in self.conn.execute(
+                f"SELECT id, payee, category_id, payment, tags, memo "
+                f"FROM transactions WHERE id IN ({placeholders})",
+                chunk,
+            ):
+                updates = self._assignment_changes(row, values)
+                if updates:
+                    changes[int(row["id"])] = updates
+        if not changes:
+            return []
+
+        with self.conn:
+            for column in ("payee", "category_id", "payment", "tags", "memo"):
+                pairs = [
+                    (transaction_id, updates[column])
+                    for transaction_id, updates in changes.items()
+                    if column in updates
+                ]
+                for start in range(0, len(pairs), 500):
+                    chunk = pairs[start : start + 500]
+                    cases = " ".join("WHEN ? THEN ?" for _ in chunk)
+                    params = [value for pair in chunk for value in pair]
+                    placeholders = ",".join("?" for _ in chunk)
+                    self.conn.execute(
+                        f"UPDATE transactions SET {column} = CASE id {cases} "
+                        f"ELSE {column} END WHERE id IN ({placeholders})",
+                        (*params, *(pair[0] for pair in chunk)),
+                    )
+        return sorted(changes)
 
     # ------------------------------------------------------------------ meta
     def get_setting(self, key: str, default: str | None = None) -> str | None:
