@@ -120,7 +120,6 @@ class SearchCombo(QComboBox):
             f" selection-color:{C.SELECTION_TEXT}; outline:0; padding:3px; }}"
         )
         self.lineEdit().textEdited.connect(self._update_completion)
-        self.lineEdit().installEventFilter(self)
         self._completer.activated[str].connect(self._apply_completion)
 
     def set_choices(
@@ -211,7 +210,19 @@ class SearchCombo(QComboBox):
 
     def focusInEvent(self, event):  # noqa: N802
         super().focusInEvent(event)
-        self.lineEdit().selectAll()
+        line = self.lineEdit()
+        if event.reason() in (
+            Qt.FocusReason.TabFocusReason,
+            Qt.FocusReason.BacktabFocusReason,
+            Qt.FocusReason.ShortcutFocusReason,
+        ):
+            # Keyboard focus starts at the end without selecting the value.
+            line.end(False)
+        else:
+            # Preserve the click position and remove any automatic selection.
+            position = line.cursorPosition()
+            line.deselect()
+            line.setCursorPosition(position)
 
     def focusOutEvent(self, event):  # noqa: N802
         text = self.currentText().strip()
@@ -219,11 +230,7 @@ class SearchCombo(QComboBox):
         if text and self.findText(text, Qt.MatchFlag.MatchExactly) < 0:
             self.setCurrentIndex(-1)
             self.setEditText(text)
-
-    def eventFilter(self, obj, event):  # noqa: N802
-        if obj is self.lineEdit() and event.type() == QEvent.Type.FocusIn:
-            self.lineEdit().selectAll()
-        return super().eventFilter(obj, event)
+            self.lineEdit().end(False)
 
 
 def _info_button(text: str, parent: QWidget) -> IconButton:
