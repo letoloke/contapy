@@ -8,7 +8,7 @@ an existing value or only fill a field that is still empty.
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -438,6 +438,17 @@ class RulesDialog(QDialog):
         subtitle.setStyleSheet(f"color:{C.MUTED};")
         root.addWidget(subtitle)
 
+        self.search_edit = QLineEdit()
+        self.search_edit.setPlaceholderText(
+            "Search rules by name, condition or assignment…"
+        )
+        self.search_edit.setClearButtonEnabled(True)
+        self.search_edit.setFont(font(13, 400))
+        self.search_edit.textChanged.connect(self._search_changed)
+        root.addWidget(self.search_edit)
+        find_shortcut = QShortcut(QKeySequence("Ctrl+F"), self)
+        find_shortcut.activated.connect(self._focus_search)
+
         self.listing = QListWidget()
         self.listing.setFont(font(13, 400))
         self.listing.setSpacing(2)
@@ -478,11 +489,23 @@ class RulesDialog(QDialog):
 
         self._reload_list()
 
+    def _focus_search(self) -> None:
+        self.search_edit.setFocus(Qt.FocusReason.ShortcutFocusReason)
+        self.search_edit.selectAll()
+
+    def _search_changed(self, _text: str) -> None:
+        current = self._current_id()
+        self._reload_list(select_id=current)
+
     def _reload_list(self, select_id: int | None = None) -> None:
+        query = self.search_edit.text().strip().casefold()
         self.listing.blockSignals(True)
         self.listing.clear()
         for rule in self.store.rules():
-            item = QListWidgetItem(self._summary(rule))
+            summary = self._summary(rule)
+            if query and query not in summary.casefold():
+                continue
+            item = QListWidgetItem(summary)
             item.setData(Qt.ItemDataRole.UserRole, rule.id)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(

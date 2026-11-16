@@ -417,6 +417,54 @@ class RuleDialogTests(unittest.TestCase):
         self.assertEqual(built.assign_memo, "Imported")
         self.assertTrue(built.memo_overwrite)
 
+    def test_manager_searches_rules_by_name_condition_and_assignment(self) -> None:
+        self.store.add_rule(
+            Rule(
+                name="Coffee",
+                search="coffee",
+                match_memo=True,
+                assign_payee="Café",
+            )
+        )
+        self.store.add_rule(
+            Rule(
+                name="Rent",
+                search="renta",
+                match_memo=True,
+                assign_payment="Transfer",
+            )
+        )
+        self.store.add_rule(
+            Rule(
+                name="Groceries",
+                search="market",
+                match_memo=True,
+                category_id=self.category,
+            )
+        )
+
+        dialog = RulesDialog(self.store)
+        self.addCleanup(dialog.deleteLater)
+        self.assertEqual(dialog.listing.count(), 3)
+
+        dialog.search_edit.setText("Café")
+        self.assertEqual(dialog.listing.count(), 1)
+        self.assertIn("Coffee", dialog.listing.item(0).text())
+
+        dialog.search_edit.setText("renta")
+        self.assertEqual(dialog.listing.count(), 1)
+        self.assertIn("Rent", dialog.listing.item(0).text())
+
+        dialog.search_edit.setText("Food : Coffee")
+        self.assertEqual(dialog.listing.count(), 1)
+        self.assertIn("Groceries", dialog.listing.item(0).text())
+
+        dialog.search_edit.setText("no matching rule")
+        self.assertEqual(dialog.listing.count(), 0)
+
+        dialog.search_edit.clear()
+        self.assertEqual(dialog.listing.count(), 3)
+
     def test_manager_lists_and_toggles_rules(self) -> None:
         rule_id = self.store.add_rule(
             Rule(name="Coffee", search="coffee", match_memo=True, assign_payee="Café")

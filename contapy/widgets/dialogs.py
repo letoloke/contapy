@@ -2774,6 +2774,12 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
         ],
     ),
     (
+        "Rules window",
+        [
+            ("Ctrl+F", "Focus the rule search box"),
+        ],
+    ),
+    (
         "Transaction window",
         [
             ("Enter", "Save the transaction"),
