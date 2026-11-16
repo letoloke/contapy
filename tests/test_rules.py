@@ -13,7 +13,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from contapy.db import DataStore
-from contapy.models import Rule, TransactionDraft
+from contapy.models import Rule, SplitDraft, TransactionDraft
 from contapy.widgets.rules import RuleDialog, RulesDialog
 
 _APP: QApplication | None = None
@@ -49,6 +49,67 @@ class RuleStoreTests(unittest.TestCase):
         }
         values.update(kwargs)
         return TransactionDraft(**values)
+
+    def test_apply_rules_to_existing_transactions(self) -> None:
+        self.store.add_rule(
+            Rule(
+                name="Coffee",
+                search="coffee",
+                match_memo=True,
+                assign_payee="Cafe",
+                assign_tags="morning",
+            )
+        )
+        transaction_id = self.store.add_transaction(
+            self.draft(payee="", memo="coffee with milk"),
+            apply_rules=False,
+        )
+
+        changed = self.store.apply_rules_to_transactions([transaction_id])
+
+        self.assertEqual(changed, [transaction_id])
+        row = self.store.transaction(transaction_id)
+        assert row is not None
+        self.assertEqual(row.payee, "Cafe")
+        self.assertEqual(row.tags, "morning")
+        self.assertEqual(
+            self.store.apply_rules_to_transactions([transaction_id]), []
+        )
+
+    def test_existing_rule_application_skips_transfers_and_splits(self) -> None:
+        self.store.add_rule(
+            Rule(
+                search="transfer",
+                match_payee=True,
+                assign_payee="Changed",
+                payee_overwrite=True,
+            )
+        )
+        destination = self.store.add_account("Savings", "Bank", 0)
+        group = self.store.add_transfer(
+            self.draft(payee="Transfer", amount=-100),
+            destination,
+        )
+        transfer_ids = [row.id for row in self.store.transfer_legs(group)]
+        self.assertEqual(
+            self.store.apply_rules_to_transactions(transfer_ids), []
+        )
+
+        category = self.store.ensure_category("Split Rule", "expense")
+        split_id = self.store.add_transaction(
+            self.draft(
+                payee="Split",
+                memo="transfer",
+                amount=-100,
+                splits=[
+                    SplitDraft(category, -60),
+                    SplitDraft(category, -40),
+                ],
+            )
+        )
+        self.assertEqual(
+            self.store.apply_rules_to_transactions([split_id]), []
+        )
 
     # ------------------------------------------------------------- matching
     def test_text_matching_memo_payee_and_case(self) -> None:

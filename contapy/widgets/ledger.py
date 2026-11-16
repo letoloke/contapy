@@ -697,6 +697,19 @@ class LedgerWindow(QMainWindow):
         self.act_void_highlighted.setEnabled(False)
         tools_menu.addAction(self.act_void_highlighted)
 
+        tools_menu.addSeparator()
+        apply_menu = tools_menu.addMenu("Apply Rules")
+        self.act_apply_rules_selected = self._action(
+            "To Selected Transactions",
+            self.apply_rules_to_selected,
+        )
+        self.act_apply_rules_all = self._action(
+            "To All Transactions in Account",
+            self.apply_rules_to_all,
+        )
+        apply_menu.addAction(self.act_apply_rules_selected)
+        apply_menu.addAction(self.act_apply_rules_all)
+
     # --------------------------------------------------------------------- ui
     def _build_ui(self) -> None:
         central = QWidget()
@@ -1271,6 +1284,8 @@ class LedgerWindow(QMainWindow):
             action.setEnabled(has_selection)
         self.act_copy.setEnabled(has_selection)
         self.act_copy_memo.setEnabled(has_selection)
+        self.act_apply_rules_selected.setEnabled(has_selection)
+        self.act_apply_rules_all.setEnabled(bool(self.model.rows))
         self.act_select_all.setEnabled(bool(self.model.rows))
 
     # ---------------------------------------------------------------- actions
@@ -1721,6 +1736,86 @@ class LedgerWindow(QMainWindow):
         self.delegate.highlight_ids = set()
         self.table.viewport().update()
         self.act_void_highlighted.setEnabled(False)
+
+    # ------------------------------------------------------------------ rules
+    @staticmethod
+    def _rule_eligible(rows: list[TransactionRow]) -> list[TransactionRow]:
+        return [
+            row
+            for row in rows
+            if not row.is_split_child and not row.transfer_id and not row.splits
+        ]
+
+    def _apply_rules_to_rows(
+        self, source_rows: list[TransactionRow], scope: str
+    ) -> None:
+        eligible = self._rule_eligible(source_rows)
+        skipped = len(source_rows) - len(eligible)
+        if not eligible:
+            self._show_message(
+                "Apply rules",
+                "No eligible transactions. Transfer legs, split transactions "
+                "and their child rows are not changed by the ledger rule action.",
+            )
+            return
+        if not any(rule.enabled for rule in self.store.rules()):
+            self._show_message(
+                "Apply rules",
+                "There are no enabled assignment rules. Create or enable rules "
+                "in Manage → Rules….",
+            )
+            return
+
+        message = (
+            f"Apply assignment rules to {len(eligible)} {scope}?"
+        )
+        if skipped:
+            message += (
+                f"\n\n{skipped} transfer or split transaction(s) will be skipped."
+            )
+        answer = QMessageBox.question(
+            self,
+            "Apply rules",
+            message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        selected_ids = self._selected_ids()
+        ids = [row.id for row in eligible]
+        before = self.store.snapshot_transactions(ids)
+        splits_before = self.store.snapshot_splits(ids)
+        try:
+            changed_ids = self.store.apply_rules_to_transactions(ids)
+        except Exception as exc:
+            self.store.restore_transactions(before, ids, splits_before)
+            QMessageBox.warning(self, "Apply rules failed", str(exc))
+            return
+        if not changed_ids:
+            self._show_hint("Rules made no changes")
+            return
+
+        self._push_undo("apply rules", before, ids, splits_before)
+        self._log_activity(
+            f"Applied rules to {len(changed_ids)} transaction(s)"
+        )
+        self._keep_selection_after_change(selected_ids)
+        self._show_hint(
+            f"Rules applied · {len(changed_ids)} transaction(s) changed"
+        )
+
+    def apply_rules_to_selected(self) -> None:
+        self._apply_rules_to_rows(
+            self._selected_rows(), "selected transaction(s)"
+        )
+
+    def apply_rules_to_all(self) -> None:
+        parents = [row for row in self.all_rows if not row.is_split_child]
+        self._apply_rules_to_rows(
+            parents, "transaction(s) in this account"
+        )
 
     def _log_activity(self, message: str) -> None:
         self.activity.emit(message)

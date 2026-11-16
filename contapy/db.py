@@ -2187,6 +2187,54 @@ class DataStore:
                 self._apply_rule(rule, draft)
         return draft
 
+    def apply_rules_to_transactions(self, transaction_ids: list[int]) -> list[int]:
+        """Apply assignment rules to existing transactions.
+
+        Transfer legs and split transactions are skipped because changing just
+        one side or the parent would break their linked data. Returns the ids
+        whose fields actually changed.
+        """
+        changed: list[int] = []
+        for transaction_id in transaction_ids:
+            row = self.transaction(int(transaction_id))
+            if row is None or row.transfer_id or row.splits:
+                continue
+            draft = TransactionDraft(
+                date=row.date,
+                account_id=row.account_id,
+                payee=row.payee,
+                category_id=row.category_id,
+                amount=row.amount,
+                memo=row.memo,
+                cleared=row.cleared,
+                reconciled=row.reconciled,
+                remind=row.remind,
+                flagged=row.flagged,
+                voided=row.voided,
+                payment=row.payment,
+                number=row.number,
+                tags=row.tags,
+            )
+            before = (
+                draft.payee,
+                draft.category_id,
+                draft.payment,
+                draft.tags,
+                draft.memo,
+            )
+            self.apply_rules(draft)
+            after = (
+                draft.payee,
+                draft.category_id,
+                draft.payment,
+                draft.tags,
+                draft.memo,
+            )
+            if after != before:
+                self.update_transaction(int(transaction_id), draft)
+                changed.append(int(transaction_id))
+        return changed
+
     # ------------------------------------------------------------------ meta
     def get_setting(self, key: str, default: str | None = None) -> str | None:
         row = self.conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()

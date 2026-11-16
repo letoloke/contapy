@@ -17,7 +17,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from contapy.db import DataStore
-from contapy.models import SplitDraft, TransactionDraft, TransactionRow
+from contapy.models import Rule, SplitDraft, TransactionDraft, TransactionRow
 from contapy.theme import C
 from contapy.widgets.dialogs import BulkEditDialog, DateRangeDialog
 from contapy.widgets.ledger import (
@@ -602,6 +602,62 @@ class LedgerHintTests(unittest.TestCase):
         self.assertIn(self.window.act_copy, self.window.table.actions())
         self.assertIn(self.window.act_paste, self.window.table.actions())
         self.assertIn(self.window.act_copy_memo, self.window.table.actions())
+
+    def test_apply_rules_to_all_transactions_in_account(self) -> None:
+        from contapy.widgets import ledger as ledger_module
+
+        self.store.add_rule(
+            Rule(
+                name="Tag all test rows",
+                search="Test",
+                match_payee=True,
+                assign_tags="all",
+                tags_overwrite=True,
+            )
+        )
+
+        with mock.patch.object(
+            ledger_module.QMessageBox,
+            "question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ):
+            self.window.apply_rules_to_all()
+
+        rows = self.store.ledger_rows(self.window.account_id)
+        self.assertTrue(rows)
+        self.assertTrue(all(row.tags == "all" for row in rows))
+
+    def test_apply_rules_to_selected_transactions_and_undo(self) -> None:
+        from contapy.widgets import ledger as ledger_module
+
+        self.store.add_rule(
+            Rule(
+                name="Tag test rows",
+                search="Test",
+                match_payee=True,
+                assign_tags="auto",
+                tags_overwrite=True,
+            )
+        )
+        target = self.window.model.rows[0]
+        self.window._select_ids([target.id])
+
+        with mock.patch.object(
+            ledger_module.QMessageBox,
+            "question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ):
+            self.window.apply_rules_to_selected()
+
+        row = self.store.transaction(target.id)
+        assert row is not None
+        self.assertEqual(row.tags, "auto")
+        self.assertEqual(self.window._selected_ids(), [target.id])
+
+        self.window.undo()
+        restored = self.store.transaction(target.id)
+        assert restored is not None
+        self.assertEqual(restored.tags, "")
 
     def test_ctrl_z_undoes_a_flag_change(self) -> None:
         ids = [row.id for row in self.window.model.rows]
