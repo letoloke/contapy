@@ -371,6 +371,39 @@ class LedgerHintTests(unittest.TestCase):
 
         self.assertEqual(moved, [(destination, transaction_id)])
 
+    def test_e_key_edits_the_selected_transaction(self) -> None:
+        from contapy.widgets import ledger as ledger_module
+
+        target = self.window.model.rows[0]
+        self.window._select_ids([target.id])
+        self.assertEqual(self.window.edit_key.key().toString(), "E")
+
+        class FakeDialog:
+            DialogCode = QDialog.DialogCode
+
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def exec(self) -> QDialog.DialogCode:
+                return QDialog.DialogCode.Accepted
+
+            def draft(self) -> TransactionDraft:
+                return TransactionDraft(
+                    date=target.date,
+                    account_id=target.account_id,
+                    payee="Edited with E",
+                    category_id=target.category_id,
+                    amount=target.amount,
+                )
+
+        with mock.patch.object(ledger_module, "TransactionDialog", FakeDialog):
+            self.window.edit_key.activated.emit()
+
+        edited = self.store.transaction(target.id)
+        assert edited is not None
+        self.assertEqual(edited.payee, "Edited with E")
+        self.assertEqual(self.window._selected_ids(), [target.id])
+
     def test_editing_keeps_the_saved_row_selected(self) -> None:
         from contapy.widgets import ledger as ledger_module
 

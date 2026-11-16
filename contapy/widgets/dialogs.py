@@ -2758,6 +2758,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
             ("↑ / ↓", "Move between transactions"),
             ("Home / End", "Jump to the newest or oldest transaction"),
             ("Enter", "Edit the selection (bulk edit when several rows are selected)"),
+            ("E", "Edit the selected transaction(s)"),
             ("Delete", "Delete the selected transaction"),
             ("Ctrl+Z", "Undo the last ledger change"),
             ("Ctrl+R", "Reconcile the selected transactions"),

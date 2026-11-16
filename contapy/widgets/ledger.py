@@ -18,7 +18,15 @@ from PySide6.QtCore import (
     QTimer,
     Signal,
 )
-from PySide6.QtGui import QAction, QColor, QFontMetrics, QKeySequence, QPainter, QPen
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QFontMetrics,
+    QKeySequence,
+    QPainter,
+    QPen,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -803,6 +811,9 @@ class LedgerWindow(QMainWindow):
         self.table.setSortingEnabled(False)
         for action in (self.act_copy, self.act_paste, self.act_copy_memo):
             self.table.addAction(action)
+        self.edit_key = QShortcut(QKeySequence("E"), self.table)
+        self.edit_key.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self.edit_key.activated.connect(self.edit_transaction)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(27)
         header = self.table.horizontalHeader()
