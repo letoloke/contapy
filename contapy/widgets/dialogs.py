@@ -2813,6 +2813,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
             ("Ctrl+C", "Copy the selected transaction(s)"),
             ("Ctrl+V", "Paste copied transaction(s) into this account"),
             ("Ctrl+Shift+C", "Copy the selected memo(s)"),
+            ("Ctrl+Shift+A", "Copy the selected amount(s) with thousands separators"),
             ("Ctrl+N", "New transaction"),
             ("Ctrl+D", "Inherit a new transaction from the selection"),
             (

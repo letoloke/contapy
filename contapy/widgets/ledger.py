@@ -673,11 +673,20 @@ class LedgerWindow(QMainWindow):
         self.act_copy_memo.triggered.connect(
             lambda _checked=False: self.copy_memos()
         )
+        self.act_copy_amount = QAction("Copy Amount", self)
+        self.act_copy_amount.setShortcut(QKeySequence("Ctrl+Shift+A"))
+        self.act_copy_amount.setShortcutContext(
+            Qt.ShortcutContext.WidgetWithChildrenShortcut
+        )
+        self.act_copy_amount.triggered.connect(
+            lambda _checked=False: self.copy_amounts()
+        )
 
         edit_menu = bar.addMenu("Edit")
         edit_menu.addAction(self.act_copy)
         edit_menu.addAction(self.act_paste)
         edit_menu.addAction(self.act_copy_memo)
+        edit_menu.addAction(self.act_copy_amount)
         edit_menu.addSeparator()
         edit_menu.addAction(self.act_undo)
         edit_menu.addSeparator()
@@ -809,7 +818,12 @@ class LedgerWindow(QMainWindow):
         self.table.setShowGrid(False)
         self.table.setWordWrap(False)
         self.table.setSortingEnabled(False)
-        for action in (self.act_copy, self.act_paste, self.act_copy_memo):
+        for action in (
+            self.act_copy,
+            self.act_paste,
+            self.act_copy_memo,
+            self.act_copy_amount,
+        ):
             self.table.addAction(action)
         self.edit_key = QShortcut(QKeySequence("E"), self.table)
         self.edit_key.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
@@ -1295,6 +1309,7 @@ class LedgerWindow(QMainWindow):
             action.setEnabled(has_selection)
         self.act_copy.setEnabled(has_selection)
         self.act_copy_memo.setEnabled(has_selection)
+        self.act_copy_amount.setEnabled(has_selection)
         self.act_apply_rules_selected.setEnabled(has_selection)
         self.act_apply_rules_all.setEnabled(bool(self.model.rows))
         self.act_select_all.setEnabled(bool(self.model.rows))
@@ -1979,6 +1994,15 @@ class LedgerWindow(QMainWindow):
         QApplication.clipboard().setText("\n".join(memos))
         self._log_activity("Copied transaction memo")
         self._show_hint("Memo copied to clipboard")
+
+    def copy_amounts(self) -> None:
+        selected = self._selected_rows()
+        if not selected:
+            return
+        amounts = [f"{row.amount:,.2f}" for row in selected]
+        QApplication.clipboard().setText("\n".join(amounts))
+        self._log_activity("Copied transaction amount")
+        self._show_hint("Amount copied to clipboard")
 
     def paste_transactions(self) -> None:
         if not _COPIED_TRANSACTIONS:

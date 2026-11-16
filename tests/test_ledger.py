@@ -549,6 +549,18 @@ class LedgerHintTests(unittest.TestCase):
             QApplication.clipboard().text(), "Remember the receipt"
         )
 
+    def test_copy_amount_uses_thousands_separators(self) -> None:
+        by_amount = {row.amount: row.id for row in self.window.model.rows}
+        self.window._select_ids([by_amount[-1_000.0]])
+        QApplication.clipboard().setText("")
+
+        self.window.copy_amounts()
+
+        self.assertEqual(QApplication.clipboard().text(), "-1,000.00")
+        self.assertEqual(
+            self.window.act_copy_amount.shortcut().toString(), "Ctrl+Shift+A"
+        )
+
     def test_copy_and_paste_transaction_in_the_same_account(self) -> None:
         target = self.window.model.rows[0]
         before = {
