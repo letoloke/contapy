@@ -81,6 +81,48 @@ class ActivityMenuTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
         apply_theme(cls.app)
 
+    def test_switching_database_rebinds_the_budgets_panel(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        folder = Path(tmp.name)
+        store = DataStore(folder / "first.db", seed=False)
+        window = MainWindow(store)
+        try:
+            second_path = folder / "second.db"
+            with mock.patch("contapy.main_window.remember_database"):
+                self.assertTrue(window.load_database(second_path))
+
+            self.assertEqual(window.store.path, second_path)
+            self.assertIs(window.budgets_panel.store, window.store)
+            self.assertEqual(
+                window.budgets_panel.store.get_setting("missing", "ok"), "ok"
+            )
+            window.budgets_panel.reload()
+        finally:
+            window.close()
+
+    def test_save_database_as_rebinds_the_budgets_panel(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        folder = Path(tmp.name)
+        store = DataStore(folder / "first.db", seed=False)
+        window = MainWindow(store)
+        try:
+            target = folder / "saved-as.db"
+            with mock.patch(
+                "contapy.main_window.QFileDialog.getSaveFileName",
+                return_value=(str(target), "SQLite databases (*.db)"),
+            ):
+                with mock.patch("contapy.main_window.remember_database"):
+                    window.save_database_as()
+
+            self.assertTrue(target.exists())
+            self.assertEqual(window.store.path, target)
+            self.assertIs(window.budgets_panel.store, window.store)
+            window.budgets_panel.reload()
+        finally:
+            window.close()
+
     def test_history_actions_timer_and_markdown_file(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

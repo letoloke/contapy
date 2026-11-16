@@ -952,6 +952,8 @@ class MainWindow(QMainWindow):
         self._record_activity("Closed database", old_store.path.name)
         self._flush_activity()
         self.store = store
+        self.budgets_panel.store = store
+        self.budgets_panel.month = store.current_budget_period()
         old_store.close()
         self.activity = ActivityLog(activity_log_path(store.path))
         self.activity.record("Opened database", target.name)
