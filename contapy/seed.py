@@ -166,12 +166,14 @@ def seed_if_empty(conn: sqlite3.Connection, force: bool = False) -> bool:
 
         if offset == 1:
             # Keep the previous month's ordinary activity outside the rolling
-            # 30-day window used by the donut.
+            # 30-day window used by the donut on every day of the month.
             expense_day = 2
-            income_day = 4
+            income_day = 2
+            second_income_day = 3
         else:
             expense_day = 3
             income_day = 3
+            second_income_day = min(last_day, income_day + 14)
 
         # Expenses: one aggregate transaction per category, with a little
         # month-to-month variance so the bars do not look synthetic.
@@ -201,7 +203,7 @@ def seed_if_empty(conn: sqlite3.Connection, force: bool = False) -> bool:
         first = round(income_total * 0.6, 2)
         for account, amount, day in (
             ("Banamex", first, income_day),
-            ("eCash", income_total - first, min(last_day, income_day + 14)),
+            ("eCash", income_total - first, second_income_day),
         ):
             if amount > 0:
                 add_tx(

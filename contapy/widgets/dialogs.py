@@ -15,6 +15,7 @@ from PySide6.QtCore import (
     QUrl,
 )
 from PySide6.QtGui import (
+    QBrush,
     QColor,
     QDesktopServices,
     QIcon,
@@ -41,7 +42,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
-    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -49,6 +49,8 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QToolButton,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -2387,49 +2389,71 @@ class CategoryTransactionsDialog(QDialog):
 
 
 class CategoriesDialog(QDialog):
-    """Manage categories and their subcategories."""
+    """Manage categories, their subcategories and transaction counts."""
 
     def __init__(self, store: DataStore, parent: QWidget | None = None):
         super().__init__(parent)
         self.store = store
         self.changed = False
+        self._expanded_ids: set[int] | None = None
+        self._previous_query = ""
         self.setWindowTitle("Categories")
         self.setModal(True)
-        self.setMinimumSize(500, 560)
+        self.setMinimumSize(640, 620)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 18, 20, 16)
         root.setSpacing(10)
 
+        heading_row = QHBoxLayout()
+        heading_row.setSpacing(8)
         heading = QLabel("Categories")
         heading.setFont(font(18, 600))
-        root.addWidget(heading)
+        heading_row.addWidget(heading)
+        heading_row.addStretch(1)
 
-        sub = QLabel(
-            "Expense and income categories are on separate tabs. Categories "
-            "group transactions for the charts, reports, budgets and the "
-            "ledger. Subcategories appear as “Parent : Child” and roll up into "
-            "their parent. Select a category and press Delete to remove it."
-        )
-        sub.setWordWrap(True)
-        sub.setFont(font(13, 400))
-        sub.setStyleSheet(f"color:{C.MUTED};")
-        root.addWidget(sub)
+        self.expand_button = QPushButton("Expand all")
+        self.collapse_button = QPushButton("Collapse all")
+        for button in (self.expand_button, self.collapse_button):
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setFont(font(12, 400))
+            button.setFlat(True)
+            button.setStyleSheet(f"color:{C.MUTED};")
+        self.expand_button.clicked.connect(self._expand_all)
+        self.collapse_button.clicked.connect(self._collapse_all)
+        heading_row.addWidget(self.expand_button)
+        heading_row.addWidget(self.collapse_button)
+
+        self.sort_combo = QComboBox()
+        self.sort_combo.addItem("Alphabetical", "alpha")
+        self.sort_combo.addItem("Most transactions", "count_desc")
+        self.sort_combo.addItem("Fewest transactions", "count_asc")
+        self.sort_combo.setFont(font(12, 400))
+        self.sort_combo.setFixedWidth(190)
+        self.sort_combo.setToolTip("Sort categories and their subcategories")
+        self.sort_combo.currentIndexChanged.connect(self._sort_changed)
+        heading_row.addWidget(self.sort_combo)
+        root.addLayout(heading_row)
 
         self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText(
-            "Search categories by name or parent…"
-        )
+        self.search_edit.setPlaceholderText("Search…")
         self.search_edit.setClearButtonEnabled(True)
         self.search_edit.setFont(font(13, 400))
+        self.search_edit.setFixedHeight(28)
         self.search_edit.textChanged.connect(self._search_changed)
-        root.addWidget(self.search_edit)
         find_shortcut = QShortcut(QKeySequence("Ctrl+F"), self)
         find_shortcut.activated.connect(self._focus_search)
+        search_container = QWidget()
+        search_layout = QHBoxLayout(search_container)
+        search_layout.setContentsMargins(0, 0, 0, 6)
+        search_layout.setSpacing(0)
+        search_layout.addWidget(self.search_edit)
+        search_container.setFixedWidth(210)
 
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
         self.tabs.tabBar().setDrawBase(False)
+        self.tabs.setCornerWidget(search_container, Qt.Corner.TopRightCorner)
         self.expense_listing = self._make_listing()
         self.income_listing = self._make_listing()
         self.tabs.addTab(self.expense_listing, "Expense")
@@ -2475,19 +2499,41 @@ class CategoriesDialog(QDialog):
         self._reload_list()
 
     # ------------------------------------------------------------------ rows
-    def _make_listing(self) -> QListWidget:
-        listing = QListWidget()
+    def _make_listing(self) -> QTreeWidget:
+        listing = QTreeWidget()
+        listing.setColumnCount(2)
+        listing.setHeaderLabels(["Category", "Transactions"])
+        listing.headerItem().setTextAlignment(
+            1, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
         listing.setFont(font(13, 400))
-        listing.setSpacing(2)
         listing.setIconSize(QSize(12, 12))
-        listing.itemDoubleClicked.connect(lambda _item: self.edit_category())
+        listing.setIndentation(16)
+        listing.setUniformRowHeights(True)
+        listing.setRootIsDecorated(True)
+        listing.setAllColumnsShowFocus(True)
+        listing.setExpandsOnDoubleClick(False)
+        listing.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection
+        )
+        listing.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        listing.itemDoubleClicked.connect(
+            lambda _item, _column: self.edit_category()
+        )
         listing.itemSelectionChanged.connect(self._update_buttons)
         listing.installEventFilter(self)
+        header = listing.header()
+        header.setHighlightSections(False)
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(1, 118)
+        header.setFixedHeight(31)
         return listing
 
     @property
-    def listing(self) -> QListWidget:
-        """The list shown in the active tab (Expense by default)."""
+    def listing(self) -> QTreeWidget:
+        """The tree shown in the active tab (Expense by default)."""
         return self.tabs.currentWidget()
 
     def _current_kind(self) -> str:
@@ -2501,91 +2547,223 @@ class CategoriesDialog(QDialog):
         selected = self._selected_category()
         self._reload_list(select_id=selected.id if selected is not None else None)
 
+    def _sort_changed(self, _index: int) -> None:
+        selected = self._selected_category()
+        self._reload_list(select_id=selected.id if selected is not None else None)
+
+    def _capture_expanded(self) -> set[int]:
+        ids: set[int] = set()
+        for listing in (self.expense_listing, self.income_listing):
+            for index in range(listing.topLevelItemCount()):
+                item = listing.topLevelItem(index)
+                if item.isExpanded():
+                    ids.add(int(item.data(0, Qt.ItemDataRole.UserRole)))
+        return ids
+
+    def _visible_parent_ids(self) -> set[int]:
+        ids: set[int] = set()
+        for listing in (self.expense_listing, self.income_listing):
+            for index in range(listing.topLevelItemCount()):
+                item = listing.topLevelItem(index)
+                if item.childCount():
+                    ids.add(int(item.data(0, Qt.ItemDataRole.UserRole)))
+        return ids
+
+    def _expand_all(self) -> None:
+        for listing in (self.expense_listing, self.income_listing):
+            listing.expandAll()
+        self._expanded_ids = self._visible_parent_ids()
+
+    def _collapse_all(self) -> None:
+        for listing in (self.expense_listing, self.income_listing):
+            listing.collapseAll()
+        self._expanded_ids = set()
+
     def _reload_list(self, select_id: int | None = None) -> None:
-        categories = ordered_categories(self.store.categories())
         query = self.search_edit.text().strip().casefold()
-        subs_by_parent: dict[int, int] = {}
+        if (
+            not query
+            and not self._previous_query
+            and self._expanded_ids is not None
+        ):
+            self._expanded_ids = self._capture_expanded()
+
+        sort_mode = self.sort_combo.currentData() or "alpha"
+        categories = self.store.categories()
+        counts = self.store.category_transaction_counts()
+        children_by_parent: dict[int, list[Category]] = {}
         for category in categories:
             if category.parent_id is not None:
-                subs_by_parent[category.parent_id] = (
-                    subs_by_parent.get(category.parent_id, 0) + 1
+                children_by_parent.setdefault(category.parent_id, []).append(
+                    category
                 )
+
+        by_kind: dict[str, list[Category]] = {"expense": [], "income": []}
+        matching = {"expense": 0, "income": 0}
+        for category in categories:
+            kind = "income" if category.kind == "income" else "expense"
+            by_kind[kind].append(category)
+            if not query or query in category.full_name.casefold():
+                matching[kind] += 1
+
+        def matches(category: Category) -> bool:
+            return bool(query) and query in category.full_name.casefold()
+
+        def sort_key(category: Category, is_parent: bool):
+            direct, total = counts.get(category.id, (0, 0))
+            value = total if is_parent else direct
+            if sort_mode == "alpha":
+                return (category.name.casefold(), category.id)
+            if sort_mode == "count_asc":
+                return (value, category.name.casefold(), category.id)
+            return (-value, category.name.casefold(), category.id)
 
         listings = {
             "expense": self.expense_listing,
             "income": self.income_listing,
         }
-        counts = {"expense": 0, "income": 0}
-        visible = {"expense": 0, "income": 0}
-        for listing in listings.values():
+        for kind, listing in listings.items():
             listing.clear()
-        for category in categories:
-            kind = "income" if category.kind == "income" else "expense"
-            counts[kind] += 1
-            if query and query not in category.full_name.casefold():
-                continue
-            detail = ""
-            if category.parent_id is None and subs_by_parent.get(category.id):
-                detail = f"{subs_by_parent[category.id]} subcategories"
-            listings[kind].addItem(self._item(category, detail))
-            visible[kind] += 1
+            entries: list[tuple[Category, list[Category]]] = []
+            for parent in [
+                category
+                for category in by_kind[kind]
+                if category.parent_id is None
+            ]:
+                children = children_by_parent.get(parent.id, [])
+                if query:
+                    parent_match = matches(parent)
+                    visible_children = (
+                        children
+                        if parent_match
+                        else [child for child in children if matches(child)]
+                    )
+                    if not parent_match and not visible_children:
+                        continue
+                else:
+                    visible_children = children
+                entries.append((parent, visible_children))
+
+            entries.sort(key=lambda entry: sort_key(entry[0], True))
+            for parent, visible_children in entries:
+                direct, total = counts.get(parent.id, (0, 0))
+                parent_item = self._item(parent, total, direct, True)
+                listing.addTopLevelItem(parent_item)
+                for child in sorted(
+                    visible_children,
+                    key=lambda category: sort_key(category, False),
+                ):
+                    child_direct = counts.get(child.id, (0, 0))[0]
+                    parent_item.addChild(
+                        self._item(
+                            child, child_direct, child_direct, False
+                        )
+                    )
+
+            if query or self._expanded_ids is None:
+                listing.expandAll()
+            else:
+                for index in range(listing.topLevelItemCount()):
+                    item = listing.topLevelItem(index)
+                    item.setExpanded(
+                        int(item.data(0, Qt.ItemDataRole.UserRole))
+                        in self._expanded_ids
+                    )
 
         if query:
-            self.tabs.setTabText(
-                0, f"Expense ({visible['expense']}/{counts['expense']})"
-            )
-            self.tabs.setTabText(
-                1, f"Income ({visible['income']}/{counts['income']})"
-            )
             if (
                 self.tabs.currentIndex() == 0
-                and visible["expense"] == 0
-                and visible["income"] > 0
+                and matching["expense"] == 0
+                and matching["income"] > 0
             ):
                 self.tabs.setCurrentIndex(1)
             elif (
                 self.tabs.currentIndex() == 1
-                and visible["income"] == 0
-                and visible["expense"] > 0
+                and matching["income"] == 0
+                and matching["expense"] > 0
             ):
                 self.tabs.setCurrentIndex(0)
-        else:
-            self.tabs.setTabText(0, f"Expense ({counts['expense']})")
-            self.tabs.setTabText(1, f"Income ({counts['income']})")
+
+        if self._expanded_ids is None:
+            self._expanded_ids = self._visible_parent_ids()
+        self._previous_query = query
 
         if select_id is not None:
             self._select_category(select_id)
         self._update_buttons()
+
+    @staticmethod
+    def _find_item(
+        listing: QTreeWidget, category_id: int
+    ) -> QTreeWidgetItem | None:
+        for index in range(listing.topLevelItemCount()):
+            item = listing.topLevelItem(index)
+            if int(item.data(0, Qt.ItemDataRole.UserRole)) == category_id:
+                return item
+            for child_index in range(item.childCount()):
+                child = item.child(child_index)
+                if int(child.data(0, Qt.ItemDataRole.UserRole)) == category_id:
+                    return child
+        return None
 
     def _select_category(self, category_id: int) -> None:
         category = self.store.category(category_id)
         if category is None:
             return
         listing = (
-            self.income_listing if category.kind == "income" else self.expense_listing
+            self.income_listing
+            if category.kind == "income"
+            else self.expense_listing
         )
         self.tabs.setCurrentWidget(listing)
-        for row in range(listing.count()):
-            item = listing.item(row)
-            if item.data(Qt.ItemDataRole.UserRole) == category_id:
-                listing.setCurrentRow(row)
-                break
+        item = self._find_item(listing, category_id)
+        if item is None:
+            return
+        parent = item.parent()
+        if parent is not None:
+            parent.setExpanded(True)
+            if self._expanded_ids is not None:
+                self._expanded_ids = self._capture_expanded()
+        listing.setCurrentItem(item)
+        listing.scrollToItem(item)
 
     @staticmethod
-    def _item(category: Category, detail: str) -> QListWidgetItem:
-        item = QListWidgetItem()
+    def _item(
+        category: Category,
+        count: int,
+        direct: int,
+        is_parent: bool,
+    ) -> QTreeWidgetItem:
+        item = QTreeWidgetItem()
         pixmap = QPixmap(12, 12)
         pixmap.fill(QColor(category.color))
-        item.setIcon(QIcon(pixmap))
-        item.setText(f"{category.full_name}\n{detail}" if detail else category.full_name)
-        item.setData(Qt.ItemDataRole.UserRole, category.id)
+        item.setIcon(0, QIcon(pixmap))
+        item.setText(0, category.name)
+        item.setText(1, str(count))
+        item.setTextAlignment(
+            1, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        item.setData(0, Qt.ItemDataRole.UserRole, category.id)
+        item.setData(1, Qt.ItemDataRole.UserRole, count)
+        if is_parent:
+            item.setFont(0, font(13, 600))
+            item.setFont(1, font(13, 600))
+        item.setForeground(
+            1, QBrush(QColor(C.TEXT if count else C.MUTED_DARK))
+        )
+        if is_parent:
+            tooltip = f"{direct} directly · {count} including subcategories"
+        else:
+            tooltip = f"{count} transaction{'s' if count != 1 else ''}"
+        item.setToolTip(0, tooltip)
+        item.setToolTip(1, tooltip)
         return item
 
     def _selected_category(self) -> Category | None:
         item = self.listing.currentItem()
         if item is None:
             return None
-        return self.store.category(item.data(Qt.ItemDataRole.UserRole))
+        return self.store.category(item.data(0, Qt.ItemDataRole.UserRole))
 
     def _update_buttons(self, *_args) -> None:
         selected = self._selected_category() is not None

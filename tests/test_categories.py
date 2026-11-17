@@ -17,7 +17,12 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from contapy.db import DataStore
-from contapy.models import Category, ordered_categories
+from contapy.models import (
+    Category,
+    SplitDraft,
+    TransactionDraft,
+    ordered_categories,
+)
 from contapy.widgets.dialogs import (
     CategoriesDialog,
     CategoryDialog,
@@ -346,6 +351,51 @@ class SubcategoryStoreTests(unittest.TestCase):
         finally:
             second.close()
 
+    def test_category_transaction_counts_roll_up_and_ignore_voided(self) -> None:
+        parent = self.store.add_category("Bills", "expense")
+        electricity = self.store.add_category("Electricity", "expense", parent)
+        water = self.store.add_category("Water", "expense", parent)
+        insert_transaction(self.store, self.account_id, parent, -10)
+        insert_transaction(self.store, self.account_id, electricity, -20)
+        insert_transaction(self.store, self.account_id, electricity, -30)
+        insert_transaction(self.store, self.account_id, water, -40)
+        insert_transaction(self.store, self.account_id, water, -50)
+        self.store.conn.execute(
+            "UPDATE transactions SET voided=1 WHERE category_id=? AND amount=-50",
+            (water,),
+        )
+        self.store.conn.commit()
+
+        counts = self.store.category_transaction_counts()
+
+        self.assertEqual(counts[parent], (1, 4))
+        self.assertEqual(counts[electricity], (2, 2))
+        self.assertEqual(counts[water], (1, 1))
+
+    def test_parent_count_does_not_double_count_splits(self) -> None:
+        parent = self.store.add_category("Bills", "expense")
+        electricity = self.store.add_category("Electricity", "expense", parent)
+        water = self.store.add_category("Water", "expense", parent)
+        self.store.add_transaction(
+            TransactionDraft(
+                date=date.today().isoformat(),
+                account_id=self.account_id,
+                payee="Split",
+                category_id=None,
+                amount=-100,
+                splits=[
+                    SplitDraft(electricity, -50),
+                    SplitDraft(water, -50),
+                ],
+            )
+        )
+
+        counts = self.store.category_transaction_counts()
+
+        self.assertEqual(counts[parent], (0, 1))
+        self.assertEqual(counts[electricity], (1, 1))
+        self.assertEqual(counts[water], (1, 1))
+
     # ------------------------------------------------------------------- seed
     def test_demo_data_includes_subcategories(self) -> None:
         demo = DataStore(Path(self.tmp.name) / "demo.db")
@@ -374,6 +424,29 @@ class CategoryDialogTests(unittest.TestCase):
         store = DataStore(Path(tmp.name) / "dialog.db", seed=False)
         self.addCleanup(store.close)
         return store
+
+    @staticmethod
+    def _top_texts(listing) -> list[str]:
+        return [
+            listing.topLevelItem(i).text(0)
+            for i in range(listing.topLevelItemCount())
+        ]
+
+    @staticmethod
+    def _child_texts(parent) -> list[str]:
+        return [parent.child(i).text(0) for i in range(parent.childCount())]
+
+    @staticmethod
+    def _select_top(listing, row: int = 0):
+        item = listing.topLevelItem(row)
+        listing.setCurrentItem(item)
+        return item
+
+    @staticmethod
+    def _select_child(listing, parent_row: int = 0, child_row: int = 0):
+        item = listing.topLevelItem(parent_row).child(child_row)
+        listing.setCurrentItem(item)
+        return item
 
     def test_values_and_parent_preselection(self) -> None:
         store = self._store()
@@ -409,10 +482,13 @@ class CategoryDialogTests(unittest.TestCase):
         store.add_category("Electricity", "expense", parent)
         dialog = CategoriesDialog(store)
         self.addCleanup(dialog.deleteLater)
-        texts = [dialog.listing.item(i).text().split("\n")[0] for i in range(dialog.listing.count())]
-        self.assertEqual(texts, ["Bills", "Bills : Electricity"])
+        self.assertEqual(self._top_texts(dialog.listing), ["Bills"])
+        self.assertEqual(
+            self._child_texts(dialog.listing.topLevelItem(0)),
+            ["Electricity"],
+        )
 
-        dialog.listing.setCurrentRow(1)
+        self._select_child(dialog.listing)
         self.assertEqual(dialog._selected_category().full_name, "Bills : Electricity")
         self.assertEqual(dialog._default_parent_id(), parent)
 
@@ -429,35 +505,113 @@ class CategoryDialogTests(unittest.TestCase):
         self.addCleanup(dialog.deleteLater)
 
         dialog.search_edit.setText("electricity")
+        self.assertEqual(self._top_texts(dialog.expense_listing), ["Bills"])
         self.assertEqual(
-            [
-                dialog.expense_listing.item(i).text().split("\n")[0]
-                for i in range(dialog.expense_listing.count())
-            ],
-            ["Bills : Electricity"],
+            self._child_texts(dialog.expense_listing.topLevelItem(0)),
+            ["Electricity"],
         )
-        self.assertEqual(dialog.income_listing.count(), 0)
-        self.assertEqual(dialog.tabs.tabText(0), "Expense (1/2)")
-        self.assertEqual(dialog.tabs.tabText(1), "Income (0/1)")
+        self.assertEqual(dialog.income_listing.topLevelItemCount(), 0)
+        self.assertEqual(dialog.tabs.tabText(0), "Expense")
+        self.assertEqual(dialog.tabs.tabText(1), "Income")
 
         dialog.search_edit.setText("salary")
-        self.assertEqual(dialog.expense_listing.count(), 0)
-        self.assertEqual(
-            [
-                dialog.income_listing.item(i).text().split("\n")[0]
-                for i in range(dialog.income_listing.count())
-            ],
-            ["Salary"],
-        )
+        self.assertEqual(dialog.expense_listing.topLevelItemCount(), 0)
+        self.assertEqual(self._top_texts(dialog.income_listing), ["Salary"])
         self.assertIs(dialog.tabs.currentWidget(), dialog.income_listing)
 
         dialog.search_edit.setText("no matching category")
-        self.assertEqual(dialog.expense_listing.count(), 0)
-        self.assertEqual(dialog.income_listing.count(), 0)
+        self.assertEqual(dialog.expense_listing.topLevelItemCount(), 0)
+        self.assertEqual(dialog.income_listing.topLevelItemCount(), 0)
 
         dialog.search_edit.clear()
-        self.assertEqual(dialog.tabs.tabText(0), "Expense (2)")
-        self.assertEqual(dialog.tabs.tabText(1), "Income (1)")
+        self.assertEqual(dialog.tabs.tabText(0), "Expense")
+        self.assertEqual(dialog.tabs.tabText(1), "Income")
+
+    def test_categories_dialog_shows_direct_and_rolled_up_counts(self) -> None:
+        store = self._store()
+        account_id = store.add_account("Checking", "Bank")
+        parent = store.add_category("Bills", "expense")
+        electricity = store.add_category("Electricity", "expense", parent)
+        water = store.add_category("Water", "expense", parent)
+        insert_transaction(store, account_id, parent, -10)
+        insert_transaction(store, account_id, electricity, -20)
+        insert_transaction(store, account_id, electricity, -30)
+        insert_transaction(store, account_id, water, -40)
+
+        dialog = CategoriesDialog(store)
+        self.addCleanup(dialog.deleteLater)
+        parent_item = dialog.expense_listing.topLevelItem(0)
+        self.assertEqual(parent_item.text(0), "Bills")
+        self.assertEqual(parent_item.text(1), "4")
+        self.assertEqual(
+            [parent_item.child(i).text(0) for i in range(parent_item.childCount())],
+            ["Electricity", "Water"],
+        )
+        self.assertEqual(
+            [parent_item.child(i).text(1) for i in range(parent_item.childCount())],
+            ["2", "1"],
+        )
+
+    def test_categories_dialog_sorts_by_name_or_transaction_count(self) -> None:
+        store = self._store()
+        account_id = store.add_account("Checking", "Bank")
+        zoo = store.add_category("Zoo", "expense")
+        alpha = store.add_category("Alpha", "expense")
+        bills = store.add_category("Bills", "expense")
+        water = store.add_category("Water", "expense", bills)
+        electricity = store.add_category("Electricity", "expense", bills)
+        insert_transaction(store, account_id, zoo, -10)
+        insert_transaction(store, account_id, zoo, -20)
+        insert_transaction(store, account_id, alpha, -30)
+        for _ in range(3):
+            insert_transaction(store, account_id, water, -5)
+        insert_transaction(store, account_id, electricity, -5)
+
+        dialog = CategoriesDialog(store)
+        self.addCleanup(dialog.deleteLater)
+        self.assertEqual(
+            self._top_texts(dialog.expense_listing), ["Alpha", "Bills", "Zoo"]
+        )
+        self.assertEqual(
+            self._child_texts(dialog.expense_listing.topLevelItem(1)),
+            ["Electricity", "Water"],
+        )
+
+        dialog.sort_combo.setCurrentIndex(
+            dialog.sort_combo.findData("count_desc")
+        )
+        self.assertEqual(
+            self._top_texts(dialog.expense_listing), ["Bills", "Zoo", "Alpha"]
+        )
+        self.assertEqual(
+            self._child_texts(dialog.expense_listing.topLevelItem(0)),
+            ["Water", "Electricity"],
+        )
+
+        dialog.sort_combo.setCurrentIndex(
+            dialog.sort_combo.findData("count_asc")
+        )
+        self.assertEqual(
+            self._top_texts(dialog.expense_listing), ["Alpha", "Zoo", "Bills"]
+        )
+        self.assertEqual(
+            self._child_texts(dialog.expense_listing.topLevelItem(2)),
+            ["Electricity", "Water"],
+        )
+
+    def test_expand_and_collapse_all_buttons(self) -> None:
+        store = self._store()
+        parent = store.add_category("Bills", "expense")
+        store.add_category("Electricity", "expense", parent)
+        dialog = CategoriesDialog(store)
+        self.addCleanup(dialog.deleteLater)
+        item = dialog.expense_listing.topLevelItem(0)
+        self.assertTrue(item.isExpanded())
+
+        dialog._collapse_all()
+        self.assertFalse(item.isExpanded())
+        dialog._expand_all()
+        self.assertTrue(item.isExpanded())
 
     def test_new_category_dialog_opens_on_the_active_tab_type(self) -> None:
         store = self._store()
@@ -475,23 +629,11 @@ class CategoryDialogTests(unittest.TestCase):
         self.assertEqual(dialog.tabs.count(), 2)
         self.assertEqual(
             [dialog.tabs.tabText(i) for i in range(2)],
-            ["Expense (1)", "Income (1)"],
+            ["Expense", "Income"],
         )
         self.assertIs(dialog.tabs.currentWidget(), dialog.expense_listing)
-        self.assertEqual(
-            [
-                dialog.expense_listing.item(i).text().split("\n")[0]
-                for i in range(dialog.expense_listing.count())
-            ],
-            ["Bills"],
-        )
-        self.assertEqual(
-            [
-                dialog.income_listing.item(i).text().split("\n")[0]
-                for i in range(dialog.income_listing.count())
-            ],
-            ["Salary"],
-        )
+        self.assertEqual(self._top_texts(dialog.expense_listing), ["Bills"])
+        self.assertEqual(self._top_texts(dialog.income_listing), ["Salary"])
 
         dialog.tabs.setCurrentWidget(dialog.income_listing)
         self.assertIs(dialog.listing, dialog.income_listing)
@@ -515,7 +657,7 @@ class CategoryDialogTests(unittest.TestCase):
         dialog = CategoriesDialog(store)
         self.addCleanup(dialog.deleteLater)
         dialog.tabs.setCurrentWidget(dialog.income_listing)
-        dialog.income_listing.setCurrentRow(0)
+        self._select_top(dialog.income_listing)
 
         with mock.patch.object(
             QMessageBox, "exec", return_value=QMessageBox.StandardButton.Discard
@@ -530,7 +672,7 @@ class CategoryDialogTests(unittest.TestCase):
         store.add_category("Bills", "expense")
         dialog = CategoriesDialog(store)
         self.addCleanup(dialog.deleteLater)
-        dialog.listing.setCurrentRow(0)
+        self._select_top(dialog.listing)
 
         with mock.patch.object(
             CategoryDialog, "exec", return_value=CategoryDialog.DialogCode.Rejected
@@ -544,7 +686,7 @@ class CategoryDialogTests(unittest.TestCase):
         category = store.add_category("Bills", "expense")
         dialog = CategoriesDialog(store)
         self.addCleanup(dialog.deleteLater)
-        dialog.listing.setCurrentRow(0)
+        self._select_top(dialog.listing)
 
         with mock.patch.object(
             QMessageBox, "exec", return_value=QMessageBox.StandardButton.Discard
@@ -553,14 +695,14 @@ class CategoryDialogTests(unittest.TestCase):
 
         self.assertIsNone(store.category(category))
         self.assertTrue(dialog.changed)
-        self.assertEqual(dialog.listing.count(), 0)
+        self.assertEqual(dialog.listing.topLevelItemCount(), 0)
 
     def test_delete_key_cancel_keeps_the_category(self) -> None:
         store = self._store()
         category = store.add_category("Bills", "expense")
         dialog = CategoriesDialog(store)
         self.addCleanup(dialog.deleteLater)
-        dialog.listing.setCurrentRow(0)
+        self._select_top(dialog.listing)
 
         with mock.patch.object(
             QMessageBox, "exec", return_value=QMessageBox.StandardButton.Cancel
@@ -569,14 +711,14 @@ class CategoryDialogTests(unittest.TestCase):
 
         self.assertIsNotNone(store.category(category))
         self.assertFalse(dialog.changed)
-        self.assertEqual(dialog.listing.count(), 1)
+        self.assertEqual(dialog.listing.topLevelItemCount(), 1)
 
     def test_delete_confirmation_warns_that_it_cannot_be_undone(self) -> None:
         store = self._store()
         store.add_category("Bills", "expense")
         dialog = CategoriesDialog(store)
         self.addCleanup(dialog.deleteLater)
-        dialog.listing.setCurrentRow(0)
+        self._select_top(dialog.listing)
         captured: dict[str, str] = {}
 
         def fake_exec(box):
@@ -662,7 +804,7 @@ class CategoryDialogTests(unittest.TestCase):
         self.addCleanup(dialog.deleteLater)
         self.assertFalse(dialog.transactions_button.isEnabled())
 
-        dialog.listing.setCurrentRow(0)
+        self._select_top(dialog.listing)
         self.assertTrue(dialog.transactions_button.isEnabled())
 
     # ------------------------------------------------------- typed categories
@@ -803,7 +945,7 @@ class CategoryDialogTests(unittest.TestCase):
         insert_transaction(store, account_id, child, -75)
         dialog = CategoriesDialog(store)
         self.addCleanup(dialog.deleteLater)
-        dialog.listing.setCurrentRow(1)
+        self._select_child(dialog.listing)
 
         with mock.patch.object(
             QMessageBox, "exec", return_value=QMessageBox.StandardButton.Discard

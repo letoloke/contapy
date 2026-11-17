@@ -124,10 +124,17 @@ The registry updates automatically when transactions, schedules, imports, transf
 
 ## Subcategories
 
-**Manage → Categories…** now opens a category manager instead of a read-only
-list. Expense and income categories are split across two tabs (with counts), so
-each list stays short and focused. The search box above the tabs filters both
-lists by category name or `Parent : Child` full name; **Ctrl+F** focuses it. Add, edit and delete categories, and give any
+**Manage → Categories…** opens a category manager instead of a read-only list.
+Expense and income categories are split across **Expense** and **Income** tabs.
+Each tab shows a tree of parent categories with their subcategories and a
+right-hand **Transactions** column with the number of posted, non-voided
+transactions assigned to each: parents show the total including their
+subcategories (the tooltip gives the direct count), while children show their
+own count. Split transactions count once per transaction, even when their
+allocations span several subcategories. Use **Expand all** / **Collapse all**
+to change the tree, and the sort menu to order by name, most transactions or
+fewest transactions. The search box beside the tabs filters both trees by
+category name or `Parent : Child` full name; **Ctrl+F** focuses it. Add, edit and delete categories, and give any
 of them subcategories — HomeBank style, two levels deep. Subcategories show
 everywhere as **Parent : Child** (the transaction editor's category field, the
 ledger, CSV export), inherit their parent's colour, and must share its type.
@@ -316,7 +323,7 @@ The demo figures are aligned to the reference: last 30 days **$167,248.99**, rec
 - **Budgets window** — monthly per-category expense budgets with progress bars, remaining/over amounts, month navigation, a configurable day-of-month period start and six-month trend charts that zoom into a larger dialog; the dashboard embeds a compact version beside the scheduled strip.
 - **Payee manager** — registered payees with posted/scheduled counts, unique names, optional notes, safe rename propagation and reassignment-before-delete for linked transactions.
 - **Automatic assignment rules** — a rules manager with Condition (memo/payee search, case-sensitive and regex matching, optional amount filter with AND/OR) and Assignments (payee, category, payment, tags and notes, each with overwrite-or-fill-empty behavior); rules run on newly added and imported transactions.
-- **Subcategories** — a category manager with separate Expense/Income tabs, add/edit/delete, per-category transaction lists with search and subcategory roll-up, two-level `Parent : Child` categories everywhere (editor, ledger, CSV import/export), and roll-ups in the donut, report charts and budgets.
+- **Subcategories** — a category manager with separate Expense/Income tabs, a parent/child tree, per-category transaction counts, expand/collapse and name/count sorting, add/edit/delete, per-category transaction lists with search and subcategory roll-up, two-level `Parent : Child` categories everywhere (editor, ledger, CSV import/export), and roll-ups in the donut, report charts and budgets.
 - Schedule one-off bills; post or skip them from the home strip.
 - Mark posted transactions as cleared, reconciled, remind, flagged or voided; these drive the home balance columns and Future/Remind lists. Voided transactions are kept for the audit trail but ignored by balances and reports.
 - SQLite persistence (no server, no account, no telemetry).
@@ -492,7 +499,9 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | Create a category while editing a transaction | Type a new name in the **Category** field and save; type `Parent : Child` to add a subcategory |
 | Rename, retype or move a category | Double-click it in **Manage → Categories…** |
 | Delete a category | Select it in **Manage → Categories…** and press `Delete`, then confirm the irreversible warning |
-| Search categories | Type in the search box above the tabs; `Ctrl+F` focuses it |
+| Search categories | Type in the search box beside the tabs; `Ctrl+F` focuses it |
+| Sort categories | Choose **Alphabetical**, **Most transactions** or **Fewest transactions** in **Manage → Categories…** |
+| Expand or collapse categories | Use **Expand all** / **Collapse all** in **Manage → Categories…** |
 | Show a category's transactions | Select it in **Manage → Categories…** and press **Transactions…** |
 | Create or edit assignment rules | **Manage → Rules…**, then **New…** or **Edit…** |
 | Search assignment rules | Type in the search box above the list; `Ctrl+F` focuses it |
@@ -569,7 +578,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-Two hundred and sixty-one tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, bulk ledger editing, ledger undo, sortable ledger columns, post-edit reselection across filters and accounts, ledger transaction copy/paste, memo and amount clipboard, the E edit shortcut, rule search and applying rules to existing ledger transactions, saved templates (storage and order, editor round-trips, manager search, duplication and deletion, applying a chosen template, per-field overwrite/fill-empty, memo append, transfer/split skipping and ledger integration), payee CRUD and reassignment, strict payee/category typing and category autocomplete focus, Markdown activity history, database switching, Ctrl+R reconciliation in the ledger and transaction editor, split transactions (storage, editing, balanced allocation, ledger children, reports, budgets, category lists and undo), uncategorized category highlighting, transfer and voided category labels, responsive account-sidebar columns, exact-amount highlighting for voiding with its Alt+V hint, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, search, Delete-key removal, Enter-to-edit and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, the dashboard budgets panel beside the scheduled strip, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the searchable Ctrl+K shortcut list and its window-level action, HomeBank automatic-assignment import (conditions, payees, categories, payments, tags, notes, overwrite flags, duplicates and invalid references), the 70-row HomeBank bank-CSV import, custom and remembered header mappings, the Ctrl+I import menu, sortable import previews, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
+Two hundred and sixty-six tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, bulk ledger editing, ledger undo, sortable ledger columns, post-edit reselection across filters and accounts, ledger transaction copy/paste, memo and amount clipboard, the E edit shortcut, rule search and applying rules to existing ledger transactions, saved templates (storage and order, editor round-trips, manager search, duplication and deletion, applying a chosen template, per-field overwrite/fill-empty, memo append, transfer/split skipping and ledger integration), payee CRUD and reassignment, strict payee/category typing and category autocomplete focus, Markdown activity history, database switching, Ctrl+R reconciliation in the ledger and transaction editor, split transactions (storage, editing, balanced allocation, ledger children, reports, budgets, category lists and undo), uncategorized category highlighting, transfer and voided category labels, responsive account-sidebar columns, exact-amount highlighting for voiding with its Alt+V hint, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, transaction counts with parent roll-up and split de-duplication, name/count sorting, search, Delete-key removal, Enter-to-edit and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, the dashboard budgets panel beside the scheduled strip, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the searchable Ctrl+K shortcut list and its window-level action, HomeBank automatic-assignment import (conditions, payees, categories, payments, tags, notes, overwrite flags, duplicates and invalid references), the 70-row HomeBank bank-CSV import, custom and remembered header mappings, the Ctrl+I import menu, sortable import previews, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
 
 ## Notes / limitations
 

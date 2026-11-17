@@ -412,6 +412,20 @@ def stylesheet() -> str:
         background: {C.SELECTION};
         color: {C.SELECTION_TEXT};
     }}
+    QTreeWidget {{
+        background: {C.LIST_BG};
+        border: 1px solid {C.LIST_BORDER};
+        border-radius: 4px;
+        color: {C.TEXT};
+        outline: 0;
+    }}
+    QTreeWidget::item {{
+        padding: 5px 8px;
+    }}
+    QTreeWidget::item:selected {{
+        background: {C.SELECTION};
+        color: {C.SELECTION_TEXT};
+    }}
     QTabWidget::pane {{
         border: none;
         background: transparent;

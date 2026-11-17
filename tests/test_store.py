@@ -54,7 +54,7 @@ class StoreTests(unittest.TestCase):
         slices, total = self.store.category_slices(
             today - timedelta(days=29), today, "income"
         )
-        self.assertAlmostEqual(total, 213_000.00, places=2)
+        self.assertAlmostEqual(total, 185_000.00, places=2)
         self.assertEqual([item.name for item in slices], ["Ingresos"])
         self.assertAlmostEqual(slices[0].percent, 1.0, places=3)
 

@@ -657,6 +657,51 @@ class DataStore:
                 return category
         return None
 
+    def category_transaction_counts(self) -> dict[int, tuple[int, int]]:
+        """Posted transaction counts per category.
+
+        Returns ``category_id -> (direct, including_subcategories)``. Voided
+        transactions are excluded. Counts are distinct transaction ids, so a
+        split transaction that uses the same category twice is counted once;
+        a parent's inclusive count also counts a split transaction once even
+        when its allocations fall under several children.
+        """
+        categories = self.categories()
+        children: dict[int, list[int]] = {}
+        for category in categories:
+            if category.parent_id is not None:
+                children.setdefault(category.parent_id, []).append(category.id)
+
+        direct = {
+            int(row["category_id"]): int(row["tx_count"])
+            for row in self._rows(
+                """
+                SELECT category_id, COUNT(DISTINCT source_id) AS tx_count
+                FROM transaction_lines
+                WHERE voided = 0 AND category_id IS NOT NULL
+                GROUP BY category_id
+                """
+            )
+        }
+
+        result: dict[int, tuple[int, int]] = {}
+        for category in categories:
+            direct_count = direct.get(category.id, 0)
+            if category.parent_id is not None:
+                result[category.id] = (direct_count, direct_count)
+                continue
+            ids = [category.id, *children.get(category.id, [])]
+            placeholders = ",".join("?" for _ in ids)
+            row = self.conn.execute(
+                f"SELECT COUNT(DISTINCT source_id) AS tx_count "
+                f"FROM transaction_lines "
+                f"WHERE voided = 0 AND category_id IN ({placeholders})",
+                ids,
+            ).fetchone()
+            total = int(row["tx_count"]) if row is not None else direct_count
+            result[category.id] = (direct_count, total)
+        return result
+
     def _next_category_order(self) -> int:
         row = self.conn.execute(
             "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM categories"
