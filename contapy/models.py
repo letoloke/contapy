@@ -344,6 +344,7 @@ class Template:
     tags_overwrite: bool = False
     memo: str = ""
     memo_mode: str = "empty"  # "empty", "append" or "overwrite"
+    status: str = ""  # "", "none", "cleared", "reconciled", "remind", "flagged", "voided"
 
     def has_values(self) -> bool:
         return bool(
@@ -352,4 +353,5 @@ class Template:
             or self.payment
             or self.tags
             or self.memo
+            or self.status
         )

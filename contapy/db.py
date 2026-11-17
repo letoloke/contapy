@@ -247,7 +247,8 @@ CREATE TABLE IF NOT EXISTS templates (
     tags               TEXT NOT NULL DEFAULT '',
     tags_overwrite     INTEGER NOT NULL DEFAULT 0,
     memo               TEXT NOT NULL DEFAULT '',
-    memo_mode          TEXT NOT NULL DEFAULT 'empty'
+    memo_mode          TEXT NOT NULL DEFAULT 'empty',
+    status             TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS import_profiles (
@@ -452,6 +453,13 @@ class DataStore:
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_tx_transfer ON transactions(transfer_id)"
         )
+        template_columns = {
+            row[1] for row in self.conn.execute("PRAGMA table_info(templates)")
+        }
+        if "status" not in template_columns:
+            self.conn.execute(
+                "ALTER TABLE templates ADD COLUMN status TEXT NOT NULL DEFAULT ''"
+            )
 
     # ---------------------------------------------------------------- basics
     def close(self) -> None:
@@ -2316,6 +2324,7 @@ class DataStore:
             tags_overwrite=bool(row["tags_overwrite"]),
             memo=row["memo"],
             memo_mode=row["memo_mode"] or "empty",
+            status=row["status"] or "",
         )
 
     def templates(self) -> list[Template]:
@@ -2343,8 +2352,8 @@ class DataStore:
         cur = self.conn.execute(
             "INSERT INTO templates(name, sort_order, payee, payee_overwrite, "
             "category_id, category_set, category_overwrite, payment, "
-            "payment_overwrite, tags, tags_overwrite, memo, memo_mode) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "payment_overwrite, tags, tags_overwrite, memo, memo_mode, status) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 template.name,
                 order,
@@ -2359,6 +2368,7 @@ class DataStore:
                 1 if template.tags_overwrite else 0,
                 template.memo,
                 template.memo_mode,
+                template.status,
             ),
         )
         self.conn.commit()
@@ -2369,7 +2379,7 @@ class DataStore:
             "UPDATE templates SET name=?, payee=?, payee_overwrite=?, "
             "category_id=?, category_set=?, category_overwrite=?, payment=?, "
             "payment_overwrite=?, tags=?, tags_overwrite=?, memo=?, "
-            "memo_mode=? WHERE id=?",
+            "memo_mode=?, status=? WHERE id=?",
             (
                 template.name,
                 template.payee,
@@ -2383,6 +2393,7 @@ class DataStore:
                 1 if template.tags_overwrite else 0,
                 template.memo,
                 template.memo_mode,
+                template.status,
                 template.id,
             ),
         )
@@ -2432,6 +2443,22 @@ class DataStore:
                 new_memo = values.memo if not current else None
             if new_memo is not None and str(row["memo"] or "") != new_memo:
                 updates["memo"] = new_memo
+        if values.status:
+            status_flags = {
+                "none": (0, 0, 0, 0, 0),
+                "cleared": (1, 0, 0, 0, 0),
+                "reconciled": (1, 1, 0, 0, 0),
+                "remind": (0, 0, 1, 0, 0),
+                "flagged": (0, 0, 0, 1, 0),
+                "voided": (0, 0, 0, 0, 1),
+            }.get(values.status)
+            if status_flags is not None:
+                for column, flag in zip(
+                    ("cleared", "reconciled", "remind", "flagged", "voided"),
+                    status_flags,
+                ):
+                    if int(row[column] or 0) != flag:
+                        updates[column] = flag
         return updates
 
     def apply_template_to_transactions(
@@ -2470,7 +2497,8 @@ class DataStore:
             chunk = ids[start : start + 500]
             placeholders = ",".join("?" for _ in chunk)
             for row in self.conn.execute(
-                f"SELECT id, payee, category_id, payment, tags, memo "
+                f"SELECT id, payee, category_id, payment, tags, memo, "
+                f"cleared, reconciled, remind, flagged, voided "
                 f"FROM transactions WHERE id IN ({placeholders})",
                 chunk,
             ):
@@ -2481,7 +2509,18 @@ class DataStore:
             return []
 
         with self.conn:
-            for column in ("payee", "category_id", "payment", "tags", "memo"):
+            for column in (
+                "payee",
+                "category_id",
+                "payment",
+                "tags",
+                "memo",
+                "cleared",
+                "reconciled",
+                "remind",
+                "flagged",
+                "voided",
+            ):
                 pairs = [
                     (transaction_id, updates[column])
                     for transaction_id, updates in changes.items()

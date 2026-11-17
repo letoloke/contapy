@@ -13,7 +13,7 @@ from unittest import mock
 
 from contapy.csv_io import parse_amount, read_csv_plan
 from contapy.db import DataStore, daily_backup_dir, default_db_path, import_fingerprint
-from contapy.models import TransactionDraft
+from contapy.models import Template, TransactionDraft
 
 
 class StoreTests(unittest.TestCase):
@@ -345,6 +345,32 @@ class StoreTests(unittest.TestCase):
             self.assertAlmostEqual(balance.reconciled, 75.0, places=2)
             self.assertAlmostEqual(balance.cleared, 75.0, places=2)
             self.assertTrue(migrated.ledger_rows(1)[0].reconciled)
+        finally:
+            migrated.close()
+
+    def test_old_template_table_gets_the_status_column(self) -> None:
+        path = Path(self.tmp.name) / "old-templates.db"
+        store = DataStore(path, seed=False)
+        store.add_template(
+            Template(name="Legacy", payee="Old", status="cleared")
+        )
+        store.conn.execute("ALTER TABLE templates DROP COLUMN status")
+        store.conn.commit()
+        store.close()
+
+        migrated = DataStore(path, seed=False)
+        try:
+            columns = {
+                row[1]
+                for row in migrated.conn.execute(
+                    "PRAGMA table_info(templates)"
+                )
+            }
+            self.assertIn("status", columns)
+            template = migrated.templates()[0]
+            self.assertEqual(template.name, "Legacy")
+            self.assertEqual(template.payee, "Old")
+            self.assertEqual(template.status, "")
         finally:
             migrated.close()
 

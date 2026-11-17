@@ -78,6 +78,20 @@ def _overwrite_check(tooltip: str) -> QCheckBox:
     return check
 
 
+TEMPLATE_STATUS_CHOICES: list[tuple[str, str]] = [
+    ("Leave unchanged", ""),
+    ("No status", "none"),
+    ("Cleared", "cleared"),
+    ("Reconciled", "reconciled"),
+    ("Remind", "remind"),
+    ("Flagged", "flagged"),
+    ("Voided", "voided"),
+]
+TEMPLATE_STATUS_LABELS = {
+    value: label for label, value in TEMPLATE_STATUS_CHOICES if value
+}
+
+
 class _AssignmentFieldsMixin:
     """Shared Payee/Category/Payment/Tags/Notes assignment form."""
 
@@ -85,7 +99,11 @@ class _AssignmentFieldsMixin:
 
     # ----------------------------------------------------------- assignments
     def _build_assignments(
-        self, layout: QVBoxLayout, *, memo_modes: bool = False
+        self,
+        layout: QVBoxLayout,
+        *,
+        memo_modes: bool = False,
+        show_status: bool = False,
     ) -> None:
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
@@ -143,6 +161,19 @@ class _AssignmentFieldsMixin:
         )
         self._assignment_row(grid, 3, "Tags", self.tags_combo, self.tags_overwrite)
 
+        notes_row = 4
+        if show_status:
+            self.status_combo = QComboBox()
+            for label, value in TEMPLATE_STATUS_CHOICES:
+                self.status_combo.addItem(label, value)
+            self.status_combo.setFont(font(13, 400))
+            self.status_combo.setToolTip(
+                "Replace the transaction's status, or leave it unchanged."
+            )
+            grid.addWidget(_label("Status"), notes_row, 0)
+            grid.addWidget(self.status_combo, notes_row, 1, 1, 2)
+            notes_row += 1
+
         self.memo_edit = QLineEdit()
         if memo_modes:
             self.memo_edit.setPlaceholderText(
@@ -153,14 +184,16 @@ class _AssignmentFieldsMixin:
             self.memo_mode.addItem("Append", "append")
             self.memo_mode.addItem("Overwrite", "overwrite")
             self.memo_mode.setFixedWidth(128)
-            self._assignment_row(grid, 4, "Notes", self.memo_edit, self.memo_mode)
+            self._assignment_row(
+                grid, notes_row, "Notes", self.memo_edit, self.memo_mode
+            )
         else:
             self.memo_edit.setPlaceholderText("Default note added to the memo")
             self.memo_overwrite = _overwrite_check(
                 "Replace the existing memo instead of only filling an empty one."
             )
             self._assignment_row(
-                grid, 4, "Notes", self.memo_edit, self.memo_overwrite
+                grid, notes_row, "Notes", self.memo_edit, self.memo_overwrite
             )
 
         layout.addLayout(grid)
@@ -462,9 +495,9 @@ class TemplateDialog(_AssignmentFieldsMixin, QDialog):
         root.addWidget(heading)
 
         intro = QLabel(
-            "A template stores Payee, Category, Payment, Tags and Notes values "
-            "that can be applied to any selected ledger transactions. Unlike a "
-            "rule, a template has no matching condition."
+            "A template stores Payee, Category, Payment, Tags, Status and Notes "
+            "values that can be applied to any selected ledger transactions. "
+            "Unlike a rule, a template has no matching condition."
         )
         intro.setWordWrap(True)
         intro.setFont(font(13, 400))
@@ -484,7 +517,9 @@ class TemplateDialog(_AssignmentFieldsMixin, QDialog):
             "Overwrite forces the value; otherwise a field is only filled when empty.",
             self,
         )
-        self._build_assignments(assignments_layout, memo_modes=True)
+        self._build_assignments(
+            assignments_layout, memo_modes=True, show_status=True
+        )
         root.addWidget(assignments)
 
         buttons = QDialogButtonBox()
@@ -522,6 +557,8 @@ class TemplateDialog(_AssignmentFieldsMixin, QDialog):
         self.payment_overwrite.setChecked(template.payment_overwrite)
         self.tags_combo.setEditText(template.tags)
         self.tags_overwrite.setChecked(template.tags_overwrite)
+        index = self.status_combo.findData(template.status)
+        self.status_combo.setCurrentIndex(index if index >= 0 else 0)
         self.memo_edit.setText(template.memo)
         index = self.memo_mode.findData(template.memo_mode)
         self.memo_mode.setCurrentIndex(index if index >= 0 else 0)
@@ -548,6 +585,7 @@ class TemplateDialog(_AssignmentFieldsMixin, QDialog):
             tags_overwrite=self.tags_overwrite.isChecked(),
             memo=self.memo_edit.text().strip(),
             memo_mode=self.memo_mode.currentData(),
+            status=self.status_combo.currentData(),
         )
 
     def _save(self) -> None:
@@ -770,13 +808,22 @@ class TemplatesDialog(QDialog):
             parts.append(f"Payment → {template.payment}")
         if template.tags:
             parts.append(f"Tags → {template.tags}")
+        if template.status:
+            parts.append(
+                f"Status → "
+                f"{TEMPLATE_STATUS_LABELS.get(template.status, template.status)}"
+            )
         if template.memo:
             mode = {"append": " (append)", "overwrite": " (overwrite)"}.get(
                 template.memo_mode, ""
             )
             parts.append(f"Notes → {template.memo}{mode}")
-        assigned = " · ".join(parts) if parts else "No assignments"
-        return f"{template.name}\n{assigned}"
+        if not parts:
+            return f"{template.name}\nNo assignments"
+        lines = [template.name]
+        for start in range(0, len(parts), 2):
+            lines.append(" · ".join(parts[start : start + 2]))
+        return "\n".join(lines)
 
     def _current_id(self) -> int | None:
         item = self.listing.currentItem()

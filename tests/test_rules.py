@@ -588,6 +588,7 @@ class TemplateStoreTests(unittest.TestCase):
                 payment="Bank transfer",
                 memo="Monthly",
                 memo_mode="append",
+                status="reconciled",
             )
         )
 
@@ -599,6 +600,7 @@ class TemplateStoreTests(unittest.TestCase):
         assert loaded is not None
         self.assertEqual(loaded.payment, "Bank transfer")
         self.assertEqual(loaded.memo_mode, "append")
+        self.assertEqual(loaded.status, "reconciled")
 
         loaded.payee = "Landlord"
         loaded.payee_overwrite = True
@@ -613,6 +615,12 @@ class TemplateStoreTests(unittest.TestCase):
         self.assertEqual(updated.category_id, self.expense)
         self.assertTrue(updated.category_set)
         self.assertTrue(updated.category_overwrite)
+
+        updated.status = "flagged"
+        self.store.update_template(updated)
+        reloaded = self.store.template(second)
+        assert reloaded is not None
+        self.assertEqual(reloaded.status, "flagged")
 
         self.store.delete_template(first)
         self.assertIsNone(self.store.template(first))
@@ -700,6 +708,51 @@ class TemplateStoreTests(unittest.TestCase):
         self.assertIsNone(row.category_id)
         self.assertEqual(row.memo, "Replacement")
 
+    def test_status_assignment_replaces_transaction_flags(self) -> None:
+        transaction_id = self.store.add_transaction(
+            self.draft(
+                cleared=False,
+                remind=True,
+                flagged=True,
+                voided=True,
+            )
+        )
+
+        changed = self.store.apply_template_to_transactions(
+            [transaction_id], Template(status="reconciled")
+        )
+
+        self.assertEqual(changed, [transaction_id])
+        row = self.store.transaction(transaction_id)
+        assert row is not None
+        self.assertTrue(row.cleared)
+        self.assertTrue(row.reconciled)
+        self.assertFalse(row.remind)
+        self.assertFalse(row.flagged)
+        self.assertFalse(row.voided)
+
+        self.store.apply_template_to_transactions(
+            [transaction_id], Template(status="none")
+        )
+        row = self.store.transaction(transaction_id)
+        assert row is not None
+        self.assertFalse(row.cleared)
+        self.assertFalse(row.reconciled)
+        self.assertFalse(row.remind)
+        self.assertFalse(row.flagged)
+        self.assertFalse(row.voided)
+
+        self.store.apply_template_to_transactions(
+            [transaction_id], Template(status="voided")
+        )
+        row = self.store.transaction(transaction_id)
+        assert row is not None
+        self.assertFalse(row.cleared)
+        self.assertFalse(row.reconciled)
+        self.assertFalse(row.remind)
+        self.assertFalse(row.flagged)
+        self.assertTrue(row.voided)
+
     def test_transfers_and_splits_are_skipped(self) -> None:
         destination = self.store.add_account("Savings", "Bank", 0)
         group = self.store.add_transfer(
@@ -779,6 +832,9 @@ class TemplateDialogTests(unittest.TestCase):
         dialog.category_overwrite.setChecked(False)
         dialog.payment_combo.setEditText("Cash")
         dialog.tags_combo.setEditText("food coffee")
+        dialog.status_combo.setCurrentIndex(
+            dialog.status_combo.findData("reconciled")
+        )
         dialog.memo_edit.setText("Imported")
         dialog.memo_mode.setCurrentIndex(dialog.memo_mode.findData("append"))
 
@@ -792,6 +848,7 @@ class TemplateDialogTests(unittest.TestCase):
         self.assertFalse(values.category_overwrite)
         self.assertEqual(values.payment, "Cash")
         self.assertEqual(values.tags, "food coffee")
+        self.assertEqual(values.status, "reconciled")
         self.assertEqual(values.memo, "Imported")
         self.assertEqual(values.memo_mode, "append")
         self.assertTrue(values.has_values())
@@ -812,6 +869,7 @@ class TemplateDialogTests(unittest.TestCase):
                 tags="food",
                 memo="Imported",
                 memo_mode="append",
+                status="flagged",
             ),
         )
         self.addCleanup(dialog.deleteLater)
@@ -823,6 +881,7 @@ class TemplateDialogTests(unittest.TestCase):
         self.assertEqual(values.name, "Coffee")
         self.assertEqual(values.category_id, self.category)
         self.assertEqual(values.memo_mode, "append")
+        self.assertEqual(values.status, "flagged")
 
     def test_typed_uncategorized_clears_the_category(self) -> None:
         dialog = TemplateDialog(self.store)
@@ -836,7 +895,12 @@ class TemplateDialogTests(unittest.TestCase):
 
     def test_manager_lists_searches_and_deletes_templates(self) -> None:
         coffee = self.store.add_template(
-            Template(name="Coffee", payee="Café", tags="food")
+            Template(
+                name="Coffee",
+                payee="Café",
+                tags="food",
+                status="cleared",
+            )
         )
         rent = self.store.add_template(
             Template(name="Rent", payment="Bank transfer")
@@ -847,10 +911,15 @@ class TemplateDialogTests(unittest.TestCase):
         self.assertEqual(dialog.listing.count(), 2)
         self.assertIn("Coffee", dialog.listing.item(0).text())
         self.assertIn("Payee → Café", dialog.listing.item(0).text())
+        self.assertIn("Status → Cleared", dialog.listing.item(0).text())
 
         dialog.search_edit.setText("bank transfer")
         self.assertEqual(dialog.listing.count(), 1)
         self.assertIn("Rent", dialog.listing.item(0).text())
+
+        dialog.search_edit.setText("cleared")
+        self.assertEqual(dialog.listing.count(), 1)
+        self.assertIn("Coffee", dialog.listing.item(0).text())
 
         dialog.search_edit.clear()
         dialog.listing.setCurrentRow(0)
@@ -874,6 +943,7 @@ class TemplateDialogTests(unittest.TestCase):
                 tags="food",
                 memo="Morning",
                 memo_mode="append",
+                status="reconciled",
             )
         )
         dialog = TemplatesDialog(self.store)
@@ -893,6 +963,7 @@ class TemplateDialogTests(unittest.TestCase):
         self.assertEqual(copy.tags, "food")
         self.assertEqual(copy.memo, "Morning")
         self.assertEqual(copy.memo_mode, "append")
+        self.assertEqual(copy.status, "reconciled")
         self.assertEqual(dialog._current_id(), copy.id)
         self.assertTrue(dialog.changed)
 

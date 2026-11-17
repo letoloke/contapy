@@ -921,6 +921,7 @@ class LedgerHintTests(unittest.TestCase):
             payee_overwrite=True,
             tags="bulk",
             tags_overwrite=True,
+            status="reconciled",
         )
 
         class FakeTemplateDialog:
@@ -949,8 +950,11 @@ class LedgerHintTests(unittest.TestCase):
         for transaction_id in selected_ids:
             self.assertEqual(rows[transaction_id].payee, "Batch payee")
             self.assertEqual(rows[transaction_id].tags, "bulk")
+            self.assertTrue(rows[transaction_id].cleared)
+            self.assertTrue(rows[transaction_id].reconciled)
         self.assertEqual(rows[untouched_id].payee, "Test")
         self.assertEqual(rows[untouched_id].tags, "")
+        self.assertFalse(rows[untouched_id].reconciled)
         self.assertEqual(
             self.window.act_undo.text(), "Undo apply template"
         )
