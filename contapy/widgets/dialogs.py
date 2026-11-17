@@ -2840,6 +2840,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
                 "Enter / double-click",
                 "Apply the selected template from the ledger, or edit it from Manage",
             ),
+            ("Ctrl+D", "Duplicate the selected template"),
             ("Ctrl+F", "Focus the template search box"),
         ],
     ),

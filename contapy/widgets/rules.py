@@ -7,6 +7,9 @@ an existing value or only fill a field that is still empty.
 
 from __future__ import annotations
 
+import re
+from dataclasses import replace
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
@@ -669,10 +672,12 @@ class TemplatesDialog(QDialog):
         buttons.setSpacing(8)
         self.new_button = QPushButton("New…")
         self.edit_button = QPushButton("Edit…")
+        self.duplicate_button = QPushButton("Duplicate")
         self.delete_button = QPushButton("Delete")
         for button in (
             self.new_button,
             self.edit_button,
+            self.duplicate_button,
             self.delete_button,
         ):
             button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -680,9 +685,13 @@ class TemplatesDialog(QDialog):
         self.new_button.setProperty("role", "primary")
         self.new_button.clicked.connect(self.new_template)
         self.edit_button.clicked.connect(self.edit_template)
+        self.duplicate_button.clicked.connect(self.duplicate_template)
         self.delete_button.clicked.connect(self.delete_template)
+        duplicate_shortcut = QShortcut(QKeySequence("Ctrl+D"), self)
+        duplicate_shortcut.activated.connect(self.duplicate_template)
         buttons.addWidget(self.new_button)
         buttons.addWidget(self.edit_button)
+        buttons.addWidget(self.duplicate_button)
         buttons.addWidget(self.delete_button)
         buttons.addStretch(1)
 
@@ -776,6 +785,7 @@ class TemplatesDialog(QDialog):
     def _update_buttons(self) -> None:
         has_selection = self.listing.currentItem() is not None
         self.edit_button.setEnabled(has_selection)
+        self.duplicate_button.setEnabled(has_selection)
         self.delete_button.setEnabled(has_selection)
         if self.apply_button is not None:
             self.apply_button.setEnabled(has_selection)
@@ -811,6 +821,38 @@ class TemplatesDialog(QDialog):
             self.store.update_template(dialog.template())
             self.changed = True
             self._reload_list(template_id)
+
+    def _copy_name(self, name: str) -> str:
+        stem = re.sub(
+            r"\s*\(copy(?: \d+)?\)$", "", name, flags=re.IGNORECASE
+        ).strip() or "Template"
+        base = f"{stem} (copy)"
+        existing = {
+            template.name.casefold() for template in self.store.templates()
+        }
+        if base.casefold() not in existing:
+            return base
+        index = 2
+        while f"{stem} (copy {index})".casefold() in existing:
+            index += 1
+        return f"{stem} (copy {index})"
+
+    def duplicate_template(self) -> None:
+        template_id = self._current_id()
+        if template_id is None:
+            return
+        template = self.store.template(template_id)
+        if template is None:
+            return
+        copy = replace(
+            template,
+            id=0,
+            sort_order=0,
+            name=self._copy_name(template.name),
+        )
+        new_id = self.store.add_template(copy)
+        self.changed = True
+        self._reload_list(new_id)
 
     def delete_template(self) -> None:
         template_id = self._current_id()

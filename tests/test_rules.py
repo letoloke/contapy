@@ -865,6 +865,43 @@ class TemplateDialogTests(unittest.TestCase):
         self.assertIsNone(self.store.template(coffee))
         self.assertIsNotNone(self.store.template(rent))
 
+    def test_manager_duplicates_a_template(self) -> None:
+        original_id = self.store.add_template(
+            Template(
+                name="Coffee",
+                payee="Café",
+                payee_overwrite=True,
+                tags="food",
+                memo="Morning",
+                memo_mode="append",
+            )
+        )
+        dialog = TemplatesDialog(self.store)
+        self.addCleanup(dialog.deleteLater)
+        dialog.listing.setCurrentRow(0)
+        dialog.duplicate_template()
+
+        templates = self.store.templates()
+        self.assertEqual(
+            [template.name for template in templates],
+            ["Coffee", "Coffee (copy)"],
+        )
+        copy = templates[1]
+        self.assertNotEqual(copy.id, original_id)
+        self.assertEqual(copy.payee, "Café")
+        self.assertTrue(copy.payee_overwrite)
+        self.assertEqual(copy.tags, "food")
+        self.assertEqual(copy.memo, "Morning")
+        self.assertEqual(copy.memo_mode, "append")
+        self.assertEqual(dialog._current_id(), copy.id)
+        self.assertTrue(dialog.changed)
+
+        dialog.duplicate_template()
+        self.assertEqual(
+            [template.name for template in self.store.templates()],
+            ["Coffee", "Coffee (copy)", "Coffee (copy 2)"],
+        )
+
     def test_picker_applies_the_selected_saved_template(self) -> None:
         self.store.add_template(
             Template(name="Coffee", payee="Café", tags="food")
