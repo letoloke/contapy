@@ -2995,7 +2995,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
             ("Ctrl+N", "New transaction"),
             ("Ctrl+D", "Inherit a new transaction from the selection"),
             (
-                "Right-click / Apply Template…",
+                "Ctrl+T",
                 "Choose a saved template and apply it to the selection",
             ),
             (

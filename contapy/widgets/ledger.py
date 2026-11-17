@@ -634,7 +634,7 @@ class LedgerWindow(QMainWindow):
         self.act_new = self._action("New Transaction…", self.add_transaction, "Ctrl+N")
         self.act_edit = self._action("Edit Transaction…", self.edit_transaction)
         self.act_apply_template = self._action(
-            "Apply Template…", self.apply_template_to_selected
+            "Apply Template…", self.apply_template_to_selected, "Ctrl+T"
         )
         self.act_inherit = self._action("Inherit Transaction…", self.inherit_transaction, "Ctrl+D")
         self.act_delete = self._action("Delete Transaction", self.delete_transaction)

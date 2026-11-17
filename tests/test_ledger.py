@@ -908,6 +908,9 @@ class LedgerHintTests(unittest.TestCase):
     def test_apply_template_updates_selection_and_pushes_undo(self) -> None:
         self.assertFalse(self.window.act_apply_template.isEnabled())
         self.assertFalse(self.window.apply_template_btn.isEnabled())
+        self.assertEqual(
+            self.window.act_apply_template.shortcut().toString(), "Ctrl+T"
+        )
         by_amount = {row.amount: row.id for row in self.window.model.rows}
         selected_ids = [by_amount[-400.0], by_amount[-600.0]]
         untouched_id = by_amount[-1_000.0]
