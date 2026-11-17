@@ -616,6 +616,7 @@ class LedgerWindow(QMainWindow):
         self._build_menus()
         self._build_ui()
         self.reload()
+        self._restore_last_transaction()
 
     # ------------------------------------------------------------------ menus
     def _action(self, text: str, slot, shortcut: str | None = None) -> QAction:
@@ -983,9 +984,11 @@ class LedgerWindow(QMainWindow):
     # --------------------------------------------------------------- keyboard
     def showEvent(self, event):  # noqa: N802
         super().showEvent(event)
-        QTimer.singleShot(0, self._focus_table)
+        QTimer.singleShot(0, self.focus_table)
 
     def focus_table(self) -> None:
+        if not self._selected_rows():
+            self._restore_last_transaction()
         self._focus_table()
 
     def _focus_table(self, select_first: bool = True) -> None:
@@ -1029,6 +1032,44 @@ class LedgerWindow(QMainWindow):
         self.payee_combo.blockSignals(False)
 
         self._apply_filters(selected)
+
+    def _last_transaction_key(self, account_id: int | None = None) -> str:
+        return f"ledger_last_transaction:{self.account_id if account_id is None else account_id}"
+
+    def _remember_last_transactions(self, transaction_ids: list[int]) -> None:
+        """Remember the edited transaction for each account it belongs to."""
+        last_by_account: dict[int, int] = {}
+        for transaction_id in transaction_ids:
+            row = self.store.transaction(int(transaction_id))
+            if row is not None:
+                last_by_account[row.account_id] = row.id
+        for account_id, transaction_id in last_by_account.items():
+            self.store.set_setting(
+                self._last_transaction_key(account_id), str(transaction_id)
+            )
+
+    def _remembered_transaction_id(self) -> int | None:
+        value = self.store.get_setting(self._last_transaction_key())
+        if not value:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _restore_last_transaction(self) -> bool:
+        """Select the last edited transaction when the ledger opens."""
+        transaction_id = self._remembered_transaction_id()
+        if transaction_id is None:
+            return False
+        row = self.store.transaction(transaction_id)
+        if row is None or row.account_id != self.account_id:
+            return False
+        if self._select_ids([transaction_id]):
+            return True
+        # The remembered row is hidden by a saved filter; reveal it.
+        self._clear_filters()
+        return self._select_ids([transaction_id])
 
     def _date_filter_changed(self, _index: int) -> None:
         period = self.date_combo.currentText()
@@ -1387,6 +1428,7 @@ class LedgerWindow(QMainWindow):
                 row.id for row in legs
                 if row.account_id == self.account_id
             ]
+            self._remember_last_transactions([row.id for row in legs])
             self._select_ids(ids)
             self._push_undo("new transfer", [], [row.id for row in legs])
             self._log_activity(
@@ -1394,6 +1436,7 @@ class LedgerWindow(QMainWindow):
             )
         else:
             new_id = self.store.add_transaction(draft)
+            self._remember_last_transactions([new_id])
             self.reload(preserve_selection=False)
             self._select_ids([new_id])
             self._push_undo("new transaction", [], [new_id])
@@ -1439,6 +1482,7 @@ class LedgerWindow(QMainWindow):
                 row.id for row in legs
                 if row.account_id == self.account_id
             ]
+            self._remember_last_transactions([row.id for row in legs])
             self._select_ids(ids)
             self._push_undo("new transfer", [], [row.id for row in legs])
             self._log_activity(
@@ -1446,6 +1490,7 @@ class LedgerWindow(QMainWindow):
             )
         else:
             new_id = self.store.add_transaction(new_draft)
+            self._remember_last_transactions([new_id])
             self.reload(preserve_selection=False)
             self._select_ids([new_id])
             self._push_undo("new transaction", [], [new_id])
@@ -1561,6 +1606,7 @@ class LedgerWindow(QMainWindow):
 
     def _keep_selection_after_change(self, ids: list[int]) -> None:
         """Reload, let the main window refresh, then restore the selection."""
+        self._remember_last_transactions(ids)
         self.reload(preserve_selection=False)
         self.changed.emit()
         self._select_ids(ids)

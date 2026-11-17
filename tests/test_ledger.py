@@ -965,6 +965,57 @@ class LedgerHintTests(unittest.TestCase):
         self.assertTrue(changed_emitted)
 
 
+    def test_remembers_last_edited_transaction_when_reopening(self) -> None:
+        by_amount = {row.amount: row.id for row in self.window.model.rows}
+        edited_id = by_amount[-600.0]
+
+        class FakeEditDialog:
+            DialogCode = QDialog.DialogCode
+
+            def __init__(
+                self,
+                store,
+                accounts,
+                categories,
+                draft=None,
+                title="",
+                parent=None,
+            ) -> None:
+                self._draft = draft
+
+            def exec(self) -> QDialog.DialogCode:
+                return QDialog.DialogCode.Accepted
+
+            def draft(self):
+                self._draft.memo = "Edited memo"
+                return self._draft
+
+        self.window._select_ids([edited_id])
+        with mock.patch(
+            "contapy.widgets.ledger.TransactionDialog", FakeEditDialog
+        ):
+            self.window.edit_transaction()
+
+        key = f"ledger_last_transaction:{self.window.account_id}"
+        self.assertEqual(self.store.get_setting(key), str(edited_id))
+
+        reopened = LedgerWindow(self.store, self.window.account_id)
+        self.addCleanup(reopened.close)
+        self.assertEqual(reopened._selected_ids(), [edited_id])
+
+        reopened.status_combo.setCurrentIndex(
+            reopened.status_combo.findData("voided")
+        )
+        self.assertEqual(reopened._selected_ids(), [])
+        self.assertTrue(reopened._restore_last_transaction())
+        self.assertIsNone(reopened.status_combo.currentData())
+        self.assertEqual(reopened._selected_ids(), [edited_id])
+
+        reopened.table.clearSelection()
+        reopened.focus_table()
+        self.assertEqual(reopened._selected_ids(), [edited_id])
+
+
 class ExactAmountTests(unittest.TestCase):
     def test_picks_only_the_exact_match_not_a_near_amount(self) -> None:
         rows = [row(1, -400), row(2, -600), row(3, -1_000), row(4, -990), row(5, 50)]
