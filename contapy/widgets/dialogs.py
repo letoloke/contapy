@@ -2471,7 +2471,7 @@ class CategoriesDialog(QDialog):
         )
         self.delete_button = QPushButton("Delete")
         self.delete_button.setToolTip(
-            "Delete the selected categories (E or Del)"
+            "Delete the selected categories (Del)"
         )
         close = QPushButton("Close")
         for button in (
@@ -2798,18 +2798,6 @@ class CategoriesDialog(QDialog):
         )
 
     @staticmethod
-    def _is_delete_shortcut(event) -> bool:
-        return (
-            event.type() == QEvent.Type.KeyPress
-            and event.key() == Qt.Key.Key_E
-            and event.modifiers()
-            in (
-                Qt.KeyboardModifier.NoModifier,
-                Qt.KeyboardModifier.KeypadModifier,
-            )
-        )
-
-    @staticmethod
     def _is_edit_key(event) -> bool:
         return (
             event.type() == QEvent.Type.KeyPress
@@ -2827,7 +2815,7 @@ class CategoriesDialog(QDialog):
                 self.tabs.setCurrentWidget(watched)
                 self.edit_category()
                 return True
-            if self._is_delete_key(event) or self._is_delete_shortcut(event):
+            if self._is_delete_key(event):
                 self.tabs.setCurrentWidget(watched)
                 self.delete_category()
                 return True
@@ -2931,6 +2919,9 @@ class CategoriesDialog(QDialog):
         delete_button = box.button(QMessageBox.StandardButton.Discard)
         if delete_button is not None:
             delete_button.setText("Delete")
+            delete_button.setToolTip("Delete (E)")
+            delete_shortcut = QShortcut(QKeySequence("E"), box)
+            delete_shortcut.activated.connect(delete_button.click)
         box.setDefaultButton(QMessageBox.StandardButton.Cancel)
         if box.exec() != QMessageBox.StandardButton.Discard:
             return
@@ -3096,8 +3087,8 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
         "Categories",
         [
             ("Enter", "Edit the selected category"),
-            ("E", "Delete the selected categories"),
             ("Delete", "Delete the selected categories"),
+            ("E", "Confirm deletion in the delete warning"),
             ("Ctrl+F", "Focus the category search box"),
         ],
     ),

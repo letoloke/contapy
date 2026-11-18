@@ -737,35 +737,6 @@ class CategoryDialogTests(unittest.TestCase):
             dialog.expense_listing.topLevelItem(0).text(0), "Food"
         )
 
-    def test_e_key_deletes_the_selected_category(self) -> None:
-        store = self._store()
-        category = store.add_category("Bills", "expense")
-        dialog = CategoriesDialog(store)
-        self.addCleanup(dialog.deleteLater)
-        self._select_top(dialog.listing)
-
-        with mock.patch.object(
-            QMessageBox, "exec", return_value=QMessageBox.StandardButton.Discard
-        ):
-            QTest.keyClick(dialog.listing, Qt.Key.Key_E)
-
-        self.assertIsNone(store.category(category))
-        self.assertTrue(dialog.changed)
-        self.assertEqual(dialog.listing.topLevelItemCount(), 0)
-
-    def test_e_in_the_search_box_does_not_delete(self) -> None:
-        store = self._store()
-        category = store.add_category("Bills", "expense")
-        dialog = CategoriesDialog(store)
-        self.addCleanup(dialog.deleteLater)
-        dialog.search_edit.setText("Bill")
-
-        QTest.keyClick(dialog.search_edit, Qt.Key.Key_E)
-
-        self.assertIsNotNone(store.category(category))
-        self.assertFalse(dialog.changed)
-        self.assertIn("e", dialog.search_edit.text())
-
     def test_delete_key_cancel_keeps_the_category(self) -> None:
         store = self._store()
         category = store.add_category("Bills", "expense")
@@ -794,6 +765,10 @@ class CategoryDialogTests(unittest.TestCase):
             captured["text"] = box.text()
             captured["info"] = box.informativeText()
             captured["icon"] = box.icon()
+            captured["shortcut"] = any(
+                shortcut.key().toString() == "E"
+                for shortcut in box.findChildren(QShortcut)
+            )
             return QMessageBox.StandardButton.Cancel
 
         with mock.patch.object(QMessageBox, "exec", fake_exec):
@@ -802,6 +777,7 @@ class CategoryDialogTests(unittest.TestCase):
         self.assertIn("Delete", captured["text"])
         self.assertIn("cannot be undone", captured["info"])
         self.assertEqual(captured["icon"], QMessageBox.Icon.Warning)
+        self.assertTrue(captured["shortcut"])
 
     # ------------------------------------------------- category transactions
     def _food_store(self):
