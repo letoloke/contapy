@@ -107,14 +107,14 @@ class AirbnbTransactionTransformTests(unittest.TestCase):
         self.assertEqual(
             [row["memo"] for row in rows],
             [
-                "XYZ - Casa Azul - Reservación",
-                "XYZ - Casa Azul - Tarifa de limpieza",
-                "XYZ - Casa Azul - Tarifa de servicio",
-                "XYZ - Casa Azul - Limpieza extra",
-                "ABC - Fitz-Mar Quince - Reservación",
-                "ABC - Fitz-Mar Quince - Tarifa de limpieza",
-                "ABC - Fitz-Mar Quince - Tarifa de servicio",
-                "ABC - Fitz-Mar Quince - Impuestos",
+                "XYZ - Casa Azul - Reservación - Guest Two",
+                "XYZ - Casa Azul - Tarifa de limpieza - Guest Two",
+                "XYZ - Casa Azul - Tarifa de servicio - Guest Two",
+                "XYZ - Casa Azul - Limpieza extra - Guest Two",
+                "ABC - Fitz-Mar Quince - Reservación - Guest One",
+                "ABC - Fitz-Mar Quince - Tarifa de limpieza - Guest One",
+                "ABC - Fitz-Mar Quince - Tarifa de servicio - Guest One",
+                "ABC - Fitz-Mar Quince - Impuestos - Guest One",
             ],
         )
         self.assertEqual(

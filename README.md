@@ -56,7 +56,7 @@ Mappings are remembered automatically. After an import, the current field mappin
 
 **File → From Airbnb…** (also in the toolbar's account-actions menu and under **Tools**) converts an Airbnb reservation export and then opens the normal import preview. It drops `Payout` rows, converts `Fecha de inicio` to an ISO date, and builds the memo from the confirmation code, type, space and guest. The result matches the output of the original `airtransa.py` script.
 
-**File → From Airbnb (transactions)…** is a second, alternative Airbnb importer based on `airbnb_csv_transform.py`. It groups rows by confirmation code, drops `Payout` rows, and splits each reservation into reservation, cleaning-fee and service-fee rows; other transaction types become their own rows. It keeps each reservation's generated rows together and sorts the newest dates first. The result uses the English CSV headers and opens the normal import preview.
+**File → From Airbnb (transactions)…** is a second, alternative Airbnb importer based on `airbnb_csv_transform2.py`. It groups rows by confirmation code, drops `Payout` rows, and splits each reservation into reservation, cleaning-fee and service-fee rows; other transaction types become their own rows. Every memo includes the guest name. It keeps each reservation's generated rows together and sorts the newest dates first. The result uses the English CSV headers and opens the normal import preview.
 
 ### Booking payouts and Sabee reservations
 
@@ -347,7 +347,7 @@ The demo figures are aligned to the reference: last 30 days **$167,248.99**, rec
 - **Import menu** — `Ctrl+I` opens a source picker for CSV, Airbnb, Airbnb transactions, Booking and Banamex imports; each main-window import writes a full pre-import backup and can be reverted from the same menu.
 - **CSV import** — automatic English/Spanish header detection, editable field mapping, remembered header profiles, mapped-row preview with sortable columns and per-row import checkboxes, optional automatic assignment rules, duplicate detection by memo, target-account selection and memo-to-payee fallback.
 - **Airbnb import** — converts Airbnb reservation exports (dropping payout rows and rebuilding memos) before the standard import preview.
-- **Airbnb transactions import** — an alternative converter that groups by confirmation code and splits reservations into reservation, cleaning-fee and service-fee rows.
+- **Airbnb transactions import** — an alternative converter that groups by confirmation code, splits reservations into reservation, cleaning-fee and service-fee rows, and includes the guest name in each memo.
 - **Booking import** — merges Booking payout and Sabee reservation exports, unpivots the amount columns and adds room names before the standard import preview.
 - **Banamex import** — converts saved Banamex HTML statements (dates, memos and amounts) before the standard import preview, marking **En proceso** rows as **Remind**.
 - **Reports window** — HomeBank-style Display panel, Category/Payee/Account and monthly grouping, Expense/Income types, date presets and custom ranges, search and account filters, and table, pie and bar views.
