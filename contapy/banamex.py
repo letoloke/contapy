@@ -23,6 +23,7 @@ COLUMNS = [
     "Importe",
     "Categoría",
     "Etiquetas",
+    "Status",
 ]
 
 MONTHS = {
@@ -195,6 +196,7 @@ def transform(src: str | Path, dst: str | Path) -> tuple[int, int, int]:
         if parsed is None or amount is None:
             skipped += 1
             continue
+        pending = "en proceso" in amount_text.casefold()
         output.append(
             {
                 "Fecha": parsed,
@@ -205,6 +207,7 @@ def transform(src: str | Path, dst: str | Path) -> tuple[int, int, int]:
                 "Importe": f"{amount:.2f}",
                 "Categoría": "",
                 "Etiquetas": "",
+                "Status": "Remind" if pending else "",
             }
         )
 

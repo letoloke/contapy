@@ -62,7 +62,7 @@ Mappings are remembered automatically. After an import, the current field mappin
 
 ### Banamex statements
 
-**File → From Banamex…** converts a saved Banamex HTML statement and opens the same import preview. It reads the statement's transactions table, converts `08 Nov` dates to ISO using the year from the statement header (rolling December into the previous year for January statements), and cleans up `Concepto de pago`/`Referencia` descriptions. The result matches the original `banahtml.py` script.
+**File → From Banamex…** converts a saved Banamex HTML statement and opens the same import preview. It reads the statement's transactions table, converts `08 Nov` dates to ISO using the year from the statement header (rolling December into the previous year for January statements), and cleans up `Concepto de pago`/`Referencia` descriptions. Rows whose amount says **En proceso** are imported with the **Remind** status, so pending card holds stand out and can be followed up when they settle. The result matches the original `banahtml.py` script, with that pending-row handling added.
 
 ### Duplicate rows
 
@@ -324,7 +324,7 @@ The demo figures are aligned to the reference: last 30 days **$167,248.99**, rec
 - **CSV import** — automatic English/Spanish header detection, editable field mapping, remembered header profiles, mapped-row preview with sortable columns and per-row import checkboxes, optional automatic assignment rules, duplicate detection by memo, target-account selection and memo-to-payee fallback.
 - **Airbnb import** — converts Airbnb reservation exports (dropping payout rows and rebuilding memos) before the standard import preview.
 - **Booking import** — merges Booking payout and Sabee reservation exports, unpivots the amount columns and adds room names before the standard import preview.
-- **Banamex import** — converts saved Banamex HTML statements (dates, memos and amounts) before the standard import preview.
+- **Banamex import** — converts saved Banamex HTML statements (dates, memos and amounts) before the standard import preview, marking **En proceso** rows as **Remind**.
 - **Reports window** — HomeBank-style Display panel, Category/Payee/Account and monthly grouping, Expense/Income types, date presets and custom ranges, search and account filters, and table, pie and bar views.
 - **Budgets window** — monthly per-category expense budgets with progress bars, remaining/over amounts, month navigation, a configurable day-of-month period start and six-month trend charts that zoom into a larger dialog; the dashboard embeds a compact version beside the scheduled strip.
 - **Payee manager** — registered payees with posted/scheduled counts, unique names, optional notes, safe rename propagation and reassignment-before-delete for linked transactions.

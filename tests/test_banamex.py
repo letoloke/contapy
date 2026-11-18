@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 from contapy.banamex import COLUMNS, transform
+from contapy.csv_io import read_csv_plan, statuses_from_row
 
 
 class BanamexTransformTests(unittest.TestCase):
@@ -59,13 +60,26 @@ class BanamexTransformTests(unittest.TestCase):
         self.assertEqual(rows[0]["Fecha"], "2026-11-08")
         self.assertEqual(rows[0]["Memo"], "PAGO INTERBANCARIO AUT 0807593")
         self.assertEqual(rows[0]["Importe"], "560.00")
+        self.assertEqual(rows[0]["Status"], "Remind")
         self.assertEqual(rows[1]["Fecha"], "2026-11-07")
         self.assertEqual(rows[1]["Importe"], "-170.00")
+        self.assertEqual(rows[1]["Status"], "")
         self.assertEqual(
             rows[2]["Memo"],
             "Concepto de pago: Servicio | Servicio Referencia 123",
         )
         self.assertEqual(rows[2]["Importe"], "1200.50")
+        self.assertEqual(rows[2]["Status"], "")
+
+        plan = read_csv_plan(target)
+        self.assertEqual(
+            statuses_from_row(plan, plan.rows[0]),
+            (True, False, True, False, False),
+        )
+        self.assertEqual(
+            statuses_from_row(plan, plan.rows[1]),
+            (True, False, False, False, False),
+        )
 
     def test_rolls_december_into_the_previous_year(self) -> None:
         source = self.write_statement(
