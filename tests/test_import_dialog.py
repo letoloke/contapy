@@ -10,7 +10,8 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication, QTableWidgetSelectionRange
 
 from contapy.db import DataStore
 from contapy.theme import apply_theme
@@ -76,6 +77,80 @@ class ImportDialogTests(unittest.TestCase):
             dialog.preview.item(row, 0).setCheckState(Qt.CheckState.Unchecked)
         self.assertEqual(dialog.skip_row_indexes(), {0, 1})
         self.assertFalse(dialog.import_button.isEnabled())
+        dialog.deleteLater()
+
+    def test_multiple_rows_can_be_unchecked_at_once(self) -> None:
+        target = self.write_csv(
+            "bulk.csv",
+            [
+                "2031-01-01,10,One,",
+                "2031-01-02,20,Two,",
+                "2031-01-03,30,Three,",
+                "2031-01-04,40,Four,",
+            ],
+        )
+        dialog = self.dialog(target)
+        self.assertFalse(dialog.uncheck_button.isEnabled())
+
+        dialog.preview.setRangeSelected(
+            QTableWidgetSelectionRange(0, 0, 2, 6), True
+        )
+        self.assertTrue(dialog.uncheck_button.isEnabled())
+        dialog._uncheck_selected()
+
+        states = [
+            dialog.preview.item(row, 0).checkState()
+            for row in range(dialog.preview.rowCount())
+        ]
+        self.assertEqual(
+            states,
+            [
+                Qt.CheckState.Unchecked,
+                Qt.CheckState.Unchecked,
+                Qt.CheckState.Unchecked,
+                Qt.CheckState.Checked,
+            ],
+        )
+        self.assertEqual(dialog.skip_row_indexes(), {0, 1, 2})
+        self.assertTrue(dialog.import_button.isEnabled())
+        self.assertIn("1 of 4 row(s) selected", dialog.status_label.text())
+        dialog.deleteLater()
+
+    def test_space_toggles_selected_rows(self) -> None:
+        target = self.write_csv(
+            "space.csv",
+            [
+                "2031-01-01,10,One,",
+                "2031-01-02,20,Two,",
+                "2031-01-03,30,Three,",
+            ],
+        )
+        dialog = self.dialog(target)
+        dialog.preview.setRangeSelected(
+            QTableWidgetSelectionRange(0, 0, 1, 6), True
+        )
+
+        QTest.keyClick(dialog.preview, Qt.Key.Key_Space)
+
+        self.assertEqual(
+            [
+                dialog.preview.item(row, 0).checkState()
+                for row in range(2)
+            ],
+            [Qt.CheckState.Unchecked, Qt.CheckState.Unchecked],
+        )
+        self.assertEqual(
+            dialog.preview.item(2, 0).checkState(), Qt.CheckState.Checked
+        )
+
+        QTest.keyClick(dialog.preview, Qt.Key.Key_Space)
+        self.assertEqual(
+            [
+                dialog.preview.item(row, 0).checkState()
+                for row in range(2)
+            ],
+            [Qt.CheckState.Checked, Qt.CheckState.Checked],
+        )
         dialog.deleteLater()
 
     def test_voided_transactions_are_still_detected_as_duplicates(self) -> None:

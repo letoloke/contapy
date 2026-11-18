@@ -3093,6 +3093,13 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
         ],
     ),
     (
+        "Import preview",
+        [
+            ("Space", "Check or uncheck the selected import rows"),
+            ("Ctrl/Shift-click", "Select several preview rows"),
+        ],
+    ),
+    (
         "Reports window",
         [
             ("Ctrl+1 / Ctrl+2 / Ctrl+3", "Table, Pie chart or Bar chart"),

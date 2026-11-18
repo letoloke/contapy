@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMenu,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -215,7 +217,22 @@ class CsvImportDialog(QDialog):
         preview_label.setFont(font(12, 600))
         preview_title.addWidget(preview_label)
         preview_title.addStretch(1)
-        sort_hint = QLabel("Click a column header to sort")
+
+        self.uncheck_button = QPushButton("Uncheck selected")
+        self.uncheck_button.setFont(font(11, 400))
+        self.uncheck_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.uncheck_button.setToolTip(
+            "Ctrl/Shift-click several rows, then uncheck them all."
+        )
+        self.uncheck_button.setEnabled(False)
+        self.uncheck_button.clicked.connect(self._uncheck_selected)
+        preview_title.addWidget(self.uncheck_button)
+
+        selection_hint = QLabel("Ctrl/Shift-click rows · Space toggles")
+        selection_hint.setFont(font(11, 400))
+        selection_hint.setStyleSheet(f"color:{C.MUTED_DARK};")
+        preview_title.addWidget(selection_hint)
+        sort_hint = QLabel("Click a header to sort")
         sort_hint.setFont(font(11, 400))
         sort_hint.setStyleSheet(f"color:{C.MUTED_DARK};")
         preview_title.addWidget(sort_hint)
@@ -231,12 +248,20 @@ class CsvImportDialog(QDialog):
         self.preview.verticalHeader().setVisible(False)
         self.preview.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.preview.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.preview.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.preview.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self.preview.setAlternatingRowColors(True)
         self.preview.setShowGrid(False)
         self.preview.setWordWrap(False)
         self.preview.verticalHeader().setDefaultSectionSize(27)
         self.preview.itemChanged.connect(self._selection_changed)
+        self.preview.itemSelectionChanged.connect(self._update_bulk_buttons)
+        self.preview.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self.preview.customContextMenuRequested.connect(
+            self._preview_context_menu
+        )
+        self.preview.installEventFilter(self)
         header = self.preview.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         header.resizeSection(0, 56)
@@ -379,6 +404,7 @@ class CsvImportDialog(QDialog):
         header.setSortIndicator(self._sort_column, self._sort_order)
         header.setSortIndicatorShown(True)
         self.preview.sortItems(self._sort_column, self._sort_order)
+        self._update_bulk_buttons()
 
     def _refresh_preview(self, *_args) -> None:
         existing = self.store.import_fingerprints([account.id for account in self.accounts])
@@ -478,6 +504,7 @@ class CsvImportDialog(QDialog):
 
         self._apply_sort()
         self._update_selection_summary()
+        self._update_bulk_buttons()
 
     def _checked_rows(self) -> set[int]:
         checked: set[int] = set()
@@ -486,6 +513,97 @@ class CsvImportDialog(QDialog):
             if item is not None and item.checkState() == Qt.CheckState.Checked:
                 checked.add(int(item.data(Qt.ItemDataRole.UserRole)))
         return checked
+
+    def _selected_preview_rows(self) -> list[int]:
+        selection = self.preview.selectionModel()
+        if selection is None:
+            return []
+        return sorted({index.row() for index in selection.selectedRows()})
+
+    def _set_rows_checked(self, rows: list[int], checked: bool) -> None:
+        state = (
+            Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+        )
+        changed = False
+        self.preview.blockSignals(True)
+        try:
+            for row in rows:
+                if not 0 <= row < self.preview.rowCount():
+                    continue
+                item = self.preview.item(row, 0)
+                if item is not None and item.checkState() != state:
+                    item.setCheckState(state)
+                    changed = True
+        finally:
+            self.preview.blockSignals(False)
+        if changed:
+            self._update_selection_summary()
+        self._update_bulk_buttons()
+
+    def _check_selected(self) -> None:
+        rows = self._selected_preview_rows()
+        if rows:
+            self._set_rows_checked(rows, True)
+
+    def _uncheck_selected(self) -> None:
+        rows = self._selected_preview_rows()
+        if rows:
+            self._set_rows_checked(rows, False)
+
+    def _toggle_selected_rows(self) -> None:
+        rows = self._selected_preview_rows()
+        if not rows and self.preview.currentRow() >= 0:
+            rows = [self.preview.currentRow()]
+        items = [
+            self.preview.item(row, 0)
+            for row in rows
+            if 0 <= row < self.preview.rowCount()
+        ]
+        items = [item for item in items if item is not None]
+        if not items:
+            return
+        all_checked = all(
+            item.checkState() == Qt.CheckState.Checked for item in items
+        )
+        self._set_rows_checked(rows, not all_checked)
+
+    def _update_bulk_buttons(self) -> None:
+        self.uncheck_button.setEnabled(bool(self._selected_preview_rows()))
+
+    def _preview_context_menu(self, pos) -> None:
+        index = self.preview.indexAt(pos)
+        selection = self.preview.selectionModel()
+        if index.isValid() and selection is not None:
+            selected_rows = {i.row() for i in selection.selectedRows()}
+            if index.row() not in selected_rows:
+                self.preview.selectRow(index.row())
+        menu = QMenu(self)
+        menu.addAction("Check selected", self._check_selected)
+        menu.addAction("Uncheck selected", self._uncheck_selected)
+        menu.addSeparator()
+        menu.addAction(
+            "Check all",
+            lambda: self._set_rows_checked(
+                list(range(self.preview.rowCount())), True
+            ),
+        )
+        menu.addAction(
+            "Uncheck all",
+            lambda: self._set_rows_checked(
+                list(range(self.preview.rowCount())), False
+            ),
+        )
+        menu.exec(self.preview.viewport().mapToGlobal(pos))
+
+    def eventFilter(self, watched, event):  # noqa: N802
+        if (
+            watched is self.preview
+            and event.type() == QEvent.Type.KeyPress
+            and event.key() == Qt.Key.Key_Space
+        ):
+            self._toggle_selected_rows()
+            return True
+        return super().eventFilter(watched, event)
 
     def _selection_changed(self, item: QTableWidgetItem) -> None:
         if self._updating_preview or item.column() != 0:
