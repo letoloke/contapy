@@ -2180,6 +2180,16 @@ class LedgerWindow(QMainWindow):
             return
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
+        try:
+            backup_path = self.store.backup_before_import(path.name)
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Import cancelled",
+                "The import was not started because the pre-import backup "
+                f"could not be written.\n\n{exc}",
+            )
+            return
         max_before = self.store.max_transaction_id()
         try:
             added, skipped, duplicates = self.store.import_csv(
@@ -2191,11 +2201,19 @@ class LedgerWindow(QMainWindow):
                 apply_rules=dialog.apply_rules(),
             )
         except Exception as exc:
-            QMessageBox.warning(self, "Import failed", str(exc))
+            QMessageBox.warning(
+                self,
+                "Import failed",
+                f"{exc}\n\nA full backup from before the import is here:\n"
+                f"{backup_path}",
+            )
             return
         new_ids = self.store.transaction_ids_after(max_before)
         if new_ids:
             self._push_undo("CSV import", [], new_ids)
+        # Ledger imports are reverted with Ctrl+Z in this window. Do not leave
+        # the main window's global "last import" pointing at an older import.
+        self.store.clear_last_import()
         self._log_activity(
             f"Imported {added} transactions from {Path(path).name}"
         )

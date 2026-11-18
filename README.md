@@ -64,6 +64,25 @@ Mappings are remembered automatically. After an import, the current field mappin
 
 **File → From Banamex…** converts a saved Banamex HTML statement and opens the same import preview. It reads the statement's transactions table, converts `08 Nov` dates to ISO using the year from the statement header (rolling December into the previous year for January statements), and cleans up `Concepto de pago`/`Referencia` descriptions. Rows whose amount says **En proceso** are imported with the **Remind** status, so pending card holds stand out and can be followed up when they settle. The result matches the original `banahtml.py` script, with that pending-row handling added.
 
+### Pre-import backups and reverting
+
+Every import from the main window writes a full database copy to
+`import-backups/` beside the active database before any transactions are
+inserted. The file name includes the source name and timestamp. If the backup
+cannot be written, the import is cancelled. Backups are kept so you can restore
+one manually if needed.
+
+The last main-window import is remembered per database.
+**File → Import Transactions → Revert Last Import…** deletes only the
+transactions created by that import, after a confirmation that also shows the
+pre-import backup path. A second full backup is written immediately before the
+revert, so even edits made after the import can be recovered. The revert removes
+split children and both legs of a transfer if an imported row was later
+converted. Categories or accounts created by the import are left in place;
+restore either backup for a complete rollback. Imports started from inside an
+account ledger also write a pre-import backup, but those are reverted with the
+ledger's **Ctrl+Z**.
+
 ### Duplicate rows
 
 Click any preview column header to sort the rows — **Amount** sorts numerically and **Date** chronologically; click again to reverse the order. Sorting is visual only, so the row checkboxes stay attached to their original transactions.
@@ -320,7 +339,7 @@ The demo figures are aligned to the reference: last 30 days **$167,248.99**, rec
 - **Ledger clipboard** — `Ctrl+C` / `Ctrl+V` duplicate transactions within or across accounts; `Ctrl+Shift+C` copies memo text and `Ctrl+Shift+A` copies comma-formatted amounts.
 - **Transaction editor** — Expense/Income/Transfer tabs, payment mode, number, tags, status icons, type-to-search combos, split allocations, and Enter-to-save.
 - **Activity history** — a Markdown action log beside the database with **View Activity History** and **Save Activity History As…** in the File menu, flushed every five minutes.
-- **Import menu** — `Ctrl+I` opens a source picker for CSV, Airbnb, Booking and Banamex imports.
+- **Import menu** — `Ctrl+I` opens a source picker for CSV, Airbnb, Booking and Banamex imports; each main-window import writes a full pre-import backup and can be reverted from the same menu.
 - **CSV import** — automatic English/Spanish header detection, editable field mapping, remembered header profiles, mapped-row preview with sortable columns and per-row import checkboxes, optional automatic assignment rules, duplicate detection by memo, target-account selection and memo-to-payee fallback.
 - **Airbnb import** — converts Airbnb reservation exports (dropping payout rows and rebuilding memos) before the standard import preview.
 - **Booking import** — merges Booking payout and Sabee reservation exports, unpivots the amount columns and adds room names before the standard import preview.
@@ -522,6 +541,7 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | Filter the strip | The **All** account combo and the filter icon |
 | Change chart period | The combo in each chart footer |
 | Import / export | `Ctrl+I` opens the import menu (CSV, Airbnb, Booking, Banamex); `Ctrl+E` exports CSV |
+| Revert the last import | **File → Import Transactions → Revert Last Import…** |
 | Import without automatic rules | Untick **Apply automatic assignment rules** in the import dialog |
 | Open another database | **File → Open Database…** or `Ctrl+O` |
 | Save a copy elsewhere | **File → Save Database As…** or `Ctrl+Alt+S` |
@@ -585,7 +605,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-Two hundred and sixty-nine tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, bulk ledger editing, ledger undo, sortable ledger columns, post-edit reselection across filters and accounts, reopening a ledger on the last edited transaction, ledger transaction copy/paste, memo and amount clipboard, the E edit shortcut, rule search and applying rules to existing ledger transactions, saved templates (storage and order, editor round-trips, status assignment and migration, manager search, duplication and deletion, applying a chosen template, per-field overwrite/fill-empty, memo append, transfer/split skipping and ledger integration), payee CRUD and reassignment, strict payee/category typing and category autocomplete focus, Markdown activity history, database switching, Ctrl+R reconciliation in the ledger and transaction editor, split transactions (storage, editing, balanced allocation, ledger children, reports, budgets, category lists and undo), uncategorized category highlighting, transfer and voided category labels, responsive account-sidebar columns, exact-amount highlighting for voiding with its Alt+V hint, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, transaction counts with parent roll-up and split de-duplication, name/count sorting, search, Delete-key removal, Enter-to-edit and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, the dashboard budgets panel beside the scheduled strip, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the searchable Ctrl+K shortcut list and its window-level action, HomeBank automatic-assignment import (conditions, payees, categories, payments, tags, notes, overwrite flags, duplicates and invalid references), the 70-row HomeBank bank-CSV import, custom and remembered header mappings, the Ctrl+I import menu, sortable import previews, CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
+Two hundred and seventy-five tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, bulk ledger editing, ledger undo, sortable ledger columns, post-edit reselection across filters and accounts, reopening a ledger on the last edited transaction, ledger transaction copy/paste, memo and amount clipboard, the E edit shortcut, rule search and applying rules to existing ledger transactions, saved templates (storage and order, editor round-trips, status assignment and migration, manager search, duplication and deletion, applying a chosen template, per-field overwrite/fill-empty, memo append, transfer/split skipping and ledger integration), payee CRUD and reassignment, strict payee/category typing and category autocomplete focus, Markdown activity history, database switching, Ctrl+R reconciliation in the ledger and transaction editor, split transactions (storage, editing, balanced allocation, ledger children, reports, budgets, category lists and undo), uncategorized category highlighting, transfer and voided category labels, responsive account-sidebar columns, exact-amount highlighting for voiding with its Alt+V hint, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, transaction counts with parent roll-up and split de-duplication, name/count sorting, search, Delete-key removal, Enter-to-edit and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, the dashboard budgets panel beside the scheduled strip, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the searchable Ctrl+K shortcut list and its window-level action, HomeBank automatic-assignment import (conditions, payees, categories, payments, tags, notes, overwrite flags, duplicates and invalid references), the 70-row HomeBank bank-CSV import, custom and remembered header mappings, the Ctrl+I import menu, sortable import previews, pre-import database backups, reverting the last main-window import (including split and transfer rows), CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
 
 ## Notes / limitations
 

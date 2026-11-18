@@ -109,11 +109,16 @@ class MainWindow(QMainWindow):
         self.act_import_airbnb = self._action("From Airbnb…", self.import_airbnb)
         self.act_import_booking = self._action("From Booking…", self.import_booking)
         self.act_import_banamex = self._action("From Banamex…", self.import_banamex)
+        self.act_revert_import = self._action(
+            "Revert Last Import…", self.revert_last_import
+        )
         self.import_menu = QMenu("Import Transactions", self)
         self.import_menu.addAction(self.act_import_csv)
         self.import_menu.addAction(self.act_import_airbnb)
         self.import_menu.addAction(self.act_import_booking)
         self.import_menu.addAction(self.act_import_banamex)
+        self.import_menu.addSeparator()
+        self.import_menu.addAction(self.act_revert_import)
         self.act_export = self._action("Export CSV…", self.export_csv, "Ctrl+E")
         self.act_open_database = self._action(
             "Open Database…", self.open_database, "Ctrl+O"
@@ -1021,7 +1026,9 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Airbnb import failed", str(exc))
                 return
             note = f"{excluded} payout(s) excluded" if excluded else ""
-            self._import_csv_path(target, note=note)
+            self._import_csv_path(
+                target, note=note, source_name=source.name
+            )
 
     def import_booking(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -1054,7 +1061,11 @@ class MainWindow(QMainWindow):
             parts = [f"{written} amount row(s)"]
             if rooms_missing:
                 parts.append(f"{rooms_missing} reservation(s) without a room")
-            self._import_csv_path(target, note=" · ".join(parts))
+            self._import_csv_path(
+                target,
+                note=" · ".join(parts),
+                source_name=f"{booking_source.name} + {sabee_source.name}",
+            )
 
     def import_banamex(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -1076,9 +1087,13 @@ class MainWindow(QMainWindow):
             parts = [f"{year} statement"]
             if skipped:
                 parts.append(f"{skipped} unreadable row(s) ignored")
-            self._import_csv_path(target, note=" · ".join(parts))
+            self._import_csv_path(
+                target, note=" · ".join(parts), source_name=source.name
+            )
 
-    def _import_csv_path(self, path: Path, note: str = "") -> None:
+    def _import_csv_path(
+        self, path: Path, note: str = "", source_name: str | None = None
+    ) -> None:
         try:
             dialog = CsvImportDialog(
                 self.store,
@@ -1092,6 +1107,20 @@ class MainWindow(QMainWindow):
             return
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
+
+        display_name = source_name or path.name
+        try:
+            backup_path = self.store.backup_before_import(display_name)
+        except Exception as exc:  # pragma: no cover - surfaced to the user
+            QMessageBox.critical(
+                self,
+                "Import cancelled",
+                "The import was not started because the pre-import backup "
+                f"could not be written.\n\n{exc}",
+            )
+            return
+
+        max_before = self.store.max_transaction_id()
         try:
             added, skipped, duplicates = self.store.import_csv(
                 path,
@@ -1102,8 +1131,27 @@ class MainWindow(QMainWindow):
                 apply_rules=dialog.apply_rules(),
             )
         except Exception as exc:  # pragma: no cover - surfaced to the user
-            QMessageBox.warning(self, "Import failed", str(exc))
+            QMessageBox.warning(
+                self,
+                "Import failed",
+                f"{exc}\n\nA full backup from before the import is here:\n"
+                f"{backup_path}",
+            )
             return
+
+        new_ids = self.store.transaction_ids_after(max_before)
+        if new_ids:
+            self.store.record_last_import(
+                display_name,
+                new_ids,
+                backup_path=backup_path,
+                added=added,
+                skipped=skipped,
+                duplicates=duplicates,
+            )
+        else:
+            self.store.clear_last_import()
+
         self.refresh_all()
         detail = f"{added} imported"
         if duplicates:
@@ -1113,7 +1161,8 @@ class MainWindow(QMainWindow):
         if note:
             detail += f", {note}"
         self._record_activity(
-            "Imported transactions", f"{detail} · {Path(path).name}"
+            "Imported transactions",
+            f"{detail} · {display_name} · backup: {backup_path.name}",
         )
         self.show_toast(f"Import: {detail}")
         if skipped or duplicates:
@@ -1126,8 +1175,67 @@ class MainWindow(QMainWindow):
                     f"\nSkipped {skipped} row(s) that could not be parsed."
                     if skipped
                     else ""
-                ),
+                )
+                + f"\n\nPre-import backup:\n{backup_path}",
             )
+
+    def revert_last_import(self) -> None:
+        record = self.store.last_import()
+        if record is None:
+            QMessageBox.information(
+                self, "Revert import", "There is no import to revert."
+            )
+            return
+        ids = record.get("ids", [])
+        display_name = Path(str(record.get("path", ""))).name
+        if not display_name:
+            display_name = "the last import"
+        backup = str(record.get("backup", ""))
+        message = (
+            f"Revert the import of “{display_name}”?\n\n"
+            f"This deletes {len(ids)} transaction(s) created by that import, "
+            "including any edits made to them since."
+        )
+        if backup:
+            message += f"\n\nPre-import backup:\n{backup}"
+        message += (
+            "\n\nA fresh full backup will be written before anything is "
+            "deleted."
+        )
+        answer = QMessageBox.question(
+            self,
+            "Revert last import",
+            message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            revert_backup = self.store.backup_before_import("before-revert")
+        except Exception as exc:  # pragma: no cover - surfaced to the user
+            QMessageBox.warning(
+                self,
+                "Revert cancelled",
+                "The revert was not started because the safety backup could "
+                f"not be written.\n\n{exc}",
+            )
+            return
+        try:
+            removed = self.store.revert_last_import()
+        except Exception as exc:  # pragma: no cover - surfaced to the user
+            QMessageBox.warning(self, "Revert failed", str(exc))
+            return
+        self._record_activity(
+            "Reverted import",
+            f"{removed} transaction(s) · {display_name} · "
+            f"backup: {revert_backup.name}",
+        )
+        self.refresh_all()
+        self.show_toast(
+            f"Reverted import: {removed} transaction(s) removed · "
+            "safety backup saved"
+        )
 
     def export_csv(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
@@ -1162,6 +1270,7 @@ class MainWindow(QMainWindow):
             action.setEnabled(has_account)
         self.act_open_ledger.setEnabled(has_account)
         self.act_post.setEnabled(has_schedule)
+        self.act_revert_import.setEnabled(self.store.last_import() is not None)
 
     def show_toast(self, text: str) -> None:
         self.toast.setText(text)

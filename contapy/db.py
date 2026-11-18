@@ -340,12 +340,19 @@ def default_db_path() -> Path:
 
 
 BACKUP_DIR_NAME = "dailylbaka"
+IMPORT_BACKUP_DIR_NAME = "import-backups"
+LAST_IMPORT_KEY = "last_import"
 ImportFingerprint = tuple[int, str, str, str, float]
 
 
 def daily_backup_dir(db_path: str | Path) -> Path:
     """Folder for the automatic daily copies, beside the active database."""
     return Path(db_path).expanduser().parent / BACKUP_DIR_NAME
+
+
+def import_backup_dir(db_path: str | Path) -> Path:
+    """Folder for the full copies written before each import."""
+    return Path(db_path).expanduser().parent / IMPORT_BACKUP_DIR_NAME
 
 
 def _shift_month_start(day: date, months: int) -> date:
@@ -514,6 +521,126 @@ class DataStore:
         if target.exists():
             return None
         return self.backup_to(target)
+
+    def backup_before_import(self, source: str | Path | None = None) -> Path:
+        """Write a full, timestamped database copy before an import.
+
+        The copy lives in ``import-backups`` beside the active database. The
+        import is aborted by the caller when this raises.
+        """
+        folder = import_backup_dir(self.path)
+        source_name = Path(source).stem if source else "import"
+        label = "".join(
+            char if char.isalnum() or char in "._-" else "-"
+            for char in source_name
+        ).strip("-._") or "import"
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        target = folder / f"{self.path.stem}-{label}-{stamp}.db"
+        counter = 2
+        while target.exists():
+            target = folder / (
+                f"{self.path.stem}-{label}-{stamp}-{counter}.db"
+            )
+            counter += 1
+        return self.backup_to(target)
+
+    def last_import(self) -> dict | None:
+        """The most recent main-window import, including its created row ids."""
+        raw = self.get_setting(LAST_IMPORT_KEY)
+        if not raw:
+            return None
+        try:
+            record = json.loads(raw)
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(record, dict):
+            return None
+        ids = [
+            int(value)
+            for value in record.get("ids", [])
+            if str(value).isdigit()
+        ]
+        if not ids:
+            return None
+        record["ids"] = ids
+        return record
+
+    def record_last_import(
+        self,
+        path: str | Path,
+        transaction_ids: list[int],
+        *,
+        backup_path: str | Path | None = None,
+        added: int = 0,
+        skipped: int = 0,
+        duplicates: int = 0,
+    ) -> None:
+        record = {
+            "path": str(path),
+            "ids": [int(transaction_id) for transaction_id in transaction_ids],
+            "backup": str(backup_path) if backup_path else "",
+            "added": int(added),
+            "skipped": int(skipped),
+            "duplicates": int(duplicates),
+            "at": datetime.now().isoformat(timespec="seconds"),
+        }
+        self.set_setting(LAST_IMPORT_KEY, json.dumps(record))
+
+    def clear_last_import(self) -> None:
+        self.conn.execute(
+            "DELETE FROM settings WHERE key=?", (LAST_IMPORT_KEY,)
+        )
+        self.conn.commit()
+
+    def revert_last_import(self) -> int:
+        """Delete every transaction created by the last main-window import."""
+        record = self.last_import()
+        if record is None:
+            return 0
+        ids = sorted(set(record.get("ids", [])))
+        if not ids:
+            self.clear_last_import()
+            return 0
+
+        transfer_ids: set[str] = set()
+        for start in range(0, len(ids), 500):
+            chunk = ids[start : start + 500]
+            placeholders = ",".join("?" for _ in chunk)
+            for row in self.conn.execute(
+                f"SELECT DISTINCT transfer_id FROM transactions "
+                f"WHERE id IN ({placeholders}) AND transfer_id IS NOT NULL",
+                chunk,
+            ):
+                transfer_ids.add(str(row[0]))
+        if transfer_ids:
+            groups = sorted(transfer_ids)
+            for start in range(0, len(groups), 500):
+                chunk = groups[start : start + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                ids.extend(
+                    int(row[0])
+                    for row in self.conn.execute(
+                        f"SELECT id FROM transactions "
+                        f"WHERE transfer_id IN ({placeholders})",
+                        chunk,
+                    )
+                )
+        ids = sorted(set(ids))
+
+        removed = 0
+        with self.conn:
+            for start in range(0, len(ids), 500):
+                chunk = ids[start : start + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                cursor = self.conn.execute(
+                    f"DELETE FROM transactions WHERE id IN ({placeholders})",
+                    chunk,
+                )
+                removed += (
+                    cursor.rowcount if cursor.rowcount >= 0 else len(chunk)
+                )
+        self.clear_last_import()
+        return removed
 
     def _rows(self, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
         return list(self.conn.execute(sql, params))

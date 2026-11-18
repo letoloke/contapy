@@ -12,8 +12,14 @@ from pathlib import Path
 from unittest import mock
 
 from contapy.csv_io import parse_amount, read_csv_plan
-from contapy.db import DataStore, daily_backup_dir, default_db_path, import_fingerprint
-from contapy.models import Template, TransactionDraft
+from contapy.db import (
+    DataStore,
+    daily_backup_dir,
+    default_db_path,
+    import_backup_dir,
+    import_fingerprint,
+)
+from contapy.models import SplitDraft, Template, TransactionDraft
 
 
 class StoreTests(unittest.TestCase):
@@ -588,6 +594,106 @@ class StoreTests(unittest.TestCase):
         finally:
             later.close()
 
+
+    def test_import_backup_is_full_and_timestamped(self) -> None:
+        backup = self.store.backup_before_import("Banamex November.html")
+
+        self.assertEqual(backup.parent, import_backup_dir(self.path))
+        self.assertTrue(backup.is_file())
+        self.assertIn("Banamex-November", backup.name)
+        copy = DataStore(backup, seed=False)
+        try:
+            self.assertEqual(
+                len(copy.accounts()), len(self.store.accounts())
+            )
+        finally:
+            copy.close()
+
+    def test_last_import_can_be_reverted_without_touching_other_rows(self) -> None:
+        account = self.store.add_account("Import test", "Bank", 0)
+        imported = [
+            self.store.add_transaction(
+                TransactionDraft(
+                    date=date.today().isoformat(),
+                    account_id=account,
+                    payee=f"Imported {index}",
+                    category_id=None,
+                    amount=-10.0 - index,
+                )
+            )
+            for index in range(3)
+        ]
+        kept = self.store.add_transaction(
+            TransactionDraft(
+                date=date.today().isoformat(),
+                account_id=account,
+                payee="Keep me",
+                category_id=None,
+                amount=-99.0,
+            )
+        )
+        self.store.record_last_import(
+            "statement.csv", imported, added=len(imported)
+        )
+
+        record = self.store.last_import()
+        assert record is not None
+        self.assertEqual(record["path"], "statement.csv")
+        self.assertEqual(record["ids"], imported)
+
+        removed = self.store.revert_last_import()
+
+        self.assertEqual(removed, 3)
+        for transaction_id in imported:
+            self.assertIsNone(self.store.transaction(transaction_id))
+        self.assertIsNotNone(self.store.transaction(kept))
+        self.assertIsNone(self.store.last_import())
+
+    def test_revert_last_import_removes_split_children(self) -> None:
+        account = self.store.add_account("Import split", "Bank", 0)
+        category = self.store.ensure_category("Imported : Split", "expense")
+        split_id = self.store.add_transaction(
+            TransactionDraft(
+                date=date.today().isoformat(),
+                account_id=account,
+                payee="Split import",
+                category_id=None,
+                amount=-100.0,
+                splits=[
+                    SplitDraft(category, -60.0),
+                    SplitDraft(category, -40.0),
+                ],
+            )
+        )
+        self.store.record_last_import("split.csv", [split_id])
+
+        removed = self.store.revert_last_import()
+
+        self.assertEqual(removed, 1)
+        self.assertIsNone(self.store.transaction(split_id))
+        self.assertEqual(self.store.splits_for(split_id), [])
+
+    def test_revert_last_import_includes_transfer_legs(self) -> None:
+        source = self.store.add_account("Import transfer", "Bank", 0)
+        destination = self.store.add_account("Transfer target", "Bank", 0)
+        group = self.store.add_transfer(
+            TransactionDraft(
+                date=date.today().isoformat(),
+                account_id=source,
+                payee="Transfer",
+                category_id=None,
+                amount=-50.0,
+            ),
+            destination,
+        )
+        legs = self.store.transfer_legs(group)
+        self.store.record_last_import("transfer.csv", [legs[0].id])
+
+        removed = self.store.revert_last_import()
+
+        self.assertEqual(removed, len(legs))
+        self.assertEqual(self.store.transfer_legs(group), [])
+        self.assertIsNone(self.store.last_import())
 
     def test_report_rows_and_months_cover_the_ledger(self) -> None:
         today = date.today()
