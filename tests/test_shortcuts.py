@@ -50,7 +50,7 @@ class ShortcutsDialogTests(unittest.TestCase):
         self.assertIn("void", dialog.table.item(visible[0], 2).text().lower())
 
         dialog.search_edit.setText("categories")
-        self.assertEqual(dialog.visible_rows(), 3)
+        self.assertEqual(dialog.visible_rows(), 4)
 
     def test_ledger_alt_v_and_undo_are_documented(self) -> None:
         dialog = ShortcutsDialog()
