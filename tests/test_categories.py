@@ -697,6 +697,46 @@ class CategoryDialogTests(unittest.TestCase):
         self.assertTrue(dialog.changed)
         self.assertEqual(dialog.listing.topLevelItemCount(), 0)
 
+    def test_multiple_selected_categories_are_deleted_together(self) -> None:
+        store = self._store()
+        account_id = store.add_account("Checking", "Bank")
+        parent = store.add_category("Bills", "expense")
+        child = store.add_category("Electricity", "expense", parent)
+        kept = store.add_category("Food", "expense")
+        insert_transaction(store, account_id, parent, -10, payee="Parent tx")
+        insert_transaction(store, account_id, child, -20, payee="Child tx")
+        dialog = CategoriesDialog(store)
+        self.addCleanup(dialog.deleteLater)
+
+        parent_item = dialog.expense_listing.topLevelItem(0)
+        child_item = parent_item.child(0)
+        parent_item.setSelected(True)
+        child_item.setSelected(True)
+        self.assertEqual(
+            {category.id for category in dialog._selected_categories()},
+            {parent, child},
+        )
+        self.assertFalse(dialog.edit_button.isEnabled())
+        self.assertFalse(dialog.transactions_button.isEnabled())
+        self.assertTrue(dialog.delete_button.isEnabled())
+
+        with mock.patch.object(
+            QMessageBox, "exec", return_value=QMessageBox.StandardButton.Discard
+        ):
+            dialog.delete_category()
+
+        self.assertIsNone(store.category(parent))
+        self.assertIsNone(store.category(child))
+        self.assertIsNotNone(store.category(kept))
+        rows = {row.payee: row for row in store.ledger_rows(account_id)}
+        self.assertIsNone(rows["Parent tx"].category_id)
+        self.assertIsNone(rows["Child tx"].category_id)
+        self.assertTrue(dialog.changed)
+        self.assertEqual(dialog.expense_listing.topLevelItemCount(), 1)
+        self.assertEqual(
+            dialog.expense_listing.topLevelItem(0).text(0), "Food"
+        )
+
     def test_delete_key_cancel_keeps_the_category(self) -> None:
         store = self._store()
         category = store.add_category("Bills", "expense")

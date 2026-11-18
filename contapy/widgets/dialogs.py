@@ -2470,7 +2470,9 @@ class CategoriesDialog(QDialog):
             "Show the transactions filed under the selected category"
         )
         self.delete_button = QPushButton("Delete")
-        self.delete_button.setToolTip("Delete the selected category (Del)")
+        self.delete_button.setToolTip(
+            "Delete the selected categories (Del)"
+        )
         close = QPushButton("Close")
         for button in (
             self.new_button,
@@ -2513,8 +2515,11 @@ class CategoriesDialog(QDialog):
         listing.setRootIsDecorated(True)
         listing.setAllColumnsShowFocus(True)
         listing.setExpandsOnDoubleClick(False)
+        listing.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows
+        )
         listing.setSelectionMode(
-            QAbstractItemView.SelectionMode.SingleSelection
+            QAbstractItemView.SelectionMode.ExtendedSelection
         )
         listing.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         listing.itemDoubleClicked.connect(
@@ -2765,11 +2770,25 @@ class CategoriesDialog(QDialog):
             return None
         return self.store.category(item.data(0, Qt.ItemDataRole.UserRole))
 
+    def _selected_categories(self) -> list[Category]:
+        """All selected categories in the active tab, without duplicates."""
+        categories: list[Category] = []
+        seen: set[int] = set()
+        for item in self.listing.selectedItems():
+            category_id = item.data(0, Qt.ItemDataRole.UserRole)
+            if category_id is None or int(category_id) in seen:
+                continue
+            category = self.store.category(int(category_id))
+            if category is not None:
+                categories.append(category)
+                seen.add(category.id)
+        return categories
+
     def _update_buttons(self, *_args) -> None:
-        selected = self._selected_category() is not None
-        self.edit_button.setEnabled(selected)
-        self.transactions_button.setEnabled(selected)
-        self.delete_button.setEnabled(selected)
+        selected = self._selected_categories()
+        self.edit_button.setEnabled(len(selected) == 1)
+        self.transactions_button.setEnabled(len(selected) == 1)
+        self.delete_button.setEnabled(bool(selected))
 
     # ------------------------------------------------------------ keyboard
     def _is_delete_key(self, event) -> bool:
@@ -2817,10 +2836,10 @@ class CategoriesDialog(QDialog):
 
     # --------------------------------------------------------------- actions
     def show_transactions(self) -> None:
-        category = self._selected_category()
-        if category is None:
+        selected = self._selected_categories()
+        if len(selected) != 1:
             return
-        CategoryTransactionsDialog(self.store, category, self).exec()
+        CategoryTransactionsDialog(self.store, selected[0], self).exec()
 
     def new_category(self) -> None:
         dialog = CategoryDialog(
@@ -2858,22 +2877,39 @@ class CategoriesDialog(QDialog):
         self._reload_list(select_id=category.id)
 
     def delete_category(self) -> None:
-        category = self._selected_category()
-        if category is None:
+        selected = self._selected_categories()
+        if not selected:
             return
-        if category.parent_id is not None:
-            question = (
-                f"Delete “{category.full_name}”?\n\n"
-                f"Its transactions move to “{category.parent_name}”."
-            )
+        if len(selected) == 1:
+            category = selected[0]
+            if category.parent_id is not None:
+                question = (
+                    f"Delete “{category.full_name}”?\n\n"
+                    f"Its transactions move to “{category.parent_name}”."
+                )
+            else:
+                question = (
+                    f"Delete “{category.name}”?\n\n"
+                    "Its transactions become uncategorized and its "
+                    "subcategories become top-level categories."
+                )
+            title = "Delete category"
         else:
-            question = (
-                f"Delete “{category.name}”?\n\n"
-                "Its transactions become uncategorized and its subcategories "
-                "become top-level categories."
+            names = ", ".join(
+                f"“{category.full_name}”" for category in selected[:5]
             )
+            if len(selected) > 5:
+                names += ", …"
+            question = (
+                f"Delete {len(selected)} categories?\n\n{names}\n\n"
+                "Transactions in deleted subcategories move to their parent; "
+                "transactions in deleted top-level categories become "
+                "uncategorized. Subcategories that are not selected become "
+                "top-level categories."
+            )
+            title = "Delete categories"
         box = QMessageBox(self)
-        box.setWindowTitle("Delete category")
+        box.setWindowTitle(title)
         box.setText(question)
         box.setInformativeText("This action cannot be undone.")
         box.setIcon(QMessageBox.Icon.Warning)
@@ -2886,7 +2922,18 @@ class CategoriesDialog(QDialog):
         box.setDefaultButton(QMessageBox.StandardButton.Cancel)
         if box.exec() != QMessageBox.StandardButton.Discard:
             return
-        self.store.delete_category(category.id)
+        # Remove subcategories first so their transactions move to a selected
+        # parent before that parent is removed in turn.
+        ordered = sorted(
+            selected,
+            key=lambda category: (
+                category.parent_id is None,
+                category.name.casefold(),
+                category.id,
+            ),
+        )
+        for category in ordered:
+            self.store.delete_category(category.id)
         self.changed = True
         self._reload_list()
 
@@ -3037,7 +3084,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
         "Categories",
         [
             ("Enter", "Edit the selected category"),
-            ("Delete", "Delete the selected category"),
+            ("Delete", "Delete the selected categories"),
             ("Ctrl+F", "Focus the category search box"),
         ],
     ),
