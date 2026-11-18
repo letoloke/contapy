@@ -22,6 +22,7 @@ class AppToolbar(QWidget):
     newAccount = Signal()
     importRequested = Signal()
     airbnbImportRequested = Signal()
+    airbnbTransactionsImportRequested = Signal()
     bookingImportRequested = Signal()
     banamexImportRequested = Signal()
     exportRequested = Signal()
@@ -63,6 +64,10 @@ class AppToolbar(QWidget):
         menu.addAction("New account…", self.newAccount.emit)
         menu.addAction("Import CSV…", self.importRequested.emit)
         menu.addAction("From Airbnb…", self.airbnbImportRequested.emit)
+        menu.addAction(
+            "From Airbnb (transactions)…",
+            self.airbnbTransactionsImportRequested.emit,
+        )
         menu.addAction("From Booking…", self.bookingImportRequested.emit)
         menu.addAction("From Banamex…", self.banamexImportRequested.emit)
         menu.addAction("Export CSV…", self.exportRequested.emit)

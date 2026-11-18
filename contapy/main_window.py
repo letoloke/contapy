@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from .airbnb import transform as transform_airbnb
+from .airbnb_transactions import transform as transform_airbnb_transactions
 from .banamex import transform as transform_banamex
 from .booking import transform as transform_booking
 from .config import date_format_choice, remember_database, theme_choice
@@ -107,6 +108,9 @@ class MainWindow(QMainWindow):
         )
         self.act_import_csv = self._action("Import CSV…", self.import_csv)
         self.act_import_airbnb = self._action("From Airbnb…", self.import_airbnb)
+        self.act_import_airbnb_transactions = self._action(
+            "From Airbnb (transactions)…", self.import_airbnb_transactions
+        )
         self.act_import_booking = self._action("From Booking…", self.import_booking)
         self.act_import_banamex = self._action("From Banamex…", self.import_banamex)
         self.act_revert_import = self._action(
@@ -115,6 +119,7 @@ class MainWindow(QMainWindow):
         self.import_menu = QMenu("Import Transactions", self)
         self.import_menu.addAction(self.act_import_csv)
         self.import_menu.addAction(self.act_import_airbnb)
+        self.import_menu.addAction(self.act_import_airbnb_transactions)
         self.import_menu.addAction(self.act_import_booking)
         self.import_menu.addAction(self.act_import_banamex)
         self.import_menu.addSeparator()
@@ -333,6 +338,9 @@ class MainWindow(QMainWindow):
         self.toolbar.newAccount.connect(self.new_account)
         self.toolbar.importRequested.connect(self.import_csv)
         self.toolbar.airbnbImportRequested.connect(self.import_airbnb)
+        self.toolbar.airbnbTransactionsImportRequested.connect(
+            self.import_airbnb_transactions
+        )
         self.toolbar.bookingImportRequested.connect(self.import_booking)
         self.toolbar.banamexImportRequested.connect(self.import_banamex)
         self.toolbar.exportRequested.connect(self.export_csv)
@@ -1026,6 +1034,38 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Airbnb import failed", str(exc))
                 return
             note = f"{excluded} payout(s) excluded" if excluded else ""
+            self._import_csv_path(
+                target, note=note, source_name=source.name
+            )
+
+    def import_airbnb_transactions(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import from Airbnb — transactions",
+            "",
+            "Airbnb exports (*.csv);;All files (*)",
+        )
+        if not path:
+            return
+        source = Path(path)
+        with tempfile.TemporaryDirectory(
+            prefix="contapy-airbnb-transactions-"
+        ) as folder:
+            target = Path(folder) / f"{source.stem}_airbnb_transactions.csv"
+            try:
+                written, excluded = transform_airbnb_transactions(
+                    source, target
+                )
+            except Exception as exc:  # pragma: no cover - surfaced to the user
+                QMessageBox.warning(
+                    self,
+                    "Airbnb transactions import failed",
+                    str(exc),
+                )
+                return
+            note = f"{written} transaction row(s)"
+            if excluded:
+                note += f" · {excluded} payout(s) excluded"
             self._import_csv_path(
                 target, note=note, source_name=source.name
             )

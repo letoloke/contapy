@@ -41,6 +41,7 @@ class ImportMenuTests(unittest.TestCase):
                 [
                     "Import CSV…",
                     "From Airbnb…",
+                    "From Airbnb (transactions)…",
                     "From Booking…",
                     "From Banamex…",
                     "Revert Last Import…",
