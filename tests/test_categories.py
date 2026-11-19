@@ -372,6 +372,20 @@ class SubcategoryStoreTests(unittest.TestCase):
         self.assertEqual(counts[electricity], (2, 2))
         self.assertEqual(counts[water], (1, 1))
 
+    def test_uncategorized_transactions_lists_only_null_categories(self) -> None:
+        parent = self.store.add_category("Bills", "expense")
+        insert_transaction(
+            self.store, self.account_id, parent, -10, payee="Categorized"
+        )
+        insert_transaction(
+            self.store, self.account_id, None, -20, payee="Uncategorized"
+        )
+
+        rows = self.store.uncategorized_transactions()
+
+        self.assertEqual([row.payee for row in rows], ["Uncategorized"])
+        self.assertIsNone(rows[0].category_id)
+
     def test_parent_count_does_not_double_count_splits(self) -> None:
         parent = self.store.add_category("Bills", "expense")
         electricity = self.store.add_category("Electricity", "expense", parent)
@@ -859,6 +873,51 @@ class CategoryDialogTests(unittest.TestCase):
 
         self.assertEqual(dialog.table.rowCount(), 1)
         self.assertEqual(dialog.table.item(0, 2).text(), "In range")
+        self.assertIn("1 transaction", dialog.summary.text())
+
+    def test_uncategorized_dialog_filters_by_range_and_account(self) -> None:
+        store, account_id, food = self._food_store()
+        other_account = store.add_account("Savings", "Bank")
+        insert_transaction(
+            store, account_id, food, -10, when=date(2026, 2, 1), payee="Categorized"
+        )
+        insert_transaction(
+            store,
+            account_id,
+            None,
+            -20,
+            when=date(2026, 2, 1),
+            payee="Uncategorized",
+        )
+        insert_transaction(
+            store,
+            account_id,
+            None,
+            -30,
+            when=date(2026, 1, 1),
+            payee="Old uncategorized",
+        )
+        insert_transaction(
+            store,
+            other_account,
+            None,
+            -40,
+            when=date(2026, 2, 2),
+            payee="Other account",
+        )
+
+        dialog = CategoryTransactionsDialog(
+            store,
+            None,
+            start=date(2026, 2, 1),
+            end=date(2026, 2, 28),
+            account_id=account_id,
+        )
+        self.addCleanup(dialog.deleteLater)
+
+        self.assertEqual(dialog.windowTitle(), "Transactions — Uncategorized")
+        self.assertEqual(dialog.table.rowCount(), 1)
+        self.assertEqual(dialog.table.item(0, 2).text(), "Uncategorized")
         self.assertIn("1 transaction", dialog.summary.text())
 
     def test_category_transactions_dialog_filters_with_search(self) -> None:

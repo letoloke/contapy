@@ -2200,7 +2200,7 @@ class CategoryTransactionsDialog(QDialog):
     def __init__(
         self,
         store: DataStore,
-        category: Category,
+        category: Category | None,
         parent: QWidget | None = None,
         *,
         start: date | None = None,
@@ -2216,10 +2216,15 @@ class CategoryTransactionsDialog(QDialog):
         self.end = end
         self.account_id = account_id
         self.initial_search = initial_search
-        self._has_children = category.parent_id is None and any(
-            child.parent_id == category.id for child in store.categories()
+        self._has_children = category is not None and (
+            category.parent_id is None
+            and any(
+                child.parent_id == category.id
+                for child in store.categories()
+            )
         )
-        self.setWindowTitle(f"Transactions — {category.full_name}")
+        title_name = category.full_name if category is not None else "Uncategorized"
+        self.setWindowTitle(f"Transactions — {title_name}")
         self.setModal(True)
         self.setMinimumSize(860, 560)
 
@@ -2242,10 +2247,11 @@ class CategoryTransactionsDialog(QDialog):
             if account is not None:
                 context.append(account.name)
         suffix = f" · {' · '.join(context)}" if context else ""
-        subtitle = QLabel(
-            f"Posted transactions in “{category.full_name}”{suffix}, "
-            "newest first."
-        )
+        if category is None:
+            lead = "Posted uncategorized transactions"
+        else:
+            lead = f"Posted transactions in “{category.full_name}”"
+        subtitle = QLabel(f"{lead}{suffix}, newest first.")
         subtitle.setWordWrap(True)
         subtitle.setFont(font(13, 400))
         subtitle.setStyleSheet(f"color:{C.MUTED};")
@@ -2320,10 +2326,13 @@ class CategoryTransactionsDialog(QDialog):
 
     # ------------------------------------------------------------------- data
     def _reload(self) -> None:
-        include = self._has_children and self.sub_check.isChecked()
-        rows = self.store.category_transactions(
-            self.category.id, include_subcategories=include
-        )
+        if self.category is None:
+            rows = self.store.uncategorized_transactions()
+        else:
+            include = self._has_children and self.sub_check.isChecked()
+            rows = self.store.category_transactions(
+                self.category.id, include_subcategories=include
+            )
         if self.start is not None:
             rows = [row for row in rows if row.date >= self.start.isoformat()]
         if self.end is not None:
@@ -2373,7 +2382,8 @@ class CategoryTransactionsDialog(QDialog):
             category_item = QTableWidgetItem(row.category_name)
             category_item.setForeground(QColor(C.TEXT))
             pixmap = QPixmap(10, 10)
-            pixmap.fill(QColor(row.category_color))
+            fallback = C.MUTED if row.transfer_id else C.RED_BAR
+            pixmap.fill(QColor(row.category_color or fallback))
             category_item.setIcon(QIcon(pixmap))
             self.table.setItem(index, 3, category_item)
 

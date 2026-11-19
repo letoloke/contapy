@@ -150,6 +150,24 @@ class ReportsChartInteractionTests(unittest.TestCase):
             bar_category.name.casefold(), bar_label.casefold()
         )
 
+    def test_no_category_slice_opens_uncategorized_transactions(self) -> None:
+        self.window.set_view("pie")
+        try:
+            index = self.window._pie_labels.index("(no category)")
+        except ValueError:
+            self.skipTest("demo data has no uncategorized slice")
+
+        with mock.patch(
+            "contapy.widgets.reports.CategoryTransactionsDialog"
+        ) as dialog:
+            self.window._pie_slice_clicked(index)
+
+        dialog.assert_called_once()
+        self.assertIsNone(dialog.call_args.args[1])
+        kwargs = dialog.call_args.kwargs
+        self.assertEqual(kwargs["start"], self.window.range()[0])
+        self.assertEqual(kwargs["end"], self.window.range()[1])
+
     def test_non_category_chart_click_selects_the_table_row(self) -> None:
         index = self.window.group_combo.findData("payee")
         self.window.group_combo.setCurrentIndex(index)

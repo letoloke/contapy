@@ -653,6 +653,9 @@ class ReportsWindow(QMainWindow):
                     "“Other” combines several categories"
                 )
                 return
+            if label == "(no category)":
+                self._show_category_transactions(None)
+                return
             category = self._find_category(label)
             if category is not None:
                 self._show_category_transactions(category)
@@ -678,7 +681,9 @@ class ReportsWindow(QMainWindow):
                 return category
         return None
 
-    def _show_category_transactions(self, category: Category) -> None:
+    def _show_category_transactions(
+        self, category: Category | None
+    ) -> None:
         start, end = self.range()
         CategoryTransactionsDialog(
             self.store,

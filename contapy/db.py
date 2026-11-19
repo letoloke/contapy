@@ -1998,6 +1998,32 @@ class DataStore:
                 )
         return rows
 
+    def _line_transactions(
+        self, where: str, params: tuple = ()
+    ) -> list[TransactionRow]:
+        rows = self._rows(
+            f"""
+            SELECT l.source_id AS id, l.account_id, a.name AS account_name,
+                   l.date, l.payee, l.category_id,
+                   CASE WHEN p.name IS NOT NULL AND p.name <> ''
+                        THEN p.name || ' : ' || c.name ELSE c.name END
+                       AS category_name,
+                   c.color AS category_color, c.kind AS category_kind,
+                   l.amount, l.memo, l.cleared, l.reconciled, l.remind,
+                   l.flagged, l.voided, l.payment, l.number, l.tags,
+                   l.transfer_id
+            FROM transaction_lines l
+            JOIN accounts a ON a.id = l.account_id
+            LEFT JOIN categories c ON c.id = l.category_id
+            LEFT JOIN categories p ON p.id = c.parent_id
+            {where}
+            """,
+            params,
+        )
+        transactions = [self._to_transaction_row(row) for row in rows]
+        transactions.sort(key=lambda row: (row.date, row.id), reverse=True)
+        return transactions
+
     def category_transactions(
         self,
         category_id: int,
@@ -2019,28 +2045,13 @@ class DataStore:
                 if child.parent_id == category_id
             )
         placeholders = ",".join("?" for _ in ids)
-        rows = self._rows(
-            f"""
-            SELECT l.source_id AS id, l.account_id, a.name AS account_name,
-                   l.date, l.payee, l.category_id,
-                   CASE WHEN p.name IS NOT NULL AND p.name <> ''
-                        THEN p.name || ' : ' || c.name ELSE c.name END
-                       AS category_name,
-                   c.color AS category_color, c.kind AS category_kind,
-                   l.amount, l.memo, l.cleared, l.reconciled, l.remind,
-                   l.flagged, l.voided, l.payment, l.number, l.tags,
-                   l.transfer_id
-            FROM transaction_lines l
-            JOIN accounts a ON a.id = l.account_id
-            LEFT JOIN categories c ON c.id = l.category_id
-            LEFT JOIN categories p ON p.id = c.parent_id
-            WHERE l.category_id IN ({placeholders})
-            """,
-            tuple(ids),
+        return self._line_transactions(
+            f"WHERE l.category_id IN ({placeholders})", tuple(ids)
         )
-        transactions = [self._to_transaction_row(row) for row in rows]
-        transactions.sort(key=lambda row: (row.date, row.id), reverse=True)
-        return transactions
+
+    def uncategorized_transactions(self) -> list[TransactionRow]:
+        """Posted transactions without a category, newest first."""
+        return self._line_transactions("WHERE l.category_id IS NULL")
 
     def transaction(self, transaction_id: int) -> TransactionRow | None:
         rows = self._transaction_query("WHERE t.id = ?", (transaction_id,))
