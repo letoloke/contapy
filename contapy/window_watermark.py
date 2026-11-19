@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMessageBox,
+    QToolTip,
     QWidget,
 )
 
@@ -41,10 +42,9 @@ class WindowWatermark(QLabel):
 
     def __init__(self, parent: QWidget):
         super().__init__(parent)
-        self.setAttribute(
-            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
-        )
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("Click to copy the window name")
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setFont(font(9, 600))
         self.refresh_style()
@@ -70,6 +70,32 @@ class WindowWatermark(QLabel):
         )
         self.raise_()
         self.show()
+
+    def _flash_copied(self) -> None:
+        self.setStyleSheet(
+            f"color:#ffffff; background:{C.ACCENT}; "
+            f"border:1px solid {C.ACCENT}; border-radius:4px; "
+            f"padding:1px 5px;"
+        )
+        QTimer.singleShot(700, self._restore_style)
+
+    def _restore_style(self) -> None:
+        try:
+            self.refresh_style()
+        except RuntimeError:
+            pass
+
+    def mousePressEvent(self, event):  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            name = self.text()
+            QApplication.clipboard().setText(name)
+            QToolTip.showText(
+                event.globalPosition().toPoint(),
+                f"Copied “{name}”",
+                self,
+            )
+            self._flash_copied()
+        super().mousePressEvent(event)
 
 
 class WindowWatermarkManager(QObject):

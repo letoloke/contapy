@@ -39,13 +39,17 @@ class WindowWatermarkTests(unittest.TestCase):
         mark = dialog._letobank_watermark
         self.assertEqual(mark.text(), "Test Dialog")
         self.assertTrue(mark.isVisible())
-        self.assertTrue(
+        self.assertFalse(
             mark.testAttribute(
                 Qt.WidgetAttribute.WA_TransparentForMouseEvents
             )
         )
         self.assertLessEqual(mark.x() + mark.width(), dialog.width())
         self.assertLess(mark.y(), 20)
+
+        QApplication.clipboard().clear()
+        QTest.mouseClick(mark, Qt.MouseButton.LeftButton)
+        self.assertEqual(QApplication.clipboard().text(), "Test Dialog")
 
         dialog.setWindowTitle("Renamed Dialog")
         QTest.qWait(20)
