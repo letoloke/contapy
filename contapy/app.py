@@ -18,6 +18,7 @@ from .dates import set_date_format
 from .db import DataStore, default_db_path
 from .main_window import MainWindow
 from .theme import C, DONUT_COLORS, apply_theme, select_theme
+from .window_watermark import install_window_watermarks
 
 
 def build_app_icon() -> QIcon:
@@ -85,6 +86,7 @@ def main(argv: list[str] | None = None) -> int:
     select_theme(theme_choice())
     apply_theme(app)
     app.setWindowIcon(build_app_icon())
+    install_window_watermarks(app)
 
     store = DataStore(startup_database(args.db))
     window = MainWindow(store)
