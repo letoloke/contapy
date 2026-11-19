@@ -198,6 +198,8 @@ class ChartCard(QWidget):
 
 
 class DonutChart(QWidget):
+    sliceActivated = Signal(int)
+
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.slices: list[Slice] = []
@@ -208,6 +210,7 @@ class DonutChart(QWidget):
         self._center = QPointF(0, 0)
         self._radius = 0.0
         self._inner = 0.0
+        self._legend_rects: list[QRectF] = []
         self.setMouseTracking(True)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumHeight(180)
@@ -224,6 +227,7 @@ class DonutChart(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         p.fillRect(self.rect(), QColor(C.PANEL))
+        self._legend_rects = []
 
         width, height = self.width(), self.height()
         if not self.slices or self.total <= 0:
@@ -290,6 +294,9 @@ class DonutChart(QWidget):
         p.setFont(font(14, 400))
         for index, item in enumerate(self.slices):
             y = top + index * row_h
+            self._legend_rects.append(
+                QRectF(legend_x, y, max(40, width - legend_x), row_h)
+            )
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QColor(item.color))
             p.drawEllipse(QPointF(legend_x + 6, y + row_h / 2), 6.2, 6.2)
@@ -321,8 +328,18 @@ class DonutChart(QWidget):
             cursor += span
         return -1
 
+    def _legend_at(self, pos: QPointF) -> int:
+        for index, rect in enumerate(self._legend_rects):
+            if rect.contains(pos):
+                return index
+        return -1
+
+    def _hover_at(self, pos: QPointF) -> int:
+        index = self._slice_at(pos)
+        return index if index >= 0 else self._legend_at(pos)
+
     def mouseMoveEvent(self, event):  # noqa: N802
-        index = self._slice_at(event.position())
+        index = self._hover_at(event.position())
         if index != self._hover:
             self._hover = index
             self.update()
@@ -339,6 +356,13 @@ class DonutChart(QWidget):
                 self.setCursor(Qt.CursorShape.ArrowCursor)
         super().mouseMoveEvent(event)
 
+    def mousePressEvent(self, event):  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            index = self._hover_at(event.position())
+            if index >= 0:
+                self.sliceActivated.emit(index)
+        super().mousePressEvent(event)
+
     def leaveEvent(self, event):  # noqa: N802
         self._hover = -1
         self.update()
@@ -347,6 +371,8 @@ class DonutChart(QWidget):
 
 
 class SpendingRevenueChart(QWidget):
+    monthActivated = Signal(int)
+
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.flows: list[MonthFlow] = []
@@ -466,16 +492,20 @@ class SpendingRevenueChart(QWidget):
         )
         p.end()
 
-    def mouseMoveEvent(self, event):  # noqa: N802
+    def _bar_at(self, pos: QPointF) -> int:
         if not self.flows or self._slot <= 0:
-            return
+            return -1
         plot = self._plot
-        pos = event.position()
-        if plot.left() <= pos.x() <= plot.right() and plot.top() - 6 <= pos.y() <= plot.bottom() + 24:
-            index = int((pos.x() - plot.left()) // self._slot)
-            index = max(0, min(len(self.flows) - 1, index))
-        else:
-            index = -1
+        if not (
+            plot.left() <= pos.x() <= plot.right()
+            and plot.top() - 6 <= pos.y() <= plot.bottom() + 24
+        ):
+            return -1
+        index = int((pos.x() - plot.left()) // self._slot)
+        return max(0, min(len(self.flows) - 1, index))
+
+    def mouseMoveEvent(self, event):  # noqa: N802
+        index = self._bar_at(event.position())
         if index != self._hover:
             self._hover = index
             self.update()
@@ -494,6 +524,13 @@ class SpendingRevenueChart(QWidget):
                 QToolTip.hideText()
                 self.setCursor(Qt.CursorShape.ArrowCursor)
         super().mouseMoveEvent(event)
+
+    def mousePressEvent(self, event):  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            index = self._bar_at(event.position())
+            if index >= 0:
+                self.monthActivated.emit(index)
+        super().mousePressEvent(event)
 
     def leaveEvent(self, event):  # noqa: N802
         self._hover = -1

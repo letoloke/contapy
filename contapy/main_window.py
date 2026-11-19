@@ -44,6 +44,7 @@ from .widgets.rules import RulesDialog, TemplatesDialog
 from .widgets.dialogs import (
     AccountDialog,
     CategoriesDialog,
+    CategoryTransactionsDialog,
     PreferencesDialog,
     ShortcutsDialog,
     TransactionDialog,
@@ -381,8 +382,10 @@ class MainWindow(QMainWindow):
         self.donut_card.footer.periodChanged.connect(self._refresh_donut)
         self.donut_card.footer.modeChanged.connect(self._refresh_donut)
         self.donut_card.footer.refreshRequested.connect(self.refresh_all)
+        self.donut.sliceActivated.connect(self._open_donut_slice)
         self.bar_card.footer.periodChanged.connect(self._refresh_bars)
         self.bar_card.footer.refreshRequested.connect(self.refresh_all)
+        self.bars.monthActivated.connect(self._open_bar_month)
 
         self.act_toggle_accounts.toggled.connect(self.accounts_panel.setVisible)
         self.act_toggle_scheduled.toggled.connect(self.scheduled_panel.setVisible)
@@ -561,6 +564,53 @@ class MainWindow(QMainWindow):
             period, 12
         )
         self.bars.set_data(self.store.monthly_cashflow(months))
+
+    def _open_donut_slice(self, index: int) -> None:
+        if not (0 <= index < len(self.donut.slices)):
+            return
+        name = self.donut.slices[index].name
+        if name == "Other":
+            self.show_toast("“Other” combines several categories")
+            return
+        kind = "income" if self.donut_card.mode() == "Income" else "expense"
+        categories = self.store.categories()
+        category = next(
+            (
+                item
+                for item in categories
+                if item.parent_id is None
+                and item.kind == kind
+                and item.name.casefold() == name.casefold()
+            ),
+            None,
+        )
+        if category is None:
+            category = next(
+                (
+                    item
+                    for item in categories
+                    if item.full_name.casefold() == name.casefold()
+                ),
+                None,
+            )
+        if category is None:
+            self.show_toast(f"Category not found: {name}")
+            return
+        CategoryTransactionsDialog(self.store, category, self).exec()
+
+    def _open_bar_month(self, index: int) -> None:
+        if not (0 <= index < len(self.bars.flows)):
+            return
+        flow = self.bars.flows[index]
+        first = date(flow.year, flow.month, 1)
+        if flow.month == 12:
+            last = date(flow.year, 12, 31)
+        else:
+            last = date(flow.year, flow.month + 1, 1) - timedelta(days=1)
+        self.open_reports()
+        window = self.reports_window
+        if window is not None:
+            window.focus_period(first, last, mode="time")
 
     # ---------------------------------------------------------------- actions
     def new_transaction(self) -> None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import calendar
 from datetime import date, timedelta
 
-from PySide6.QtCore import QDate, QRectF, Qt
+from PySide6.QtCore import QDate, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -115,10 +116,14 @@ class SummaryBlock(QWidget):
 class CategoryBarChart(QWidget):
     """Horizontal bars for a Total-mode report."""
 
+    barActivated = Signal(int)
+
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.bars: list[tuple[str, float, str]] = []
         self.empty_text = "No activity in this period"
+        self._hover = -1
+        self.setMouseTracking(True)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         self.setMinimumHeight(260)
 
@@ -126,6 +131,7 @@ class CategoryBarChart(QWidget):
         self.bars = [(label, amount, color) for label, amount, color in bars if amount > 0]
         if empty_text:
             self.empty_text = empty_text
+        self._hover = -1
         self.setMinimumHeight(max(260, len(self.bars) * 34 + 30))
         self.update()
 
@@ -160,15 +166,24 @@ class CategoryBarChart(QWidget):
         metrics = QFontMetrics(font(13, 400))
         for index, (label, amount, color) in enumerate(self.bars):
             cy = top + row_h * (index + 0.5)
-            if index % 2 == 0:
+            if index == self._hover:
+                tint = QColor(C.ACCENT)
+                tint.setAlpha(20)
+                p.fillRect(
+                    QRectF(0, top + row_h * index, width, row_h), tint
+                )
+            elif index % 2 == 0:
                 p.fillRect(
                     QRectF(0, top + row_h * index, width, row_h),
                     QColor(C.ALT_ROW),
                 )
+            bar_color = QColor(color)
+            if index == self._hover:
+                bar_color = bar_color.lighter(114)
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor(color))
+            p.setBrush(bar_color)
             p.drawEllipse(QRectF(left, cy - 4.5, 9, 9))
-            p.setPen(QColor(C.TEXT_SOFT))
+            p.setPen(QColor(C.TEXT if index == self._hover else C.TEXT_SOFT))
             text = metrics.elidedText(label, Qt.TextElideMode.ElideRight, int(label_w))
             p.drawText(
                 QRectF(left + 16, cy - row_h / 2, label_w - 16, row_h),
@@ -178,7 +193,7 @@ class CategoryBarChart(QWidget):
             bar_len = max(2.0, (amount / max_value) * max(10.0, bar_right - bar_left))
             rect = QRectF(bar_left, cy - bar_h / 2, bar_len, bar_h)
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor(color))
+            p.setBrush(bar_color)
             p.drawRoundedRect(rect, 2, 2)
             p.setPen(QColor(C.TEXT))
             p.setFont(font(13, 500))
@@ -190,9 +205,53 @@ class CategoryBarChart(QWidget):
             p.setFont(font(13, 400))
         p.end()
 
+    def _row_at(self, pos) -> int:
+        if not self.bars:
+            return -1
+        top = 14.0
+        bottom = self.height() - 14.0
+        if not top <= pos.y() <= bottom:
+            return -1
+        row_h = (bottom - top) / len(self.bars)
+        index = int((pos.y() - top) // row_h)
+        return max(0, min(len(self.bars) - 1, index))
+
+    def mouseMoveEvent(self, event):  # noqa: N802
+        index = self._row_at(event.position())
+        if index != self._hover:
+            self._hover = index
+            self.update()
+            if index >= 0:
+                label, amount, _color = self.bars[index]
+                QToolTip.showText(
+                    event.globalPosition().toPoint(),
+                    f"{label}\n{money(amount)}",
+                    self,
+                )
+                self.setCursor(Qt.CursorShape.PointingHandCursor)
+            else:
+                QToolTip.hideText()
+                self.setCursor(Qt.CursorShape.ArrowCursor)
+        super().mouseMoveEvent(event)
+
+    def mousePressEvent(self, event):  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            index = self._row_at(event.position())
+            if index >= 0:
+                self.barActivated.emit(index)
+        super().mousePressEvent(event)
+
+    def leaveEvent(self, event):  # noqa: N802
+        self._hover = -1
+        self.update()
+        QToolTip.hideText()
+        super().leaveEvent(event)
+
 
 class ReportPieView(QWidget):
     """Donut with a readable amount/percentage legend beside it."""
+
+    sliceActivated = Signal(int)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -220,6 +279,11 @@ class ReportPieView(QWidget):
         header.resizeSection(2, 58)
         self.legend.verticalHeader().setDefaultSectionSize(28)
         layout.addWidget(self.legend, 2)
+
+        self.donut.sliceActivated.connect(self.sliceActivated.emit)
+        self.legend.cellClicked.connect(
+            lambda row, _column: self.sliceActivated.emit(row)
+        )
 
     def set_data(
         self, slices: list[Slice], total: float, empty_text: str = "No activity"
@@ -266,6 +330,8 @@ class ReportsWindow(QMainWindow):
         self._view = "table"
         self._syncing_dates = False
         self._tool_buttons: dict[str, IconButton] = {}
+        self._pie_labels: list[str] = []
+        self._bar_labels: list[str] = []
 
         self._build_menus()
         self._build_ui()
@@ -567,6 +633,67 @@ class ReportsWindow(QMainWindow):
         self.from_edit.dateChanged.connect(self._dates_changed)
         self.to_edit.dateChanged.connect(self._dates_changed)
         self.reset_button.clicked.connect(self._reset_filters)
+        self.pie_view.sliceActivated.connect(self._pie_slice_clicked)
+        self.bar_total.barActivated.connect(self._bar_clicked)
+        self.bar_time.monthActivated.connect(self._bar_clicked)
+
+    def _pie_slice_clicked(self, index: int) -> None:
+        if 0 <= index < len(self._pie_labels):
+            self._reveal_table_label(self._pie_labels[index])
+
+    def _bar_clicked(self, index: int) -> None:
+        if 0 <= index < len(self._bar_labels):
+            self._reveal_table_label(self._bar_labels[index])
+
+    def _reveal_table_label(self, label: str) -> None:
+        self.set_view("table")
+        prefix = f"{label} :"
+        matches: list[tuple[int, QTableWidgetItem]] = []
+        for row in range(max(0, self.table.rowCount() - 1)):
+            item = self.table.item(row, 0)
+            if item is None:
+                continue
+            text = item.text()
+            if text == label or text.startswith(prefix):
+                matches.append((row, item))
+        if matches:
+            row, item = next(
+                (
+                    pair
+                    for pair in matches
+                    if pair[1].text() == label
+                ),
+                matches[0],
+            )
+            self.table.selectRow(row)
+            self.table.scrollToItem(item)
+            if len(matches) > 1:
+                self.view_hint.setText(
+                    f"{label} selected · {len(matches)} matching rows"
+                )
+            else:
+                self.view_hint.setText(f"{label} selected")
+            return
+        self.view_hint.setText(f"{label} has no single table row")
+
+    def focus_period(
+        self, start: date, end: date, mode: str = "time"
+    ) -> None:
+        """Show a specific date range and mode, used by dashboard drill-down."""
+        index = self.mode_combo.findData(mode)
+        if index >= 0:
+            self.mode_combo.setCurrentIndex(index)
+        preset = self.preset_combo.findData("Custom")
+        if preset >= 0:
+            self.preset_combo.setCurrentIndex(preset)
+        self._syncing_dates = True
+        try:
+            self.from_edit.setDate(QDate(start.year, start.month, start.day))
+            self.to_edit.setDate(QDate(end.year, end.month, end.day))
+        finally:
+            self._syncing_dates = False
+        self.reload()
+        self.set_view("table")
 
     def _mode_changed(self) -> None:
         is_time = self.mode() == "time"
@@ -653,7 +780,10 @@ class ReportsWindow(QMainWindow):
 
     def _update_hint(self) -> None:
         names = {"table": "Table view", "pie": "Pie chart", "bar": "Bar chart"}
-        self.view_hint.setText(names.get(self._view, ""))
+        text = names.get(self._view, "")
+        if self._view in ("pie", "bar"):
+            text += " · click a slice/bar to select its row"
+        self.view_hint.setText(text)
 
     # ------------------------------------------------------------------- data
     def reload(self) -> None:
@@ -858,6 +988,7 @@ class ReportsWindow(QMainWindow):
         self, items: list[tuple[str, float, str]], empty_text: str
     ) -> None:
         slices, total = _top_slices(items)
+        self._pie_labels = [item.name for item in slices]
         self.pie_view.set_data(slices, total, empty_text)
 
     def _populate_group_bars(
@@ -866,7 +997,9 @@ class ReportsWindow(QMainWindow):
         bars = [
             (label, amount, color)
             for label, color, amount, _expense, _income, _net in display_rows
+            if amount > 0
         ]
+        self._bar_labels = [label for label, _amount, _color in bars]
         self.bar_total.set_data(bars, f"No {kind} in this period")
         self.bar_stack.setCurrentWidget(self.bar_total_scroll)
 
@@ -881,5 +1014,6 @@ class ReportsWindow(QMainWindow):
             )
             for flow in months
         ]
+        self._bar_labels = [f"{flow.label} {flow.year}" for flow in flows]
         self.bar_time.set_data(flows)
         self.bar_stack.setCurrentWidget(self.bar_time)
