@@ -830,6 +830,37 @@ class CategoryDialogTests(unittest.TestCase):
         self.assertEqual(dialog.table.rowCount(), 1)
         self.assertEqual(dialog.table.item(0, 3).text(), "Food : Groceries")
 
+    def test_category_transactions_dialog_respects_range_and_account(self) -> None:
+        store, account_id, food = self._food_store()
+        other_account = store.add_account("Savings", "Bank")
+        insert_transaction(
+            store, account_id, food, -10, when=date(2026, 1, 1), payee="Old"
+        )
+        insert_transaction(
+            store, account_id, food, -20, when=date(2026, 2, 1), payee="In range"
+        )
+        insert_transaction(
+            store,
+            other_account,
+            food,
+            -30,
+            when=date(2026, 2, 2),
+            payee="Other account",
+        )
+
+        dialog = CategoryTransactionsDialog(
+            store,
+            store.category(food),
+            start=date(2026, 2, 1),
+            end=date(2026, 2, 28),
+            account_id=account_id,
+        )
+        self.addCleanup(dialog.deleteLater)
+
+        self.assertEqual(dialog.table.rowCount(), 1)
+        self.assertEqual(dialog.table.item(0, 2).text(), "In range")
+        self.assertIn("1 transaction", dialog.summary.text())
+
     def test_category_transactions_dialog_filters_with_search(self) -> None:
         store, account_id, food = self._food_store()
         insert_transaction(store, account_id, food, -12.5, payee="Coffee shop")

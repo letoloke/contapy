@@ -38,10 +38,11 @@ from PySide6.QtWidgets import (
 )
 
 from ..db import DataStore
-from ..models import MonthFlow, ReportRow, Slice
+from ..models import Category, MonthFlow, ReportRow, Slice
 from ..money import friendly_date, money
 from ..theme import C, DONUT_COLORS, font
 from .charts import DonutChart, SpendingRevenueChart
+from .dialogs import CategoryTransactionsDialog
 from .icons import IconButton, draw_bars, draw_pie, draw_table
 
 VIEWS = ("table", "pie", "bar")
@@ -639,11 +640,55 @@ class ReportsWindow(QMainWindow):
 
     def _pie_slice_clicked(self, index: int) -> None:
         if 0 <= index < len(self._pie_labels):
-            self._reveal_table_label(self._pie_labels[index])
+            self._chart_label_clicked(self._pie_labels[index])
 
     def _bar_clicked(self, index: int) -> None:
         if 0 <= index < len(self._bar_labels):
-            self._reveal_table_label(self._bar_labels[index])
+            self._chart_label_clicked(self._bar_labels[index])
+
+    def _chart_label_clicked(self, label: str) -> None:
+        if self.group() == "category" and self.mode() != "time":
+            if label == "Other":
+                self.view_hint.setText(
+                    "“Other” combines several categories"
+                )
+                return
+            category = self._find_category(label)
+            if category is not None:
+                self._show_category_transactions(category)
+                return
+        self._reveal_table_label(label)
+
+    def _find_category(self, label: str) -> Category | None:
+        kind = self.kind()
+        categories = self.store.categories()
+        target = label.casefold()
+        for category in categories:
+            if category.full_name.casefold() == target:
+                return category
+        for category in categories:
+            if (
+                category.parent_id is None
+                and category.kind == kind
+                and category.name.casefold() == target
+            ):
+                return category
+        for category in categories:
+            if category.name.casefold() == target:
+                return category
+        return None
+
+    def _show_category_transactions(self, category: Category) -> None:
+        start, end = self.range()
+        CategoryTransactionsDialog(
+            self.store,
+            category,
+            self,
+            start=start,
+            end=end,
+            account_id=self.account_combo.currentData(),
+            initial_search=self.search_edit.text().strip(),
+        ).exec()
 
     def _reveal_table_label(self, label: str) -> None:
         self.set_view("table")

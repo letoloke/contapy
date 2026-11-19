@@ -116,29 +116,53 @@ class ReportsChartInteractionTests(unittest.TestCase):
         self.store.close()
         self.tmp.cleanup()
 
-    def test_pie_and_bar_clicks_select_the_matching_table_row(self) -> None:
+    def test_category_chart_clicks_open_transaction_lists(self) -> None:
         self.window.set_view("pie")
         self.assertTrue(self.window._pie_labels)
         pie_label = self.window._pie_labels[0]
 
-        self.window._pie_slice_clicked(0)
+        with mock.patch(
+            "contapy.widgets.reports.CategoryTransactionsDialog"
+        ) as dialog:
+            self.window._pie_slice_clicked(0)
 
-        self.assertEqual(self.window._view, "table")
+        dialog.assert_called_once()
+        pie_category = dialog.call_args.args[1]
         self.assertEqual(
-            self.window.table.item(self.window.table.currentRow(), 0).text(),
-            pie_label,
+            pie_category.name.casefold(), pie_label.casefold()
         )
+        kwargs = dialog.call_args.kwargs
+        self.assertEqual(kwargs["start"], self.window.range()[0])
+        self.assertEqual(kwargs["end"], self.window.range()[1])
 
         self.window.set_view("bar")
         self.assertTrue(self.window._bar_labels)
         bar_label = self.window._bar_labels[0]
+
+        with mock.patch(
+            "contapy.widgets.reports.CategoryTransactionsDialog"
+        ) as dialog:
+            self.window._bar_clicked(0)
+
+        dialog.assert_called_once()
+        bar_category = dialog.call_args.args[1]
+        self.assertEqual(
+            bar_category.name.casefold(), bar_label.casefold()
+        )
+
+    def test_non_category_chart_click_selects_the_table_row(self) -> None:
+        index = self.window.group_combo.findData("payee")
+        self.window.group_combo.setCurrentIndex(index)
+        self.window.set_view("bar")
+        self.assertTrue(self.window._bar_labels)
+        label = self.window._bar_labels[0]
 
         self.window._bar_clicked(0)
 
         self.assertEqual(self.window._view, "table")
         self.assertEqual(
             self.window.table.item(self.window.table.currentRow(), 0).text(),
-            bar_label,
+            label,
         )
 
     def test_focus_period_switches_to_a_single_month(self) -> None:

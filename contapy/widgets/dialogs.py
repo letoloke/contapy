@@ -2202,11 +2202,20 @@ class CategoryTransactionsDialog(QDialog):
         store: DataStore,
         category: Category,
         parent: QWidget | None = None,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        account_id: int | None = None,
+        initial_search: str = "",
     ):
         super().__init__(parent)
         self.store = store
         self.category = category
         self._rows = []
+        self.start = start
+        self.end = end
+        self.account_id = account_id
+        self.initial_search = initial_search
         self._has_children = category.parent_id is None and any(
             child.parent_id == category.id for child in store.categories()
         )
@@ -2222,8 +2231,20 @@ class CategoryTransactionsDialog(QDialog):
         heading.setFont(font(18, 600))
         root.addWidget(heading)
 
+        context: list[str] = []
+        if start is not None and end is not None:
+            context.append(
+                f"{friendly_date(start.isoformat())} – "
+                f"{friendly_date(end.isoformat())}"
+            )
+        if account_id is not None:
+            account = store.account(account_id)
+            if account is not None:
+                context.append(account.name)
+        suffix = f" · {' · '.join(context)}" if context else ""
         subtitle = QLabel(
-            f"Posted transactions in “{category.full_name}”, newest first."
+            f"Posted transactions in “{category.full_name}”{suffix}, "
+            "newest first."
         )
         subtitle.setWordWrap(True)
         subtitle.setFont(font(13, 400))
@@ -2293,14 +2314,25 @@ class CategoryTransactionsDialog(QDialog):
 
         self.search_edit.textChanged.connect(self._refresh)
         self.sub_check.toggled.connect(self._reload)
+        if initial_search:
+            self.search_edit.setText(initial_search)
         self._reload()
 
     # ------------------------------------------------------------------- data
     def _reload(self) -> None:
         include = self._has_children and self.sub_check.isChecked()
-        self._rows = self.store.category_transactions(
+        rows = self.store.category_transactions(
             self.category.id, include_subcategories=include
         )
+        if self.start is not None:
+            rows = [row for row in rows if row.date >= self.start.isoformat()]
+        if self.end is not None:
+            rows = [row for row in rows if row.date <= self.end.isoformat()]
+        if self.account_id is not None:
+            rows = [
+                row for row in rows if row.account_id == self.account_id
+            ]
+        self._rows = rows
         self._refresh()
 
     def _refresh(self) -> None:
