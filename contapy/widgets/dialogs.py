@@ -3045,8 +3045,8 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
             ("Ctrl+N", "New transaction"),
             ("Ctrl+D", "Inherit a new transaction from the selection"),
             (
-                "2830",
-                "Search amounts and text by number; sign and cents are ignored",
+                "283",
+                "Search amounts/text by number prefix; sign and cents are ignored",
             ),
             (
                 "Ctrl+T",

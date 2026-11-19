@@ -947,6 +947,7 @@ class LedgerHintTests(unittest.TestCase):
             ("Expense", -2_830.05, ""),
             ("Memo 2830", -50.0, "Amazon 2,830.05"),
             ("Large", -28_300.0, ""),
+            ("Small 283", -283.50, ""),
         ):
             self.store.add_transaction(
                 TransactionDraft(
@@ -967,18 +968,29 @@ class LedgerHintTests(unittest.TestCase):
                 if not row.is_split_child
             }
 
+        self.window.search_edit.setText("283")
+        self.assertEqual(
+            visible_payees(),
+            {"Income", "Expense", "Memo 2830", "Large", "Small 283"},
+        )
+
         self.window.search_edit.setText("2830")
         self.assertEqual(
-            visible_payees(), {"Income", "Expense", "Memo 2830"}
+            visible_payees(),
+            {"Income", "Expense", "Memo 2830", "Large"},
         )
 
         self.window.search_edit.setText("-2830")
         self.assertEqual(
-            visible_payees(), {"Income", "Expense", "Memo 2830"}
+            visible_payees(),
+            {"Income", "Expense", "Memo 2830", "Large"},
         )
 
         self.window.search_edit.setText("2830.05")
         self.assertEqual(visible_payees(), {"Expense", "Memo 2830"})
+
+        self.window.search_edit.setText("283.5")
+        self.assertEqual(visible_payees(), {"Small 283"})
 
         self.window.search_edit.setText("28300")
         self.assertEqual(visible_payees(), {"Large"})

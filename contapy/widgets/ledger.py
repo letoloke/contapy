@@ -192,11 +192,8 @@ def _numeric_query(text: str) -> str | None:
 
 
 def _amount_matches_number(amount: float, number: str) -> bool:
-    """Match the absolute whole part, or a decimal prefix when supplied."""
-    formatted = f"{abs(amount):.2f}"
-    if "." in number:
-        return formatted.startswith(number)
-    return formatted.split(".", 1)[0] == number
+    """Match the absolute amount as a live prefix, ignoring sign."""
+    return f"{abs(amount):.2f}".startswith(number)
 
 
 def _numeric_text_match(text: str, number: str) -> bool:

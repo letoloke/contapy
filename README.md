@@ -123,18 +123,24 @@ remembered transaction.
 
 ### Searching by amount
 
-The simplest search is a bare number. Entering `2830` matches:
+The simplest search is a bare number. Entering `283` matches amounts whose
+absolute value starts with `283`, regardless of sign or cents:
 
-- Any transaction whose absolute whole-number amount is `2830`, regardless of
-  sign or cents: `2830.00`, `-2830.05`, `+2830.99`. It does **not** match
-  `28300`.
-- Any transaction whose payee, memo, category, payment, number or tags contain
-  `2830`, even when the amount is different. A memo such as
-  `Amazon 2,830.05` matches too.
+- `283.00`
+- `283.50`
+- `2830.00`
+- `-2830.05`
+- `28300.00`
 
-A decimal narrows the match: `2830.05` matches `2830.05` and ignores
-`2830.00`. The amount filter uses the transaction total, so a split parent
-matches its full bank amount.
+It also matches the digits `283` in the payee, memo, category, payment, number
+or tags, even when the amount is different. A memo such as `Amazon 2,830.05`
+matches too.
+
+A decimal narrows the match: `283.5` matches `283.50` but not `2830.00`, and
+`2830.05` matches `2830.05` but not `2830.00`. Use a trailing dot to match a
+whole-number part exactly: `2830.` matches `2830.05` but not `28300.00`.
+The amount filter uses the transaction total, so a split parent matches its
+full bank amount.
 
 For explicit conditions, the search box also accepts:
 
@@ -564,7 +570,7 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | Delete categories | Select one or more in **Manage → Categories…** and press `Delete`, then confirm the irreversible warning |
 | Confirm category deletion | Press `E` in the delete confirmation dialog |
 | Search categories | Type in the search box beside the tabs; `Ctrl+F` focuses it |
-| Search transactions by amount | Type `2830` (sign and cents are ignored) or use `amount:>100`, `amount:<0`, `amount:100..250` |
+| Search transactions by amount | Type `283` to match `283.50`, `2830.05`, `28300.00` and memo text; add decimals to narrow, or use `amount:>100`, `amount:<0`, `amount:100..250` |
 | Sort categories | Choose **Alphabetical**, **Most transactions** or **Fewest transactions** in **Manage → Categories…** |
 | Expand or collapse categories | Use **Expand all** / **Collapse all** in **Manage → Categories…** |
 | Show a category's transactions | Select it in **Manage → Categories…** and press **Transactions…** |
