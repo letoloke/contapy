@@ -941,6 +941,51 @@ class LedgerHintTests(unittest.TestCase):
         self.window.search_edit.setText("amount:>")
         self.assertEqual(self.window.model.rows, [])
 
+    def test_numeric_search_matches_magnitude_and_memo_text(self) -> None:
+        for payee, amount, memo in (
+            ("Income", 2_830.0, ""),
+            ("Expense", -2_830.05, ""),
+            ("Memo 2830", -50.0, "Amazon 2,830.05"),
+            ("Large", -28_300.0, ""),
+        ):
+            self.store.add_transaction(
+                TransactionDraft(
+                    date=date.today().isoformat(),
+                    account_id=self.window.account_id,
+                    payee=payee,
+                    category_id=None,
+                    amount=amount,
+                    memo=memo,
+                )
+            )
+        self.window.reload()
+
+        def visible_payees() -> set[str]:
+            return {
+                row.payee
+                for row in self.window.model.rows
+                if not row.is_split_child
+            }
+
+        self.window.search_edit.setText("2830")
+        self.assertEqual(
+            visible_payees(), {"Income", "Expense", "Memo 2830"}
+        )
+
+        self.window.search_edit.setText("-2830")
+        self.assertEqual(
+            visible_payees(), {"Income", "Expense", "Memo 2830"}
+        )
+
+        self.window.search_edit.setText("2830.05")
+        self.assertEqual(visible_payees(), {"Expense", "Memo 2830"})
+
+        self.window.search_edit.setText("28300")
+        self.assertEqual(visible_payees(), {"Large"})
+
+        self.window.search_edit.setText("2831")
+        self.assertEqual(visible_payees(), set())
+
     def test_amount_search_includes_income_and_split_totals(self) -> None:
         self.store.add_transaction(
             TransactionDraft(

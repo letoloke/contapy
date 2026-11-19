@@ -177,12 +177,43 @@ def _amount_filter(expression: str) -> _AmountFilter | None:
     return _AmountFilter("=", value) if value is not None else None
 
 
+def _numeric_query(text: str) -> str | None:
+    """Return the unsigned number in a bare query, ignoring sign/cents."""
+    cleaned = text.strip().replace(",", "")
+    if cleaned.startswith("$"):
+        cleaned = cleaned[1:]
+    if cleaned.startswith(("+", "-")):
+        cleaned = cleaned[1:]
+    if not cleaned or cleaned.count(".") > 1:
+        return None
+    if not cleaned.replace(".", "").isdigit():
+        return None
+    return cleaned
+
+
+def _amount_matches_number(amount: float, number: str) -> bool:
+    """Match the absolute whole part, or a decimal prefix when supplied."""
+    formatted = f"{abs(amount):.2f}"
+    if "." in number:
+        return formatted.startswith(number)
+    return formatted.split(".", 1)[0] == number
+
+
+def _numeric_text_match(text: str, number: str) -> bool:
+    normalized = (
+        text.replace(",", "").replace("$", "").replace(" ", "")
+    )
+    return number in normalized
+
+
 def parse_ledger_search(
     text: str,
-) -> tuple[str, list[_AmountFilter] | None]:
-    """Split a ledger query into free text and ``amount:`` filters.
+) -> tuple[str, list[_AmountFilter] | None, str | None]:
+    """Split a ledger query into free text, amount filters and a bare number.
 
-    ``None`` means an amount expression was invalid, so nothing should match.
+    ``None`` amount filters mean an ``amount:`` expression was invalid, so
+    nothing should match. ``number`` is set for a single bare numeric query;
+    it matches either the absolute amount or the same digits in the text.
     """
     text_words: list[str] = []
     filters: list[_AmountFilter] = []
@@ -196,7 +227,13 @@ def parse_ledger_search(
                 filters.append(parsed)
         else:
             text_words.append(word)
-    return " ".join(text_words).casefold(), None if invalid else filters
+    text_search = " ".join(text_words).casefold()
+    number = (
+        _numeric_query(text_words[0])
+        if len(text_words) == 1
+        else None
+    )
+    return text_search, None if invalid else filters, number
 
 
 def exact_amount_ids(
@@ -911,7 +948,7 @@ class LedgerWindow(QMainWindow):
         filter_layout.addStretch(1)
 
         self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("Search… or amount:>100")
+        self.search_edit.setPlaceholderText("Search text, memo or 2830…")
         self.search_edit.setClearButtonEnabled(True)
         self.search_edit.setFixedWidth(230)
         filter_layout.addWidget(self.search_edit)
@@ -1289,7 +1326,7 @@ class LedgerWindow(QMainWindow):
             payee = ""
         type_filter = self.type_combo.currentData()
         status_filter = self.status_combo.currentData()
-        text_search, amount_filters = parse_ledger_search(
+        text_search, amount_filters, number_query = parse_ledger_search(
             self.search_edit.text()
         )
 
@@ -1353,7 +1390,17 @@ class LedgerWindow(QMainWindow):
                 ):
                     continue
                 group = [row, *children.get(row.id, [])]
-                if text_search and not any(
+                if number_query is not None:
+                    amount_match = _amount_matches_number(
+                        row.amount, number_query
+                    )
+                    text_match = any(
+                        _numeric_text_match(searchable(item), number_query)
+                        for item in group
+                    )
+                    if not amount_match and not text_match:
+                        continue
+                elif text_search and not any(
                     text_search in searchable(item) for item in group
                 ):
                     continue

@@ -123,7 +123,20 @@ remembered transaction.
 
 ### Searching by amount
 
-The ledger search box accepts signed amount expressions:
+The simplest search is a bare number. Entering `2830` matches:
+
+- Any transaction whose absolute whole-number amount is `2830`, regardless of
+  sign or cents: `2830.00`, `-2830.05`, `+2830.99`. It does **not** match
+  `28300`.
+- Any transaction whose payee, memo, category, payment, number or tags contain
+  `2830`, even when the amount is different. A memo such as
+  `Amazon 2,830.05` matches too.
+
+A decimal narrows the match: `2830.05` matches `2830.05` and ignores
+`2830.00`. The amount filter uses the transaction total, so a split parent
+matches its full bank amount.
+
+For explicit conditions, the search box also accepts:
 
 - `amount:100` or `amount:=100` — exactly 100
 - `amount:>500` — greater than 500
@@ -133,8 +146,7 @@ The ledger search box accepts signed amount expressions:
 - `amount:100..250` — inclusive range
 
 Combine them with text: `coffee amount:<0`. Multiple amount expressions are
-combined with AND. The filter uses the transaction total, so a split parent
-matches its full bank amount.
+combined with AND.
 
 ## Split transactions
 
@@ -552,7 +564,7 @@ python3 main.py --screenshot screenshots/welcome.png --size 1850x835
 | Delete categories | Select one or more in **Manage → Categories…** and press `Delete`, then confirm the irreversible warning |
 | Confirm category deletion | Press `E` in the delete confirmation dialog |
 | Search categories | Type in the search box beside the tabs; `Ctrl+F` focuses it |
-| Search transactions by amount | Type `amount:>100`, `amount:<0` or `amount:100..250` in the ledger search box |
+| Search transactions by amount | Type `2830` (sign and cents are ignored) or use `amount:>100`, `amount:<0`, `amount:100..250` |
 | Sort categories | Choose **Alphabetical**, **Most transactions** or **Fewest transactions** in **Manage → Categories…** |
 | Expand or collapse categories | Use **Expand all** / **Collapse all** in **Manage → Categories…** |
 | Show a category's transactions | Select it in **Manage → Categories…** and press **Transactions…** |
@@ -634,7 +646,7 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-Two hundred and eighty-four tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, bulk ledger editing, ledger undo, sortable ledger columns, post-edit reselection across filters and accounts, reopening a ledger on the last edited transaction, ledger transaction copy/paste, amount search expressions, memo and amount clipboard, the E edit shortcut, rule search and applying rules to existing ledger transactions, saved templates (storage and order, editor round-trips, status assignment and migration, manager search, duplication and deletion, applying a chosen template, per-field overwrite/fill-empty, memo append, transfer/split skipping and ledger integration), payee CRUD and reassignment, strict payee/category typing and category autocomplete focus, Markdown activity history, database switching, Ctrl+R reconciliation in the ledger and transaction editor, split transactions (storage, editing, balanced allocation, ledger children, reports, budgets, category lists and undo), uncategorized category highlighting, transfer and voided category labels, responsive account-sidebar columns, exact-amount highlighting for voiding with its Alt+V hint, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, transaction counts with parent roll-up and split de-duplication, name/count sorting, search, single and multi-category deletion, E confirmation, Enter-to-edit and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, the dashboard budgets panel beside the scheduled strip, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the searchable Ctrl+K shortcut list and its window-level action, HomeBank automatic-assignment import (conditions, payees, categories, payments, tags, notes, overwrite flags, duplicates and invalid references), the 70-row HomeBank bank-CSV import, the alternative Airbnb transaction converter, custom and remembered header mappings, the Ctrl+I import menu, sortable import previews with bulk row selection/checking, memo-as-payee defaulting off, session-only NEW badges for imported rows, pre-import database backups, reverting the last main-window import (including split and transfer rows), CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
+Two hundred and eighty-five tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter, bulk ledger editing, ledger undo, sortable ledger columns, post-edit reselection across filters and accounts, reopening a ledger on the last edited transaction, ledger transaction copy/paste, bare-number amount/memo search and amount expressions, memo and amount clipboard, the E edit shortcut, rule search and applying rules to existing ledger transactions, saved templates (storage and order, editor round-trips, status assignment and migration, manager search, duplication and deletion, applying a chosen template, per-field overwrite/fill-empty, memo append, transfer/split skipping and ledger integration), payee CRUD and reassignment, strict payee/category typing and category autocomplete focus, Markdown activity history, database switching, Ctrl+R reconciliation in the ledger and transaction editor, split transactions (storage, editing, balanced allocation, ledger children, reports, budgets, category lists and undo), uncategorized category highlighting, transfer and voided category labels, responsive account-sidebar columns, exact-amount highlighting for voiding with its Alt+V hint, assignment rules (memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists, transaction counts with parent roll-up and split de-duplication, name/count sorting, search, single and multi-category deletion, E confirmation, Enter-to-edit and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, the dashboard budgets panel beside the scheduled strip, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the searchable Ctrl+K shortcut list and its window-level action, HomeBank automatic-assignment import (conditions, payees, categories, payments, tags, notes, overwrite flags, duplicates and invalid references), the 70-row HomeBank bank-CSV import, the alternative Airbnb transaction converter, custom and remembered header mappings, the Ctrl+I import menu, sortable import previews with bulk row selection/checking, memo-as-payee defaulting off, session-only NEW badges for imported rows, pre-import database backups, reverting the last main-window import (including split and transfer rows), CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
 
 ## Notes / limitations
 
