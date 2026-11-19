@@ -28,16 +28,19 @@ class WindowWatermarkTests(unittest.TestCase):
             lambda: setattr(self.app, "_letobank_watermark_manager", None)
         )
 
-    def test_dialog_gets_a_named_top_right_badge(self) -> None:
-        dialog = QDialog()
+    def test_dialog_gets_its_internal_name(self) -> None:
+        class SampleDialog(QDialog):
+            pass
+
+        dialog = SampleDialog()
         self.addCleanup(dialog.deleteLater)
-        dialog.setWindowTitle("Test Dialog")
+        dialog.setWindowTitle("Friendly Title")
         dialog.resize(420, 240)
         dialog.show()
         QTest.qWait(20)
 
         mark = dialog._letobank_watermark
-        self.assertEqual(mark.text(), "Test Dialog")
+        self.assertEqual(mark.text(), "SampleDialog")
         self.assertTrue(mark.isVisible())
         self.assertFalse(
             mark.testAttribute(
@@ -49,22 +52,25 @@ class WindowWatermarkTests(unittest.TestCase):
 
         QApplication.clipboard().clear()
         QTest.mouseClick(mark, Qt.MouseButton.LeftButton)
-        self.assertEqual(QApplication.clipboard().text(), "Test Dialog")
+        self.assertEqual(QApplication.clipboard().text(), "SampleDialog")
 
-        dialog.setWindowTitle("Renamed Dialog")
+        dialog.setWindowTitle("Renamed Friendly Title")
         QTest.qWait(20)
-        self.assertEqual(mark.text(), "Renamed Dialog")
+        self.assertEqual(mark.text(), "SampleDialog")
 
         dialog.resize(640, 320)
         QTest.qWait(20)
         self.assertLessEqual(mark.x() + mark.width(), dialog.width())
 
-    def test_main_window_uses_its_title(self) -> None:
-        window = QMainWindow()
+    def test_main_window_uses_its_internal_name(self) -> None:
+        class SampleWindow(QMainWindow):
+            pass
+
+        window = SampleWindow()
         self.addCleanup(window.deleteLater)
-        window.setWindowTitle("Main Test")
+        window.setWindowTitle("Friendly Main Title")
         window.resize(500, 300)
         window.show()
         QTest.qWait(20)
 
-        self.assertEqual(window._letobank_watermark.text(), "Main Test")
+        self.assertEqual(window._letobank_watermark.text(), "SampleWindow")

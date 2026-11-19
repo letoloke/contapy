@@ -18,23 +18,14 @@ from .theme import C, font
 
 
 def _window_name(widget: QWidget) -> str:
+    """The internal class name, with account context for ledger windows."""
     cls = type(widget).__name__
-    if cls == "MainWindow":
-        return "Dashboard"
-    if cls == "ReportsWindow":
-        return "Reports"
-    if cls == "BudgetWindow":
-        return "Budgets"
     if cls == "LedgerWindow":
         title = widget.windowTitle().strip()
         suffix = " — Account"
         account = title[: -len(suffix)] if title.endswith(suffix) else ""
-        return (
-            f"Account Ledger · {account}"
-            if account
-            else (title or "Account Ledger")
-        )
-    return widget.windowTitle().strip() or cls
+        return f"{cls} · {account}" if account else cls
+    return cls
 
 
 class WindowWatermark(QLabel):
@@ -44,7 +35,7 @@ class WindowWatermark(QLabel):
         super().__init__(parent)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip("Click to copy the window name")
+        self.setToolTip("Click to copy the internal window name")
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setFont(font(9, 600))
         self.refresh_style()
