@@ -357,6 +357,36 @@ def draw_table(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> 
     p.restore()
 
 
+def draw_sankey(
+    p: QPainter, rect: QRectF, color: QColor, width: float = 1.5
+) -> None:
+    p.save()
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    r = rect.adjusted(2, 2, -2, -2)
+    bar_w = max(2.5, r.width() * 0.09)
+    left = QRectF(r.left(), r.top() + 2, bar_w, r.height() - 4)
+    right = QRectF(r.right() - bar_w, r.top() + 2, bar_w, r.height() - 4)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(color)
+    p.drawRoundedRect(left, 1, 1)
+    p.drawRoundedRect(right, 1, 1)
+
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.setPen(QPen(color, max(1.0, width - 0.3)))
+    for start, end, bend in ((0.28, 0.18, 0.30), (0.62, 0.55, -0.18)):
+        y1 = r.top() + r.height() * start
+        y2 = r.top() + r.height() * end
+        mx = r.center().x() + r.width() * bend
+        path = QPainterPath(QPointF(left.right(), y1))
+        path.cubicTo(
+            QPointF(mx, y1),
+            QPointF(mx, y2),
+            QPointF(right.left(), y2),
+        )
+        p.drawPath(path)
+    p.restore()
+
+
 def draw_pie(p: QPainter, rect: QRectF, color: QColor, width: float = 1.5) -> None:
     if draw_glyph(p, rect, color, "chart-pie"):
         return

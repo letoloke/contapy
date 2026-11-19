@@ -5,7 +5,7 @@ from __future__ import annotations
 import calendar
 from datetime import date, timedelta
 
-from PySide6.QtCore import QDate, QRectF, Qt, Signal
+from PySide6.QtCore import QDate, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -13,6 +13,8 @@ from PySide6.QtGui import (
     QIcon,
     QKeySequence,
     QPainter,
+    QPainterPath,
+    QPen,
     QPixmap,
 )
 from PySide6.QtWidgets import (
@@ -39,13 +41,13 @@ from PySide6.QtWidgets import (
 
 from ..db import DataStore
 from ..models import Category, MonthFlow, ReportRow, Slice
-from ..money import friendly_date, money
+from ..money import friendly_date, money, money_short
 from ..theme import C, DONUT_COLORS, font
 from .charts import DonutChart, SpendingRevenueChart
 from .dialogs import CategoryTransactionsDialog
-from .icons import IconButton, draw_bars, draw_pie, draw_table
+from .icons import IconButton, draw_bars, draw_pie, draw_sankey, draw_table
 
-VIEWS = ("table", "pie", "bar")
+VIEWS = ("table", "pie", "bar", "sankey")
 MODES = (("total", "Total"), ("time", "Time"))
 GROUPS = (("category", "Category"), ("payee", "Payee"), ("account", "Account"))
 TYPES = (("expense", "Expense"), ("income", "Income"))
@@ -249,6 +251,327 @@ class CategoryBarChart(QWidget):
         super().leaveEvent(event)
 
 
+class SankeyChart(QWidget):
+    """Account-to-group flow diagram for the report."""
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.flows: list[tuple[str, str, float]] = []
+        self.left_totals: dict[str, float] = {}
+        self.right_totals: dict[str, float] = {}
+        self.empty_text = "No activity in this period"
+        self._left_order: list[str] = []
+        self._right_order: list[str] = []
+        self._left_rects: dict[str, QRectF] = {}
+        self._right_rects: dict[str, QRectF] = {}
+        self._hover_left: str | None = None
+        self._hover_right: str | None = None
+        self.setMouseTracking(True)
+        self.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
+        )
+        self.setMinimumHeight(340)
+
+    def set_data(
+        self,
+        flows: list[tuple[str, str, float]],
+        empty_text: str = "",
+    ) -> None:
+        clean = [
+            (left, right, float(amount))
+            for left, right, amount in flows
+            if float(amount) > 0.005
+        ]
+        right_totals: dict[str, float] = {}
+        for _left, right, amount in clean:
+            right_totals[right] = right_totals.get(right, 0.0) + amount
+        if len(right_totals) > 11:
+            keep = set(
+                sorted(
+                    right_totals,
+                    key=lambda name: (
+                        -right_totals[name],
+                        name.casefold(),
+                    ),
+                )[:10]
+            )
+            merged: dict[tuple[str, str], float] = {}
+            for left, right, amount in clean:
+                label = right if right in keep else "Other"
+                merged[(left, label)] = merged.get((left, label), 0.0) + amount
+            clean = [
+                (left, right, amount)
+                for (left, right), amount in merged.items()
+            ]
+        self.flows = clean
+        self.left_totals = {}
+        self.right_totals = {}
+        for left, right, amount in self.flows:
+            self.left_totals[left] = self.left_totals.get(left, 0.0) + amount
+            self.right_totals[right] = (
+                self.right_totals.get(right, 0.0) + amount
+            )
+        self._left_order = sorted(
+            self.left_totals,
+            key=lambda name: (-self.left_totals[name], name.casefold()),
+        )
+        self._right_order = sorted(
+            self.right_totals,
+            key=lambda name: (-self.right_totals[name], name.casefold()),
+        )
+        if empty_text:
+            self.empty_text = empty_text
+        self._hover_left = None
+        self._hover_right = None
+        self.setMinimumHeight(
+            max(340, max(len(self._left_order), len(self._right_order)) * 34 + 40)
+        )
+        self.update()
+
+    def _layout(
+        self,
+        order: list[str],
+        totals: dict[str, float],
+        x: float,
+        top: float,
+        gap: float,
+        node_w: float,
+        scale: float,
+    ) -> dict[str, QRectF]:
+        rects: dict[str, QRectF] = {}
+        y = top
+        for name in order:
+            height = max(18.0, totals[name] * scale)
+            rects[name] = QRectF(x, y, node_w, height)
+            y += height + gap
+        return rects
+
+    def paintEvent(self, event):  # noqa: N802
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        p.fillRect(self.rect(), QColor(C.PANEL))
+
+        if not self.flows or not self.left_totals:
+            p.setPen(QColor(C.MUTED))
+            p.setFont(font(14, 400))
+            p.drawText(
+                self.rect(),
+                Qt.AlignmentFlag.AlignCenter,
+                self.empty_text,
+            )
+            p.end()
+            return
+
+        width, height = self.width(), self.height()
+        margin = 16.0
+        top = 20.0
+        bottom = 18.0
+        gap = 10.0
+        available = max(20.0, height - top - bottom)
+        node_w = min(170.0, max(100.0, (width - 2 * margin) * 0.22))
+        if width - 2 * margin < node_w * 2 + 80:
+            node_w = max(60.0, (width - 2 * margin - 40) / 2)
+        left_x = margin
+        right_x = width - margin - node_w
+
+        total = sum(self.left_totals.values())
+        max_nodes = max(len(self._left_order), len(self._right_order))
+        gap_total = gap * max(0, max_nodes - 1)
+        scale = (available - gap_total) / total if total else 1.0
+        scale = max(1e-9, scale)
+
+        self._left_rects = self._layout(
+            self._left_order,
+            self.left_totals,
+            left_x,
+            top,
+            gap,
+            node_w,
+            scale,
+        )
+        self._right_rects = self._layout(
+            self._right_order,
+            self.right_totals,
+            right_x,
+            top,
+            gap,
+            node_w,
+            scale,
+        )
+
+        left_colors = {
+            name: DONUT_COLORS[index % len(DONUT_COLORS)]
+            for index, name in enumerate(self._left_order)
+        }
+        right_colors = {
+            name: DONUT_COLORS[(index + 4) % len(DONUT_COLORS)]
+            for index, name in enumerate(self._right_order)
+        }
+        flow_map = {
+            (left, right): amount
+            for left, right, amount in self.flows
+        }
+        right_offsets = {
+            name: rect.top() for name, rect in self._right_rects.items()
+        }
+        hover_active = (
+            self._hover_left is not None or self._hover_right is not None
+        )
+
+        # Links first, so the node blocks sit on top of them.
+        for left in self._left_order:
+            left_rect = self._left_rects[left]
+            y1 = left_rect.top()
+            for right in self._right_order:
+                amount = flow_map.get((left, right), 0.0)
+                if amount <= 0:
+                    continue
+                thickness = max(1.0, amount * scale)
+                right_rect = self._right_rects[right]
+                y2 = right_offsets[right]
+                right_offsets[right] += thickness
+                x1 = left_rect.right()
+                x2 = right_rect.left()
+                mid = (x1 + x2) / 2
+                path = QPainterPath(QPointF(x1, y1))
+                path.cubicTo(
+                    QPointF(mid, y1),
+                    QPointF(mid, y2),
+                    QPointF(x2, y2),
+                )
+                path.lineTo(QPointF(x2, y2 + thickness))
+                path.cubicTo(
+                    QPointF(mid, y2 + thickness),
+                    QPointF(mid, y1 + thickness),
+                    QPointF(x1, y1 + thickness),
+                )
+                path.closeSubpath()
+                color = QColor(left_colors[left])
+                if hover_active and not (
+                    self._hover_left == left or self._hover_right == right
+                ):
+                    color.setAlpha(30)
+                else:
+                    color.setAlpha(125 if hover_active else 85)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(color)
+                p.drawPath(path)
+                y1 += thickness
+
+        label_font = font(11, 600)
+        amount_font = font(10, 400)
+        metrics = QFontMetrics(label_font)
+        for name in self._left_order:
+            self._paint_node(
+                p,
+                self._left_rects[name],
+                name,
+                self.left_totals[name],
+                left_colors[name],
+                label_font,
+                amount_font,
+                metrics,
+                self._hover_left == name,
+            )
+        for name in self._right_order:
+            self._paint_node(
+                p,
+                self._right_rects[name],
+                name,
+                self.right_totals[name],
+                right_colors[name],
+                label_font,
+                amount_font,
+                metrics,
+                self._hover_right == name,
+            )
+        p.end()
+
+    @staticmethod
+    def _paint_node(
+        p: QPainter,
+        rect: QRectF,
+        name: str,
+        total: float,
+        color: str,
+        label_font,
+        amount_font,
+        metrics: QFontMetrics,
+        hovered: bool,
+    ) -> None:
+        p.setPen(
+            QPen(QColor(C.ACCENT if hovered else C.BORDER), 1.4 if hovered else 1)
+        )
+        p.setBrush(QColor(color))
+        p.drawRoundedRect(rect, 3, 3)
+        if rect.height() < 18:
+            return
+        inner = rect.adjusted(7, 1, -7, -1)
+        label = metrics.elidedText(
+            name, Qt.TextElideMode.ElideRight, int(inner.width())
+        )
+        p.setFont(label_font)
+        p.setPen(QColor("#ffffff"))
+        if rect.height() >= 34:
+            p.drawText(
+                QRectF(inner.left(), inner.top(), inner.width(), 16),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                label,
+            )
+            p.setFont(amount_font)
+            p.setPen(QColor(255, 255, 255, 190))
+            p.drawText(
+                QRectF(inner.left(), inner.top() + 15, inner.width(), 13),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                money_short(total),
+            )
+        else:
+            p.drawText(
+                inner,
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                label,
+            )
+
+    def _node_at(self, pos) -> tuple[str | None, str | None]:
+        for name, rect in self._left_rects.items():
+            if rect.contains(pos):
+                return name, None
+        for name, rect in self._right_rects.items():
+            if rect.contains(pos):
+                return None, name
+        return None, None
+
+    def mouseMoveEvent(self, event):  # noqa: N802
+        left, right = self._node_at(event.position())
+        if (left, right) != (self._hover_left, self._hover_right):
+            self._hover_left = left
+            self._hover_right = right
+            self.update()
+            name = left or right
+            if name is not None:
+                total = (
+                    self.left_totals.get(name, 0.0)
+                    if left is not None
+                    else self.right_totals.get(name, 0.0)
+                )
+                QToolTip.showText(
+                    event.globalPosition().toPoint(),
+                    f"{name}\n{money(total)}",
+                    self,
+                )
+            else:
+                QToolTip.hideText()
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event):  # noqa: N802
+        self._hover_left = None
+        self._hover_right = None
+        self.update()
+        QToolTip.hideText()
+        super().leaveEvent(event)
+
+
 class ReportPieView(QWidget):
     """Donut with a readable amount/percentage legend beside it."""
 
@@ -358,6 +681,13 @@ class ReportsWindow(QMainWindow):
         view_menu.addAction(action("Table", lambda: self.set_view("table"), "Ctrl+1"))
         view_menu.addAction(action("Pie Chart", lambda: self.set_view("pie"), "Ctrl+2"))
         view_menu.addAction(action("Bar Chart", lambda: self.set_view("bar"), "Ctrl+3"))
+        view_menu.addAction(
+            action(
+                "Sankey Diagram",
+                lambda: self.set_view("sankey"),
+                "Ctrl+4",
+            )
+        )
         view_menu.addSeparator()
         refresh = action("Refresh", self.reload, "F5")
         view_menu.addAction(refresh)
@@ -552,6 +882,7 @@ class ReportsWindow(QMainWindow):
             ("table", draw_table, "Table view"),
             ("pie", draw_pie, "Pie chart"),
             ("bar", draw_bars, "Bar chart"),
+            ("sankey", draw_sankey, "Sankey diagram"),
         ):
             button = IconButton(icon, size=32, tooltip=tooltip)
             button.setCheckable(True)
@@ -619,6 +950,21 @@ class ReportsWindow(QMainWindow):
         self.bar_stack.addWidget(self.bar_time)
         bar_layout.addWidget(self.bar_stack)
         self.stack.addWidget(bar_host)
+
+        sankey_host = QWidget()
+        sankey_host.setStyleSheet(f"background:{C.BG};")
+        sankey_layout = QVBoxLayout(sankey_host)
+        sankey_layout.setContentsMargins(16, 14, 16, 16)
+        self.sankey = SankeyChart()
+        self.sankey_scroll = QScrollArea()
+        self.sankey_scroll.setWidgetResizable(True)
+        self.sankey_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.sankey_scroll.setStyleSheet(
+            f"QScrollArea {{ background:{C.PANEL}; border:1px solid {C.BORDER}; }}"
+        )
+        self.sankey_scroll.setWidget(self.sankey)
+        sankey_layout.addWidget(self.sankey_scroll)
+        self.stack.addWidget(sankey_host)
 
         return self.stack
 
@@ -829,10 +1175,17 @@ class ReportsWindow(QMainWindow):
         self._update_hint()
 
     def _update_hint(self) -> None:
-        names = {"table": "Table view", "pie": "Pie chart", "bar": "Bar chart"}
+        names = {
+            "table": "Table view",
+            "pie": "Pie chart",
+            "bar": "Bar chart",
+            "sankey": "Sankey diagram",
+        }
         text = names.get(self._view, "")
         if self._view in ("pie", "bar"):
             text += " · click a slice/bar to select its row"
+        elif self._view == "sankey":
+            text += " · hover nodes for totals"
         self.view_hint.setText(text)
 
     # ------------------------------------------------------------------- data
@@ -919,6 +1272,14 @@ class ReportsWindow(QMainWindow):
                 "No activity in this period",
             )
             self._populate_time_bars(months, kind)
+            self.sankey.set_data(
+                [
+                    (f"{flow.label} {flow.year}", "Total", amount)
+                    for flow in months
+                    if (amount := self._flow_amount(flow, kind)) > 0
+                ],
+                f"No {kind} in this period",
+            )
         else:
             self._populate_group_table(table_rows)
             self._populate_pie(
@@ -929,6 +1290,17 @@ class ReportsWindow(QMainWindow):
                 f"No {kind} in this period",
             )
             self._populate_group_bars(chart_display, kind)
+            self.sankey.set_data(
+                self.store.report_sankey(
+                    start,
+                    end,
+                    kind=kind,
+                    view_by=self.group(),
+                    account_id=account_id,
+                    search=search,
+                ),
+                f"No {kind} in this period",
+            )
         self._update_hint()
 
     @staticmethod

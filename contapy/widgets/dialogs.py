@@ -3148,7 +3148,10 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
     (
         "Reports window",
         [
-            ("Ctrl+1 / Ctrl+2 / Ctrl+3", "Table, Pie chart or Bar chart"),
+            (
+                "Ctrl+1 / Ctrl+2 / Ctrl+3 / Ctrl+4",
+                "Table, Pie chart, Bar chart or Sankey diagram",
+            ),
             ("F5", "Refresh the report"),
             ("Ctrl+W / Esc", "Close the reports window"),
         ],

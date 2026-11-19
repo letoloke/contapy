@@ -819,6 +819,77 @@ class TransferReportTests(unittest.TestCase):
         # The transfer still exists in both ledgers.
         self.assertEqual(len(self.store.transfer_legs(group)), 2)
 
+    def test_report_sankey_flows_exclude_transfers(self) -> None:
+        when = date(2035, 2, 15)
+        food = self.store.ensure_category("Food", "expense")
+        rent = self.store.ensure_category("Rent", "expense")
+        self.store.add_transaction(
+            TransactionDraft(
+                date=when.isoformat(),
+                account_id=self.source,
+                payee="Market",
+                category_id=food,
+                amount=-100.0,
+            )
+        )
+        self.store.add_transaction(
+            TransactionDraft(
+                date=when.isoformat(),
+                account_id=self.source,
+                payee="Landlord",
+                category_id=rent,
+                amount=-50.0,
+            )
+        )
+        self.store.add_transaction(
+            TransactionDraft(
+                date=when.isoformat(),
+                account_id=self.destination,
+                payee="Market",
+                category_id=food,
+                amount=-25.0,
+            )
+        )
+        self.store.add_transfer(
+            TransactionDraft(
+                date=when.isoformat(),
+                account_id=self.source,
+                payee="Move",
+                category_id=None,
+                amount=-1_000.0,
+            ),
+            self.destination,
+        )
+
+        by_category = {
+            (left, right): amount
+            for left, right, amount in self.store.report_sankey(
+                when, when, kind="expense", view_by="category"
+            )
+        }
+        by_account = {
+            (left, right): amount
+            for left, right, amount in self.store.report_sankey(
+                when, when, kind="expense", view_by="account"
+            )
+        }
+
+        self.assertEqual(
+            by_category,
+            {
+                ("Checking", "Food"): 100.0,
+                ("Checking", "Rent"): 50.0,
+                ("Savings", "Food"): 25.0,
+            },
+        )
+        self.assertEqual(
+            by_account,
+            {
+                ("Checking", "Total"): 150.0,
+                ("Savings", "Total"): 25.0,
+            },
+        )
+
 
 class DatabasePathTests(unittest.TestCase):
     def test_legacy_budget_database_is_copied_to_contapy(self) -> None:

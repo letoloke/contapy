@@ -1255,6 +1255,49 @@ class DataStore:
             rows.sort(key=lambda item: item.label.casefold())
         return rows
 
+    def report_sankey(
+        self,
+        start: date,
+        end: date,
+        kind: str = "expense",
+        view_by: str = "category",
+        account_id: int | None = None,
+        search: str = "",
+    ) -> list[tuple[str, str, float]]:
+        """Account-to-group flows for the report Sankey chart."""
+        flows: dict[tuple[str, str], float] = {}
+        for row in self._report_transactions(start, end, account_id, search):
+            if not self._report_includes(row, kind):
+                continue
+            amount = float(row["amount"])
+            if kind == "expense":
+                if amount >= 0:
+                    continue
+                value = -amount
+            else:
+                if amount <= 0:
+                    continue
+                value = amount
+            if view_by == "category":
+                right = str(row["top_name"] or "(no category)")
+            elif view_by == "payee":
+                right = str(row["payee"] or "").strip() or "(no payee)"
+            else:
+                right = "Total"
+            left = str(row["account_name"] or "(no account)")
+            flows[(left, right)] = flows.get((left, right), 0.0) + value
+        return [
+            (left, right, value)
+            for (left, right), value in sorted(
+                flows.items(),
+                key=lambda item: (
+                    -item[1],
+                    item[0][0].casefold(),
+                    item[0][1].casefold(),
+                ),
+            )
+        ]
+
     def report_months(
         self,
         start: date,

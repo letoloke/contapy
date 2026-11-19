@@ -21,7 +21,11 @@ from contapy.main_window import MainWindow
 from contapy.models import MonthFlow, Slice
 from contapy.theme import apply_theme
 from contapy.widgets.charts import DonutChart, SpendingRevenueChart
-from contapy.widgets.reports import CategoryBarChart, ReportsWindow
+from contapy.widgets.reports import (
+    CategoryBarChart,
+    ReportsWindow,
+    SankeyChart,
+)
 
 
 class ChartSignalTests(unittest.TestCase):
@@ -100,6 +104,38 @@ class ChartSignalTests(unittest.TestCase):
         self.assertEqual(clicked, [0])
 
 
+class SankeyChartTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+        apply_theme(cls.app)
+
+    def test_aggregates_and_renders_account_to_group_flows(self) -> None:
+        chart = SankeyChart()
+        self.addCleanup(chart.deleteLater)
+        chart.resize(700, 420)
+        chart.show()
+        chart.set_data(
+            [
+                ("Checking", "Food", 100.0),
+                ("Checking", "Rent", 50.0),
+                ("Savings", "Food", 25.0),
+            ]
+        )
+        QTest.qWait(30)
+
+        self.assertEqual(
+            chart.left_totals, {"Checking": 150.0, "Savings": 25.0}
+        )
+        self.assertEqual(
+            chart.right_totals, {"Food": 125.0, "Rent": 50.0}
+        )
+        self.assertEqual(chart._left_order, ["Checking", "Savings"])
+        self.assertEqual(chart._right_order, ["Food", "Rent"])
+        self.assertGreaterEqual(chart.minimumHeight(), 340)
+        chart.grab()
+
+
 class ReportsChartInteractionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -149,6 +185,14 @@ class ReportsChartInteractionTests(unittest.TestCase):
         self.assertEqual(
             bar_category.name.casefold(), bar_label.casefold()
         )
+
+    def test_sankey_view_populates_and_selects_its_stack_page(self) -> None:
+        self.window.set_view("sankey")
+
+        self.assertEqual(self.window._view, "sankey")
+        self.assertEqual(self.window.stack.currentIndex(), 3)
+        self.assertTrue(self.window.sankey.flows)
+        self.assertIn("Sankey", self.window.view_hint.text())
 
     def test_no_category_slice_opens_uncategorized_transactions(self) -> None:
         self.window.set_view("pie")
