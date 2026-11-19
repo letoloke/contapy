@@ -818,6 +818,71 @@ class CategoryDialogTests(unittest.TestCase):
         self.assertIn("2 transactions", dialog.summary.text())
         self.assertIn("$ -19.75", dialog.summary.text())
 
+    def test_category_transactions_dialog_sorts_by_header_click(self) -> None:
+        store, account_id, food = self._food_store()
+        insert_transaction(
+            store,
+            account_id,
+            food,
+            -12.5,
+            when=date(2026, 1, 2),
+            payee="Cafe",
+        )
+        insert_transaction(
+            store,
+            account_id,
+            food,
+            -7.25,
+            when=date(2026, 1, 3),
+            payee="Bakery",
+        )
+        insert_transaction(
+            store,
+            account_id,
+            food,
+            -30.0,
+            when=date(2026, 1, 1),
+            payee="Market",
+        )
+
+        dialog = CategoryTransactionsDialog(store, store.category(food))
+        self.addCleanup(dialog.deleteLater)
+
+        def payees() -> list[str]:
+            return [
+                dialog.table.item(row, 2).text()
+                for row in range(dialog.table.rowCount())
+            ]
+
+        header = dialog.table.horizontalHeader()
+        self.assertTrue(header.sectionsClickable())
+        self.assertTrue(header.isSortIndicatorShown())
+        self.assertEqual(payees(), ["Bakery", "Cafe", "Market"])
+
+        header.sectionClicked.emit(5)  # Amount, descending first.
+        self.assertEqual(
+            header.sortIndicatorOrder(), Qt.SortOrder.DescendingOrder
+        )
+        self.assertEqual(payees(), ["Bakery", "Cafe", "Market"])
+
+        header.sectionClicked.emit(5)  # Amount, ascending.
+        self.assertEqual(payees(), ["Market", "Cafe", "Bakery"])
+
+        header.sectionClicked.emit(2)  # Payee, ascending first.
+        self.assertEqual(payees(), ["Bakery", "Cafe", "Market"])
+
+        dialog.table.selectRow(1)  # Cafe.
+        selected_id = dialog.table.item(1, 0).data(
+            Qt.ItemDataRole.UserRole
+        )
+        header.sectionClicked.emit(4)  # Status, keep the same transaction.
+        self.assertEqual(dialog.table.currentRow(), 1)
+        self.assertEqual(
+            dialog.table.item(1, 0).data(Qt.ItemDataRole.UserRole),
+            selected_id,
+        )
+        self.assertEqual(dialog.table.item(1, 2).text(), "Cafe")
+
     def test_category_transactions_dialog_includes_subcategories_by_default(self) -> None:
         store, account_id, food = self._food_store()
         groceries = store.add_category("Groceries", "expense", food)

@@ -2194,6 +2194,19 @@ class CategoryDialog(QDialog):
         )
 
 
+class _SortItem(QTableWidgetItem):
+    """Table item that sorts by an explicit key instead of its display text."""
+
+    def __init__(self, text: str, sort_key):
+        super().__init__(text)
+        self._sort_key = sort_key
+
+    def __lt__(self, other) -> bool:
+        if isinstance(other, _SortItem):
+            return self._sort_key < other._sort_key
+        return super().__lt__(other)
+
+
 class CategoryTransactionsDialog(QDialog):
     """All transactions filed under one category, newest first."""
 
@@ -2212,6 +2225,8 @@ class CategoryTransactionsDialog(QDialog):
         self.store = store
         self.category = category
         self._rows = []
+        self._sort_column = 0
+        self._sort_order = Qt.SortOrder.DescendingOrder
         self.start = start
         self.end = end
         self.account_id = account_id
@@ -2251,7 +2266,7 @@ class CategoryTransactionsDialog(QDialog):
             lead = "Posted uncategorized transactions"
         else:
             lead = f"Posted transactions in “{category.full_name}”"
-        subtitle = QLabel(f"{lead}{suffix}, newest first.")
+        subtitle = QLabel(f"{lead}{suffix}. Click a column header to sort.")
         subtitle.setWordWrap(True)
         subtitle.setFont(font(13, 400))
         subtitle.setStyleSheet(f"color:{C.MUTED};")
@@ -2296,6 +2311,10 @@ class CategoryTransactionsDialog(QDialog):
         self.table.verticalHeader().setDefaultSectionSize(30)
         header = self.table.horizontalHeader()
         header.setHighlightSections(False)
+        header.setSectionsClickable(True)
+        header.setSortIndicatorShown(True)
+        header.setSortIndicator(0, Qt.SortOrder.DescendingOrder)
+        header.sectionClicked.connect(self._header_clicked)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         header.resizeSection(0, 105)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
@@ -2365,21 +2384,40 @@ class CategoryTransactionsDialog(QDialog):
         self._populate(rows)
 
     def _populate(self, rows: list[TransactionRow]) -> None:
+        selected_id = None
+        selected = self.table.selectedItems()
+        if selected:
+            value = selected[0].data(Qt.ItemDataRole.UserRole)
+            if value is not None:
+                selected_id = int(value)
+
+        status_rank = {"Open": 0, "Cleared": 1, "Reconciled": 2, "Void": 3}
         self.table.setRowCount(len(rows))
         for index, row in enumerate(rows):
-            date_item = QTableWidgetItem(friendly_date(row.date))
+            date_item = _SortItem(
+                friendly_date(row.date), (row.date, row.id)
+            )
             date_item.setForeground(QColor(C.TEXT))
             self.table.setItem(index, 0, date_item)
 
-            account_item = QTableWidgetItem(row.account_name)
+            account_item = _SortItem(
+                row.account_name,
+                (row.account_name.casefold(), row.date, row.id),
+            )
             account_item.setForeground(QColor(C.TEXT))
             self.table.setItem(index, 1, account_item)
 
-            payee_item = QTableWidgetItem(row.payee or "")
+            payee = row.payee or ""
+            payee_item = _SortItem(
+                payee, (payee.casefold(), row.date, row.id)
+            )
             payee_item.setForeground(QColor(C.TEXT))
             self.table.setItem(index, 2, payee_item)
 
-            category_item = QTableWidgetItem(row.category_name)
+            category_item = _SortItem(
+                row.category_name,
+                (row.category_name.casefold(), row.date, row.id),
+            )
             category_item.setForeground(QColor(C.TEXT))
             pixmap = QPixmap(10, 10)
             fallback = C.MUTED if row.transfer_id else C.RED_BAR
@@ -2387,13 +2425,24 @@ class CategoryTransactionsDialog(QDialog):
             category_item.setIcon(QIcon(pixmap))
             self.table.setItem(index, 3, category_item)
 
-            status_item = QTableWidgetItem(self._status(row))
+            status_text = self._status(row)
+            status_item = _SortItem(
+                status_text,
+                (
+                    status_rank.get(status_text, 9),
+                    status_text,
+                    row.date,
+                    row.id,
+                ),
+            )
             status_item.setForeground(
                 QColor(C.MUTED if row.voided else C.TEXT)
             )
             self.table.setItem(index, 4, status_item)
 
-            amount = QTableWidgetItem(money(row.amount))
+            amount = _SortItem(
+                money(row.amount), (row.amount, row.date, row.id)
+            )
             amount.setTextAlignment(
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
             )
@@ -2407,6 +2456,12 @@ class CategoryTransactionsDialog(QDialog):
                     QColor(C.ORANGE if row.amount < 0 else C.GREEN)
                 )
             self.table.setItem(index, 5, amount)
+            for column in range(self.table.columnCount()):
+                item = self.table.item(index, column)
+                if item is not None:
+                    item.setData(Qt.ItemDataRole.UserRole, row.id)
+
+        self._apply_sort(selected_id)
 
         total = sum(row.amount for row in rows if not row.voided)
         voided = sum(1 for row in rows if row.voided)
@@ -2418,6 +2473,42 @@ class CategoryTransactionsDialog(QDialog):
         if voided:
             parts.append(f"{voided} voided excluded")
         self.summary.setText("  ·  ".join(parts))
+
+    def _header_clicked(self, column: int) -> None:
+        if column == self._sort_column:
+            self._sort_order = (
+                Qt.SortOrder.DescendingOrder
+                if self._sort_order == Qt.SortOrder.AscendingOrder
+                else Qt.SortOrder.AscendingOrder
+            )
+        else:
+            self._sort_column = column
+            self._sort_order = (
+                Qt.SortOrder.DescendingOrder
+                if column in (0, 5)
+                else Qt.SortOrder.AscendingOrder
+            )
+        self._apply_sort()
+
+    def _apply_sort(self, selected_id: int | None = None) -> None:
+        if selected_id is None:
+            selected = self.table.selectedItems()
+            if selected:
+                value = selected[0].data(Qt.ItemDataRole.UserRole)
+                if value is not None:
+                    selected_id = int(value)
+        header = self.table.horizontalHeader()
+        header.setSortIndicator(self._sort_column, self._sort_order)
+        self.table.sortItems(self._sort_column, self._sort_order)
+        if selected_id is not None:
+            for index in range(self.table.rowCount()):
+                item = self.table.item(index, 0)
+                if (
+                    item is not None
+                    and item.data(Qt.ItemDataRole.UserRole) == selected_id
+                ):
+                    self.table.selectRow(index)
+                    break
 
     @staticmethod
     def _status(row: TransactionRow) -> str:
