@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QMenu,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -2224,6 +2225,7 @@ class CategoryTransactionsDialog(QDialog):
         super().__init__(parent)
         self.store = store
         self.category = category
+        self.changed = False
         self._rows = []
         self._sort_column = 0
         self._sort_order = Qt.SortOrder.DescendingOrder
@@ -2309,6 +2311,22 @@ class CategoryTransactionsDialog(QDialog):
         )
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setDefaultSectionSize(30)
+        self.table.itemDoubleClicked.connect(
+            lambda _item: self._edit_selected()
+        )
+        self.table.itemSelectionChanged.connect(self._selection_changed)
+        self.table.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self.table.customContextMenuRequested.connect(
+            self._show_context_menu
+        )
+        for key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            shortcut = QShortcut(QKeySequence(key), self.table)
+            shortcut.setContext(
+                Qt.ShortcutContext.WidgetWithChildrenShortcut
+            )
+            shortcut.activated.connect(self._edit_selected)
         header = self.table.horizontalHeader()
         header.setHighlightSections(False)
         header.setSectionsClickable(True)
@@ -2328,12 +2346,22 @@ class CategoryTransactionsDialog(QDialog):
         header.resizeSection(5, 120)
         root.addWidget(self.table, 1)
 
+        self.edit_button = QPushButton("Edit")
+        self.edit_button.setAutoDefault(False)
+        self.edit_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.edit_button.setEnabled(False)
+        self.edit_button.setToolTip(
+            "Edit the selected transaction (Enter or double-click)"
+        )
+        self.edit_button.clicked.connect(self._edit_selected)
+
         close = QPushButton("Close")
         close.setAutoDefault(False)
         close.setCursor(Qt.CursorShape.PointingHandCursor)
         close.clicked.connect(self.accept)
         close_row = QHBoxLayout()
         close_row.addStretch(1)
+        close_row.addWidget(self.edit_button)
         close_row.addWidget(close)
         root.addLayout(close_row)
 
@@ -2509,6 +2537,73 @@ class CategoryTransactionsDialog(QDialog):
                 ):
                     self.table.selectRow(index)
                     break
+
+    def _selection_changed(self) -> None:
+        self.edit_button.setEnabled(self._selected_transaction_id() is not None)
+
+    def _selected_transaction_id(self) -> int | None:
+        selected = self.table.selectedItems()
+        if not selected:
+            return None
+        value = selected[0].data(Qt.ItemDataRole.UserRole)
+        return int(value) if value is not None else None
+
+    def _show_context_menu(self, pos) -> None:
+        index = self.table.indexAt(pos)
+        if not index.isValid():
+            return
+        self.table.selectRow(index.row())
+        menu = QMenu(self)
+        edit_action = menu.addAction("Edit Transaction…")
+        edit_action.triggered.connect(self._edit_selected)
+        menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    def _edit_selected(self) -> None:
+        transaction_id = self._selected_transaction_id()
+        if transaction_id is None:
+            return
+        source = self.store.transaction(transaction_id)
+        if source is None:
+            return
+        draft = TransactionDraft(
+            date=source.date,
+            account_id=source.account_id,
+            payee=source.payee,
+            category_id=source.category_id,
+            amount=source.amount,
+            memo=source.memo,
+            cleared=source.cleared,
+            reconciled=source.reconciled,
+            remind=source.remind,
+            flagged=source.flagged,
+            voided=source.voided,
+            payment=source.payment,
+            number=source.number,
+            tags=source.tags,
+            splits=list(source.splits),
+        )
+        dialog = TransactionDialog(
+            self.store,
+            self.store.accounts(),
+            self.store.categories(),
+            draft=draft,
+            title="Edit Transaction",
+            parent=self,
+        )
+        if dialog.exec() != TransactionDialog.DialogCode.Accepted:
+            return
+        new_draft = dialog.draft()
+        if new_draft is None:
+            return
+        if new_draft.transfer_account_id is not None:
+            self.store.delete_transaction(source.id)
+            self.store.add_transfer(
+                new_draft, new_draft.transfer_account_id
+            )
+        else:
+            self.store.update_transaction(source.id, new_draft)
+        self.changed = True
+        self._reload()
 
     @staticmethod
     def _status(row: TransactionRow) -> str:
@@ -2972,7 +3067,11 @@ class CategoriesDialog(QDialog):
         selected = self._selected_categories()
         if len(selected) != 1:
             return
-        CategoryTransactionsDialog(self.store, selected[0], self).exec()
+        dialog = CategoryTransactionsDialog(self.store, selected[0], self)
+        dialog.exec()
+        if dialog.changed:
+            self.changed = True
+            self._reload_list(select_id=selected[0].id)
 
     def new_category(self) -> None:
         dialog = CategoryDialog(

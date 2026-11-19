@@ -1031,7 +1031,7 @@ class ReportsWindow(QMainWindow):
         self, category: Category | None
     ) -> None:
         start, end = self.range()
-        CategoryTransactionsDialog(
+        dialog = CategoryTransactionsDialog(
             self.store,
             category,
             self,
@@ -1039,7 +1039,10 @@ class ReportsWindow(QMainWindow):
             end=end,
             account_id=self.account_combo.currentData(),
             initial_search=self.search_edit.text().strip(),
-        ).exec()
+        )
+        dialog.exec()
+        if dialog.changed:
+            self.reload()
 
     def _reveal_table_label(self, label: str) -> None:
         self.set_view("table")

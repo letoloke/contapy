@@ -597,9 +597,13 @@ class MainWindow(QMainWindow):
             self.show_toast(f"Category not found: {name}")
             return
         start, end = self._donut_range(self.donut_card.period())
-        CategoryTransactionsDialog(
+        dialog = CategoryTransactionsDialog(
             self.store, category, self, start=start, end=end
-        ).exec()
+        )
+        dialog.exec()
+        if dialog.changed:
+            self._record_activity("Edited transaction")
+            self.refresh_all()
 
     def _open_bar_month(self, index: int) -> None:
         if not (0 <= index < len(self.bars.flows)):

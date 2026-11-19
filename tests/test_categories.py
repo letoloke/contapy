@@ -14,7 +14,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QShortcut
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from contapy.db import DataStore
 from contapy.models import (
@@ -882,6 +882,126 @@ class CategoryDialogTests(unittest.TestCase):
             selected_id,
         )
         self.assertEqual(dialog.table.item(1, 2).text(), "Cafe")
+
+    def test_category_transactions_dialog_edits_the_selected_transaction(self) -> None:
+        store, account_id, food = self._food_store()
+        insert_transaction(
+            store,
+            account_id,
+            food,
+            -12.5,
+            when=date(2026, 1, 2),
+            payee="Cafe",
+        )
+        insert_transaction(
+            store,
+            account_id,
+            food,
+            -7.25,
+            when=date(2026, 1, 3),
+            payee="Bakery",
+        )
+
+        dialog = CategoryTransactionsDialog(store, store.category(food))
+        self.addCleanup(dialog.deleteLater)
+        self.assertFalse(dialog.edit_button.isEnabled())
+
+        target = dialog.table.item(0, 0).data(Qt.ItemDataRole.UserRole)
+        dialog.table.selectRow(0)
+        self.assertTrue(dialog.edit_button.isEnabled())
+
+        class FakeDialog:
+            DialogCode = QDialog.DialogCode
+
+            def __init__(
+                self,
+                store,
+                accounts,
+                categories,
+                draft=None,
+                title="",
+                parent=None,
+            ):
+                self._draft = draft
+
+            def exec(self) -> QDialog.DialogCode:
+                return QDialog.DialogCode.Accepted
+
+            def draft(self) -> TransactionDraft:
+                self._draft.payee = "Edited Bakery"
+                self._draft.amount = -9.0
+                return self._draft
+
+        with mock.patch(
+            "contapy.widgets.dialogs.TransactionDialog", FakeDialog
+        ):
+            dialog._edit_selected()
+
+        edited = store.transaction(target)
+        assert edited is not None
+        self.assertEqual(edited.payee, "Edited Bakery")
+        self.assertEqual(edited.amount, -9.0)
+        self.assertTrue(dialog.changed)
+        self.assertEqual(dialog.table.item(0, 2).text(), "Edited Bakery")
+        self.assertEqual(dialog.table.currentRow(), 0)
+
+    def test_editing_a_transaction_out_of_the_category_refreshes_the_list(self) -> None:
+        store, account_id, food = self._food_store()
+        insert_transaction(
+            store,
+            account_id,
+            food,
+            -12.5,
+            when=date(2026, 1, 2),
+            payee="Cafe",
+        )
+        insert_transaction(
+            store,
+            account_id,
+            food,
+            -7.25,
+            when=date(2026, 1, 3),
+            payee="Bakery",
+        )
+
+        dialog = CategoryTransactionsDialog(store, store.category(food))
+        self.addCleanup(dialog.deleteLater)
+        dialog.table.selectRow(0)
+        target = dialog.table.item(0, 0).data(Qt.ItemDataRole.UserRole)
+
+        class FakeDialog:
+            DialogCode = QDialog.DialogCode
+
+            def __init__(
+                self,
+                store,
+                accounts,
+                categories,
+                draft=None,
+                title="",
+                parent=None,
+            ):
+                self._draft = draft
+
+            def exec(self) -> QDialog.DialogCode:
+                return QDialog.DialogCode.Accepted
+
+            def draft(self) -> TransactionDraft:
+                self._draft.category_id = None
+                return self._draft
+
+        with mock.patch(
+            "contapy.widgets.dialogs.TransactionDialog", FakeDialog
+        ):
+            dialog._edit_selected()
+
+        edited = store.transaction(target)
+        assert edited is not None
+        self.assertIsNone(edited.category_id)
+        self.assertTrue(dialog.changed)
+        self.assertEqual(dialog.table.rowCount(), 1)
+        self.assertEqual(dialog.table.item(0, 2).text(), "Cafe")
+        self.assertIn("1 transaction", dialog.summary.text())
 
     def test_category_transactions_dialog_includes_subcategories_by_default(self) -> None:
         store, account_id, food = self._food_store()
