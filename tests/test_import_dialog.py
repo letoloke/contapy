@@ -205,7 +205,7 @@ class ImportDialogTests(unittest.TestCase):
         dialog._header_clicked(4)
         self.assertEqual(
             [
-                dialog.preview.item(row, 2).text()
+                dialog.preview.item(row, 3).text()
                 for row in range(dialog.preview.rowCount())
             ],
             ["Large", "Medium", "Small"],
@@ -215,7 +215,7 @@ class ImportDialogTests(unittest.TestCase):
         dialog._header_clicked(4)
         self.assertEqual(
             [
-                dialog.preview.item(row, 2).text()
+                dialog.preview.item(row, 3).text()
                 for row in range(dialog.preview.rowCount())
             ],
             ["Small", "Medium", "Large"],
@@ -236,10 +236,24 @@ class ImportDialogTests(unittest.TestCase):
         dialog._header_clicked(1)
         self.assertEqual(
             [
-                dialog.preview.item(row, 2).text()
+                dialog.preview.item(row, 3).text()
                 for row in range(dialog.preview.rowCount())
             ],
             ["Newest", "Middle", "Oldest"],
+        )
+        dialog.deleteLater()
+
+    def test_memo_as_payee_is_off_by_default(self) -> None:
+        target = self.write_csv(
+            "memo.csv", ["2031-03-01,-20,Bank description,"]
+        )
+        dialog = self.dialog(target)
+        self.assertFalse(dialog.memo_payee.isChecked())
+        self.assertFalse(dialog.memo_as_payee())
+        self.assertEqual(dialog.preview.item(0, 2).text(), "")
+        dialog.memo_payee.setChecked(True)
+        self.assertEqual(
+            dialog.preview.item(0, 2).text(), "Bank description"
         )
         dialog.deleteLater()
 

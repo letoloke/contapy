@@ -124,6 +124,11 @@ class ImportMenuTests(unittest.TestCase):
             row = store.transaction(imported_id)
             assert row is not None
             self.assertEqual(row.account_id, account)
+            self.assertEqual(window._recent_import_ids, {imported_id})
+
+            window.open_ledger(account)
+            ledger = window.ledgers[account]
+            self.assertEqual(ledger.delegate.recent_ids, {imported_id})
 
             with mock.patch.object(
                 QMessageBox,
@@ -133,6 +138,8 @@ class ImportMenuTests(unittest.TestCase):
                 window.revert_last_import()
             self.assertIsNone(store.transaction(imported_id))
             self.assertIsNone(store.last_import())
+            self.assertEqual(window._recent_import_ids, set())
+            self.assertEqual(ledger.delegate.recent_ids, set())
             self.assertEqual(
                 len(list(import_backup_dir(store.path).glob("*.db"))), 2
             )

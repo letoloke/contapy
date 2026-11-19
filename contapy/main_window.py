@@ -61,6 +61,7 @@ class MainWindow(QMainWindow):
         self.activity.record("Application opened", store.path.name)
         self._flush_activity()
         self.ledgers: dict[int, LedgerWindow] = {}
+        self._recent_import_ids: set[int] = set()
         self.reports_window: ReportsWindow | None = None
         self.budget_window: BudgetWindow | None = None
         self._initial_focus_done = False
@@ -489,12 +490,28 @@ class MainWindow(QMainWindow):
         ledger.changed.connect(self.refresh_all)
         ledger.activity.connect(self._record_activity)
         ledger.revealRequested.connect(self._reveal_transaction)
+        ledger.recentImport.connect(self._set_recent_import_ids)
+        ledger.set_recent_import_ids(self._recent_import_ids)
         ledger.destroyed.connect(
             lambda _obj=None, aid=account_id: self._ledger_closed(aid)
         )
         ledger.show()
         ledger.raise_()
         ledger.activateWindow()
+
+    def _set_recent_import_ids(self, transaction_ids) -> None:
+        self._recent_import_ids.clear()
+        self._recent_import_ids.update(
+            int(transaction_id) for transaction_id in transaction_ids
+        )
+        self._refresh_recent_import_marks()
+
+    def _refresh_recent_import_marks(self) -> None:
+        for ledger in list(self.ledgers.values()):
+            try:
+                ledger.set_recent_import_ids(self._recent_import_ids)
+            except RuntimeError:
+                continue
 
     def _reveal_transaction(self, account_id: int, transaction_id: int) -> None:
         """Follow an edited transaction into another account ledger."""
@@ -973,6 +990,7 @@ class MainWindow(QMainWindow):
         self._record_activity("Closed database", old_store.path.name)
         self._flush_activity()
         self.store = store
+        self._recent_import_ids.clear()
         self.budgets_panel.store = store
         self.budgets_panel.month = store.current_budget_period()
         old_store.close()
@@ -1193,6 +1211,7 @@ class MainWindow(QMainWindow):
             self.store.clear_last_import()
 
         self.refresh_all()
+        self._set_recent_import_ids(new_ids)
         detail = f"{added} imported"
         if duplicates:
             detail += f", {duplicates} duplicate(s) skipped"
@@ -1272,6 +1291,7 @@ class MainWindow(QMainWindow):
             f"backup: {revert_backup.name}",
         )
         self.refresh_all()
+        self._set_recent_import_ids([])
         self.show_toast(
             f"Reverted import: {removed} transaction(s) removed · "
             "safety backup saved"

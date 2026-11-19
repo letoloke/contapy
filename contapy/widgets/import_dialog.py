@@ -173,7 +173,7 @@ class CsvImportDialog(QDialog):
         options.addWidget(self.account_combo)
         options.addSpacing(12)
         self.memo_payee = QCheckBox("Use Memo as payee when Beneficiario/Payee is empty")
-        self.memo_payee.setChecked(True)
+        self.memo_payee.setChecked(False)
         self.memo_payee.toggled.connect(self._refresh_preview)
         options.addWidget(self.memo_payee)
         options.addSpacing(12)

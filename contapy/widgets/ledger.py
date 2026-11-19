@@ -226,7 +226,9 @@ class LedgerDelegate(QStyledItemDelegate):
         self._value_font = font(13, 400)
         self._payee_font = font(14, 400)
         self._small_font = font(12, 400)
+        self._badge_font = font(10, 600)
         self.highlight_ids: set[int] = set()
+        self.recent_ids: set[int] = set()
 
     def sizeHint(self, option, index):  # noqa: N802
         return QSize(option.rect.width(), 27)
@@ -244,6 +246,7 @@ class LedgerDelegate(QStyledItemDelegate):
             and not row.is_split_child
             and row.id in self.highlight_ids
         )
+        recent = not row.is_split_child and row.id in self.recent_ids
 
         bg = QColor(C.ROW_SELECTED) if selected else QColor(
             C.PANEL if index.row() % 2 == 0 else C.ALT_ROW
@@ -343,7 +346,27 @@ class LedgerDelegate(QStyledItemDelegate):
         elif col == DATE:
             self._text(painter, rect, pad, ledger_date(row.date), self._small_font, muted)
         elif col == PAYEE:
-            self._text(painter, rect, pad, row.payee, self._payee_font, text_color)
+            text_pad = pad
+            if recent and rect.width() > 90:
+                metrics = QFontMetrics(self._badge_font)
+                chip_width = metrics.horizontalAdvance("NEW") + 12
+                chip = QRectF(
+                    rect.left() + pad, rect.top() + 6, chip_width, 15
+                )
+                fill = QColor(C.GREEN)
+                fill.setAlpha(40)
+                painter.setBrush(fill)
+                painter.setPen(QPen(QColor(C.GREEN), 1))
+                painter.drawRoundedRect(chip, 7, 7)
+                painter.setFont(self._badge_font)
+                painter.setPen(QColor(C.GREEN))
+                painter.drawText(
+                    chip, Qt.AlignmentFlag.AlignCenter, "NEW"
+                )
+                text_pad = pad + int(chip_width) + 6
+            self._text(
+                painter, rect, text_pad, row.payee, self._payee_font, text_color
+            )
         elif col == CATEGORY:
             if row.split_count:
                 self._draw_split_chip(painter, rect, row, selected)
@@ -585,6 +608,7 @@ class LedgerWindow(QMainWindow):
     changed = Signal()
     activity = Signal(str)
     revealRequested = Signal(int, int)
+    recentImport = Signal(list)
 
     def __init__(
         self,
@@ -990,6 +1014,11 @@ class LedgerWindow(QMainWindow):
         if not self._selected_rows():
             self._restore_last_transaction()
         self._focus_table()
+
+    def set_recent_import_ids(self, transaction_ids: set[int]) -> None:
+        """Mark rows imported in this session without changing the database."""
+        self.delegate.recent_ids = set(transaction_ids)
+        self.table.viewport().update()
 
     def _focus_table(self, select_first: bool = True) -> None:
         if select_first and self.model.rowCount() and not self._selected_rows():
@@ -2219,6 +2248,7 @@ class LedgerWindow(QMainWindow):
         )
         self.reload()
         self.changed.emit()
+        self.recentImport.emit([int(transaction_id) for transaction_id in new_ids])
         self._show_message(
             "Import finished",
             f"Imported {added} transactions."
