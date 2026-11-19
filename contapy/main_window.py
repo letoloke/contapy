@@ -1187,7 +1187,7 @@ class MainWindow(QMainWindow):
             self,
             "Import from Banamex",
             "",
-            "Banamex statements (*.html *.htm);;All files (*)",
+            "Banamex statements (*.html *.htm *.pdf);;All files (*)",
         )
         if not path:
             return
