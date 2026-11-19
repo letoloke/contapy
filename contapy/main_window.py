@@ -28,6 +28,7 @@ from .booking import transform as transform_booking
 from .config import date_format_choice, remember_database, theme_choice
 from .dates import set_date_format
 from .db import DataStore
+from .mercadopago import transform as transform_mercadopago
 from .models import ScheduledItem
 from .activity import ActivityLog, activity_log_path, transaction_detail
 from .money import money
@@ -115,6 +116,9 @@ class MainWindow(QMainWindow):
         )
         self.act_import_booking = self._action("From Booking…", self.import_booking)
         self.act_import_banamex = self._action("From Banamex…", self.import_banamex)
+        self.act_import_mercadopago = self._action(
+            "From Mercado Pago…", self.import_mercadopago
+        )
         self.act_revert_import = self._action(
             "Revert Last Import…", self.revert_last_import
         )
@@ -124,6 +128,7 @@ class MainWindow(QMainWindow):
         self.import_menu.addAction(self.act_import_airbnb_transactions)
         self.import_menu.addAction(self.act_import_booking)
         self.import_menu.addAction(self.act_import_banamex)
+        self.import_menu.addAction(self.act_import_mercadopago)
         self.import_menu.addSeparator()
         self.import_menu.addAction(self.act_revert_import)
         self.act_export = self._action("Export CSV…", self.export_csv, "Ctrl+E")
@@ -345,6 +350,9 @@ class MainWindow(QMainWindow):
         )
         self.toolbar.bookingImportRequested.connect(self.import_booking)
         self.toolbar.banamexImportRequested.connect(self.import_banamex)
+        self.toolbar.mercadoPagoImportRequested.connect(
+            self.import_mercadopago
+        )
         self.toolbar.exportRequested.connect(self.export_csv)
         self.toolbar.manageAccounts.connect(self.focus_accounts)
         self.toolbar.payeesRequested.connect(self.show_payees)
@@ -1187,7 +1195,7 @@ class MainWindow(QMainWindow):
             self,
             "Import from Banamex",
             "",
-            "Banamex statements (*.html *.htm *.pdf);;All files (*)",
+            "Banamex statements (*.html *.htm);;All files (*)",
         )
         if not path:
             return
@@ -1198,6 +1206,32 @@ class MainWindow(QMainWindow):
                 _written, skipped, year = transform_banamex(source, target)
             except Exception as exc:  # pragma: no cover - surfaced to the user
                 QMessageBox.warning(self, "Banamex import failed", str(exc))
+                return
+            parts = [f"{year} statement"]
+            if skipped:
+                parts.append(f"{skipped} unreadable row(s) ignored")
+            self._import_csv_path(
+                target, note=" · ".join(parts), source_name=source.name
+            )
+
+    def import_mercadopago(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import from Mercado Pago",
+            "",
+            "Mercado Pago statements (*.pdf);;All files (*)",
+        )
+        if not path:
+            return
+        source = Path(path)
+        with tempfile.TemporaryDirectory(prefix="contapy-mercadopago-") as folder:
+            target = Path(folder) / f"{source.stem}_mercadopago.csv"
+            try:
+                _written, skipped, year = transform_mercadopago(source, target)
+            except Exception as exc:  # pragma: no cover - surfaced to the user
+                QMessageBox.warning(
+                    self, "Mercado Pago import failed", str(exc)
+                )
                 return
             parts = [f"{year} statement"]
             if skipped:

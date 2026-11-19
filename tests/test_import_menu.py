@@ -44,6 +44,7 @@ class ImportMenuTests(unittest.TestCase):
                     "From Airbnb (transactions)…",
                     "From Booking…",
                     "From Banamex…",
+                    "From Mercado Pago…",
                     "Revert Last Import…",
                 ],
             )

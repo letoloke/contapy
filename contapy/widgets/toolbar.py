@@ -25,6 +25,7 @@ class AppToolbar(QWidget):
     airbnbTransactionsImportRequested = Signal()
     bookingImportRequested = Signal()
     banamexImportRequested = Signal()
+    mercadoPagoImportRequested = Signal()
     exportRequested = Signal()
     manageAccounts = Signal()
     payeesRequested = Signal()
@@ -70,6 +71,9 @@ class AppToolbar(QWidget):
         )
         menu.addAction("From Booking…", self.bookingImportRequested.emit)
         menu.addAction("From Banamex…", self.banamexImportRequested.emit)
+        menu.addAction(
+            "From Mercado Pago…", self.mercadoPagoImportRequested.emit
+        )
         menu.addAction("Export CSV…", self.exportRequested.emit)
         menu.addSeparator()
         menu.addAction("Preferences…", self.preferencesRequested.emit)
