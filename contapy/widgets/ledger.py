@@ -112,6 +112,93 @@ def category_text_color(
     return color.lighter(135) if selected else color
 
 
+@dataclass(slots=True)
+class _AmountFilter:
+    op: str
+    value: float
+    upper: float | None = None
+
+    def matches(self, amount: float) -> bool:
+        if self.op == "=":
+            return abs(amount - self.value) < 0.005
+        if self.op == ">":
+            return amount > self.value + 1e-9
+        if self.op == ">=":
+            return amount >= self.value - 1e-9
+        if self.op == "<":
+            return amount < self.value - 1e-9
+        if self.op == "<=":
+            return amount <= self.value + 1e-9
+        if self.op == "..":
+            upper = self.value if self.upper is None else self.upper
+            return (
+                self.value - 1e-9
+                <= amount
+                <= upper + 1e-9
+            )
+        return False
+
+
+def _amount_number(text: str) -> float | None:
+    cleaned = text.strip().replace(",", "")
+    if cleaned.startswith("$"):
+        cleaned = cleaned[1:]
+    if not cleaned:
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def _amount_filter(expression: str) -> _AmountFilter | None:
+    expression = expression.strip()
+    if not expression:
+        return None
+    for prefix, op in (
+        (">=", ">="),
+        ("<=", "<="),
+        (">", ">"),
+        ("<", "<"),
+        ("=", "="),
+    ):
+        if expression.startswith(prefix):
+            value = _amount_number(expression[len(prefix) :])
+            return _AmountFilter(op, value) if value is not None else None
+    if ".." in expression:
+        low_text, high_text = expression.split("..", 1)
+        low = _amount_number(low_text)
+        high = _amount_number(high_text)
+        if low is None or high is None:
+            return None
+        low, high = sorted((low, high))
+        return _AmountFilter("..", low, high)
+    value = _amount_number(expression)
+    return _AmountFilter("=", value) if value is not None else None
+
+
+def parse_ledger_search(
+    text: str,
+) -> tuple[str, list[_AmountFilter] | None]:
+    """Split a ledger query into free text and ``amount:`` filters.
+
+    ``None`` means an amount expression was invalid, so nothing should match.
+    """
+    text_words: list[str] = []
+    filters: list[_AmountFilter] = []
+    invalid = False
+    for word in text.split():
+        if word.casefold().startswith("amount:"):
+            parsed = _amount_filter(word[len("amount:") :])
+            if parsed is None:
+                invalid = True
+            else:
+                filters.append(parsed)
+        else:
+            text_words.append(word)
+    return " ".join(text_words).casefold(), None if invalid else filters
+
+
 def exact_amount_ids(
     rows: list[TransactionRow],
     selected_ids: set[int],
@@ -824,7 +911,7 @@ class LedgerWindow(QMainWindow):
         filter_layout.addStretch(1)
 
         self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("Search…")
+        self.search_edit.setPlaceholderText("Search… or amount:>100")
         self.search_edit.setClearButtonEnabled(True)
         self.search_edit.setFixedWidth(230)
         filter_layout.addWidget(self.search_edit)
@@ -1202,7 +1289,9 @@ class LedgerWindow(QMainWindow):
             payee = ""
         type_filter = self.type_combo.currentData()
         status_filter = self.status_combo.currentData()
-        search = self.search_edit.text().strip().lower()
+        text_search, amount_filters = parse_ledger_search(
+            self.search_edit.text()
+        )
 
         parents: list[TransactionRow] = []
         children: dict[int, list[TransactionRow]] = {}
@@ -1226,37 +1315,49 @@ class LedgerWindow(QMainWindow):
             ).lower()
 
         groups: list[tuple[TransactionRow, list[TransactionRow]]] = []
-        for row in parents:
-            day = date.fromisoformat(row.date)
-            if start and day < start:
-                continue
-            if end and day > end:
-                continue
-            if payee and row.payee != payee:
-                continue
-            if type_filter == "expense" and row.amount >= 0:
-                continue
-            if type_filter == "income" and row.amount <= 0:
-                continue
-            if status_filter == "voided":
-                if not row.voided:
+        if amount_filters is not None:
+            for row in parents:
+                day = date.fromisoformat(row.date)
+                if start and day < start:
                     continue
-            elif status_filter and row.voided:
-                continue
-            if status_filter == "unreconciled" and (row.cleared or row.reconciled):
-                continue
-            if status_filter == "cleared" and (not row.cleared or row.reconciled):
-                continue
-            if status_filter == "reconciled" and not row.reconciled:
-                continue
-            if status_filter == "remind" and not row.remind:
-                continue
-            if status_filter == "flagged" and not row.flagged:
-                continue
-            group = [row, *children.get(row.id, [])]
-            if search and not any(search in searchable(item) for item in group):
-                continue
-            groups.append((row, group[1:]))
+                if end and day > end:
+                    continue
+                if payee and row.payee != payee:
+                    continue
+                if type_filter == "expense" and row.amount >= 0:
+                    continue
+                if type_filter == "income" and row.amount <= 0:
+                    continue
+                if status_filter == "voided":
+                    if not row.voided:
+                        continue
+                elif status_filter and row.voided:
+                    continue
+                if status_filter == "unreconciled" and (
+                    row.cleared or row.reconciled
+                ):
+                    continue
+                if status_filter == "cleared" and (
+                    not row.cleared or row.reconciled
+                ):
+                    continue
+                if status_filter == "reconciled" and not row.reconciled:
+                    continue
+                if status_filter == "remind" and not row.remind:
+                    continue
+                if status_filter == "flagged" and not row.flagged:
+                    continue
+                if amount_filters and not all(
+                    amount_filter.matches(row.amount)
+                    for amount_filter in amount_filters
+                ):
+                    continue
+                group = [row, *children.get(row.id, [])]
+                if text_search and not any(
+                    text_search in searchable(item) for item in group
+                ):
+                    continue
+                groups.append((row, group[1:]))
 
         # HomeBank shows the newest activity first by default. Split children
         # share their parent's key and stay directly beneath it.

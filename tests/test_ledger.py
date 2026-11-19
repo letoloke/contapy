@@ -905,6 +905,79 @@ class LedgerHintTests(unittest.TestCase):
         self.window.table.clearSelection()
         self.assertNotIn("Alt+V", self.window.keyboard_hint.text())
 
+    def test_amount_search_filters_signed_amounts_and_ranges(self) -> None:
+        self.window.search_edit.setText("amount:-400")
+        self.assertEqual(
+            [row.amount for row in self.window.model.rows], [-400.0]
+        )
+
+        self.window.search_edit.setText("amount:<-500")
+        self.assertEqual(
+            sorted(row.amount for row in self.window.model.rows),
+            [-1_000.0, -600.0],
+        )
+
+        self.window.search_edit.setText("amount:-1000..-500")
+        self.assertEqual(
+            sorted(row.amount for row in self.window.model.rows),
+            [-1_000.0, -600.0],
+        )
+
+        self.window.search_edit.setText("amount:<0 amount:>-1000")
+        self.assertEqual(
+            sorted(row.amount for row in self.window.model.rows),
+            [-600.0, -400.0],
+        )
+
+        self.window.search_edit.setText("Test amount:<-500")
+        self.assertEqual(
+            sorted(row.amount for row in self.window.model.rows),
+            [-1_000.0, -600.0],
+        )
+
+        self.window.search_edit.setText("Nope amount:<0")
+        self.assertEqual(self.window.model.rows, [])
+
+        self.window.search_edit.setText("amount:>")
+        self.assertEqual(self.window.model.rows, [])
+
+    def test_amount_search_includes_income_and_split_totals(self) -> None:
+        self.store.add_transaction(
+            TransactionDraft(
+                date=date.today().isoformat(),
+                account_id=self.window.account_id,
+                payee="Income",
+                category_id=None,
+                amount=2_500.0,
+            )
+        )
+        category = self.store.ensure_category("Test : Split", "expense")
+        split_id = self.store.add_transaction(
+            TransactionDraft(
+                date=date.today().isoformat(),
+                account_id=self.window.account_id,
+                payee="Split",
+                category_id=None,
+                amount=-100.0,
+                splits=[
+                    SplitDraft(category, -60.0),
+                    SplitDraft(category, -40.0),
+                ],
+            )
+        )
+        self.window.reload()
+
+        self.window.search_edit.setText("amount:>0")
+        self.assertEqual(
+            [row.amount for row in self.window.model.rows], [2_500.0]
+        )
+
+        self.window.search_edit.setText("amount:-100")
+        parents = [
+            row.id for row in self.window.model.rows if not row.is_split_child
+        ]
+        self.assertEqual(parents, [split_id])
+
     def test_apply_template_updates_selection_and_pushes_undo(self) -> None:
         self.assertFalse(self.window.act_apply_template.isEnabled())
         self.assertFalse(self.window.apply_template_btn.isEnabled())
