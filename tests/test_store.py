@@ -757,6 +757,69 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(len(filtered), 5)
 
 
+class TransferReportTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = DataStore(
+            Path(self.tmp.name) / "transfer-report.db", seed=False
+        )
+        self.source = self.store.add_account("Checking", "Bank", 1_000)
+        self.destination = self.store.add_account("Savings", "Bank", 0)
+
+    def tearDown(self) -> None:
+        self.store.close()
+        self.tmp.cleanup()
+
+    def test_transfers_are_excluded_from_reports_and_uncategorized(self) -> None:
+        when = date(2035, 1, 15)
+        group = self.store.add_transfer(
+            TransactionDraft(
+                date=when.isoformat(),
+                account_id=self.source,
+                payee="Move",
+                category_id=None,
+                amount=-250.0,
+            ),
+            self.destination,
+        )
+        uncategorized = self.store.add_transaction(
+            TransactionDraft(
+                date=when.isoformat(),
+                account_id=self.source,
+                payee="No category",
+                category_id=None,
+                amount=-40.0,
+            )
+        )
+
+        expense_rows = self.store.report_rows(
+            when, when, kind="expense", view_by="category", rollup=True
+        )
+        income_rows = self.store.report_rows(
+            when, when, kind="income", view_by="category", rollup=True
+        )
+        months = self.store.report_months(when, when, kind="expense")
+
+        self.assertEqual(
+            [(row.label, row.expense, row.income) for row in expense_rows],
+            [("(no category)", -40.0, 0.0)],
+        )
+        self.assertEqual(
+            [(row.label, row.expense, row.income) for row in income_rows],
+            [("(no category)", -40.0, 0.0)],
+        )
+        self.assertEqual(
+            [(flow.label, flow.expense, flow.income) for flow in months],
+            [("Jan", 40.0, 0.0)],
+        )
+        self.assertEqual(
+            [row.id for row in self.store.uncategorized_transactions()],
+            [uncategorized],
+        )
+        # The transfer still exists in both ledgers.
+        self.assertEqual(len(self.store.transfer_legs(group)), 2)
+
+
 class DatabasePathTests(unittest.TestCase):
     def test_legacy_budget_database_is_copied_to_contapy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

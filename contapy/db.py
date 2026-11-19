@@ -1139,7 +1139,11 @@ class DataStore:
         search: str = "",
     ) -> list[sqlite3.Row]:
         params: list = [start.isoformat(), end.isoformat()]
-        clauses = ["l.date BETWEEN ? AND ?", "l.voided = 0"]
+        clauses = [
+            "l.date BETWEEN ? AND ?",
+            "l.voided = 0",
+            "l.transfer_id IS NULL",
+        ]
         if account_id is not None:
             clauses.append("l.account_id = ?")
             params.append(account_id)
@@ -2050,8 +2054,10 @@ class DataStore:
         )
 
     def uncategorized_transactions(self) -> list[TransactionRow]:
-        """Posted transactions without a category, newest first."""
-        return self._line_transactions("WHERE l.category_id IS NULL")
+        """Posted non-transfer transactions without a category, newest first."""
+        return self._line_transactions(
+            "WHERE l.category_id IS NULL AND l.transfer_id IS NULL"
+        )
 
     def transaction(self, transaction_id: int) -> TransactionRow | None:
         rows = self._transaction_query("WHERE t.id = ?", (transaction_id,))
