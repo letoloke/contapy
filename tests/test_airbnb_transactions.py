@@ -55,7 +55,7 @@ class AirbnbTransactionTransformTests(unittest.TestCase):
                     "Guest One",
                     "Fitz-Mar Quince, Habitación 1",
                     "3260.09",
-                    "3260.09",
+                    "3300.00",
                     "500",
                     "120",
                 ],
@@ -120,11 +120,11 @@ class AirbnbTransactionTransformTests(unittest.TestCase):
         self.assertEqual(
             [row["amount"] for row in rows],
             [
-                "800.00",
+                "850.00",
                 "200.00",
                 "-50.00",
                 "-30.00",
-                "2760.09",
+                "2880.09",
                 "500.00",
                 "-120.00",
                 "-320.21",
@@ -142,6 +142,75 @@ class AirbnbTransactionTransformTests(unittest.TestCase):
                 "2026-11-06",
                 "2026-11-06",
             ],
+        )
+
+    def test_each_reservation_group_sums_to_the_source_monto(self) -> None:
+        source = self.write_source(
+            [
+                [
+                    "06/11/2026",
+                    "Reservación",
+                    "SUM",
+                    "06/11/2026",
+                    "Guest",
+                    "Casa Azul, Depto",
+                    "1234.56",
+                    "999.99",
+                    "100",
+                    "25",
+                ],
+            ]
+        )
+        target = self.folder / "out.csv"
+
+        transform(source, target)
+
+        rows = self.read_output(target)
+        total = sum(float(row["amount"]) for row in rows)
+        self.assertAlmostEqual(total, 1234.56, places=2)
+        self.assertEqual(
+            [row["amount"] for row in rows],
+            ["1159.56", "100.00", "-25.00"],
+        )
+
+    def test_does_not_require_the_unused_gross_income_column(self) -> None:
+        path = self.folder / "airbnb_no_gross.csv"
+        with path.open("w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(
+                [
+                    "Fecha",
+                    "Tipo",
+                    "Código de confirmación",
+                    "Fecha de inicio",
+                    "Huésped",
+                    "Espacio",
+                    "Monto",
+                    "Tarifa de limpieza",
+                    "Tarifa de servicio",
+                ]
+            )
+            writer.writerow(
+                [
+                    "06/11/2026",
+                    "Reservación",
+                    "ABC",
+                    "06/11/2026",
+                    "Guest",
+                    "Casa Azul",
+                    "1000",
+                    "200",
+                    "50",
+                ]
+            )
+        target = self.folder / "out.csv"
+
+        written, excluded = transform(path, target)
+
+        self.assertEqual((written, excluded), (3, 0))
+        self.assertEqual(
+            [row["amount"] for row in self.read_output(target)],
+            ["850.00", "200.00", "-50.00"],
         )
 
     def test_rejects_a_file_without_the_airbnb_columns(self) -> None:

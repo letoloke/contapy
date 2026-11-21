@@ -1,10 +1,11 @@
 """Convert an Airbnb transaction export into LetoBank's CSV format.
 
 This is the alternative Airbnb importer, based on
-``airbnb_csv_transform2.py``. It groups rows by confirmation code and splits
+``airbnb_csv_transform4.py``. It groups rows by confirmation code and splits
 each reservation into reservation, cleaning-fee and service-fee rows, including
-the guest name in every memo. Payout rows are excluded because they duplicate
-the reservation rows.
+the guest name in every memo. The reservation row absorbs rounding and
+discounts so each group sums exactly to the source ``Monto``. Payout rows are
+excluded because they duplicate the reservation rows.
 
 Unlike :mod:`contapy.airbnb`, which writes one row per source row using
 HomeBank-style headers, this converter writes the English CSV headers
@@ -37,7 +38,6 @@ REQUIRED_COLUMNS = (
     "Espacio",
     "Huésped",
     "Monto",
-    "Ingresos brutos",
     "Tarifa de limpieza",
     "Tarifa de servicio",
 )
@@ -156,10 +156,12 @@ def transform(src: str | Path, dst: str | Path) -> tuple[int, int]:
         for row in group:
             if (row.get("Tipo") or "").strip() != "Reservación":
                 continue
-            gross = _number(row.get("Ingresos brutos") or "")
+            total = _number(row.get("Monto") or "")
             cleaning = _number(row.get("Tarifa de limpieza") or "")
             service = _number(row.get("Tarifa de servicio") or "")
-            add("Reservación", gross - cleaning)
+            # The reservation row absorbs rounding and discounts so the
+            # generated group sums exactly to the source Monto.
+            add("Reservación", total - cleaning + abs(service))
             if cleaning:
                 add("Tarifa de limpieza", cleaning)
             if service:
