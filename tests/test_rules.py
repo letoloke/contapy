@@ -16,6 +16,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 from contapy.db import DataStore
 from contapy.models import (
     Rule,
+    RuleCondition,
     SplitDraft,
     Template,
     TransactionDraft,
@@ -183,6 +184,61 @@ class RuleStoreTests(unittest.TestCase):
         self.assertTrue(either.matches("", "coffee", -5))
         self.assertTrue(either.matches("", "tea", -20))
         self.assertFalse(either.matches("", "tea", -5))
+
+    def test_multiple_conditions_match_any_or_all(self) -> None:
+        any_rule = Rule(
+            conditions=[
+                RuleCondition(search="coffee", match_memo=True),
+                RuleCondition(search="tea", match_memo=True),
+            ],
+            condition_mode="any",
+        )
+        self.assertTrue(any_rule.matches("", "coffee time", -10))
+        self.assertTrue(any_rule.matches("", "tea time", -10))
+        self.assertFalse(any_rule.matches("", "water", -10))
+
+        all_rule = Rule(
+            conditions=[
+                RuleCondition(search="coffee", match_memo=True),
+                RuleCondition(
+                    amount_enabled=True, amount_op="-", amount=-100
+                ),
+            ],
+            condition_mode="all",
+        )
+        self.assertTrue(all_rule.matches("", "coffee", -150))
+        self.assertFalse(all_rule.matches("", "coffee", -50))
+        self.assertFalse(all_rule.matches("", "tea", -150))
+
+    def test_multiple_conditions_round_trip_and_apply(self) -> None:
+        rule_id = self.store.add_rule(
+            Rule(
+                name="Drinks",
+                conditions=[
+                    RuleCondition(search="coffee", match_memo=True),
+                    RuleCondition(search="tea", match_memo=True),
+                ],
+                condition_mode="any",
+                assign_payee="Café",
+            )
+        )
+
+        loaded = self.store.rule(rule_id)
+        assert loaded is not None
+        self.assertEqual(loaded.condition_mode, "any")
+        self.assertEqual(
+            [condition.search for condition in loaded.conditions],
+            ["coffee", "tea"],
+        )
+        self.assertEqual(
+            self.store.apply_rules(self.draft(memo="tea")).payee, "Café"
+        )
+        self.assertEqual(
+            self.store.apply_rules(self.draft(memo="coffee")).payee, "Café"
+        )
+        self.assertEqual(
+            self.store.apply_rules(self.draft(memo="water")).payee, ""
+        )
 
     def test_validation_requires_a_condition(self) -> None:
         with self.assertRaises(ValueError):
@@ -489,6 +545,36 @@ class RuleDialogTests(unittest.TestCase):
         self.assertEqual(built.assign_memo, "Imported")
         self.assertTrue(built.memo_overwrite)
 
+    def test_dialog_adds_and_removes_conditions(self) -> None:
+        dialog = RuleDialog(self.store)
+        self.addCleanup(dialog.deleteLater)
+        self.assertEqual(len(dialog.condition_editors), 1)
+        first = dialog.condition_editors[0]
+        first.search_edit.setText("coffee")
+        dialog.add_condition_button.click()
+        self.assertEqual(len(dialog.condition_editors), 2)
+        second = dialog.condition_editors[1]
+        second.search_edit.setText("tea")
+        dialog.condition_mode_combo.setCurrentIndex(
+            dialog.condition_mode_combo.findData("any")
+        )
+        dialog.payee_combo.setEditText("Café")
+
+        rule = dialog.values()
+        self.assertEqual(len(rule.conditions), 2)
+        self.assertEqual(rule.condition_mode, "any")
+        self.assertEqual(rule.search, "coffee")
+        self.assertEqual(rule.assign_payee, "Café")
+        self.assertTrue(rule.matches("", "coffee", -10))
+        self.assertTrue(rule.matches("", "tea", -10))
+        self.assertFalse(rule.matches("", "water", -10))
+
+        second.remove_button.click()
+        self.assertEqual(len(dialog.condition_editors), 1)
+        self.assertFalse(
+            dialog.condition_editors[0].remove_button.isEnabled()
+        )
+
     def test_manager_searches_rules_by_name_condition_and_assignment(self) -> None:
         self.store.add_rule(
             Rule(
@@ -536,6 +622,27 @@ class RuleDialogTests(unittest.TestCase):
 
         dialog.search_edit.clear()
         self.assertEqual(dialog.listing.count(), 3)
+
+    def test_manager_summary_shows_all_conditions(self) -> None:
+        self.store.add_rule(
+            Rule(
+                name="Drinks",
+                conditions=[
+                    RuleCondition(search="coffee", match_memo=True),
+                    RuleCondition(search="tea", match_memo=True),
+                ],
+                condition_mode="any",
+                assign_payee="Café",
+            )
+        )
+
+        dialog = RulesDialog(self.store)
+        self.addCleanup(dialog.deleteLater)
+        text = dialog.listing.item(0).text()
+        self.assertIn("coffee", text)
+        self.assertIn("tea", text)
+        self.assertIn(" OR ", text)
+        self.assertIn("Payee → Café", text)
 
     def test_manager_lists_and_toggles_rules(self) -> None:
         rule_id = self.store.add_rule(

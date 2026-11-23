@@ -228,20 +228,9 @@ class TransactionDraft:
 
 
 @dataclass(slots=True)
-class Rule:
-    """A matching condition plus the assignments applied to a transaction.
+class RuleCondition:
+    """One text and/or amount condition inside an assignment rule."""
 
-    ``search`` is matched against the selected fields. ``amount``, when enabled,
-    compares the signed transaction amount using ``amount_op``: ``-`` means "at
-    most", ``+`` means "at least" and ``=`` means exactly. ``amount_and``
-    combines the amount filter with the text filter using AND when true, or OR
-    when false.
-    """
-
-    id: int = 0
-    name: str = ""
-    enabled: bool = True
-    sort_order: int = 0
     search: str = ""
     match_memo: bool = True
     match_payee: bool = False
@@ -251,16 +240,6 @@ class Rule:
     amount_and: bool = True
     amount_op: str = "="
     amount: float = 0.0
-    assign_payee: str = ""
-    payee_overwrite: bool = False
-    category_id: int | None = None
-    category_overwrite: bool = False
-    assign_payment: str = ""
-    payment_overwrite: bool = False
-    assign_tags: str = ""
-    tags_overwrite: bool = False
-    assign_memo: str = ""
-    memo_overwrite: bool = False
 
     def text_matches(self, payee: str, memo: str) -> bool:
         """Whether the search text appears in the selected fields."""
@@ -296,7 +275,7 @@ class Rule:
         return abs(amount - self.amount) < 0.005
 
     def matches(self, payee: str, memo: str, amount: float) -> bool:
-        """Match a transaction, combining text and amount conditions."""
+        """Match a transaction, combining this condition's text and amount."""
         has_text = bool(self.search) and (self.match_payee or self.match_memo)
         text_ok = self.text_matches(payee, memo) if has_text else None
         amount_ok = self.amount_matches(amount) if self.amount_enabled else None
@@ -307,16 +286,107 @@ class Rule:
         return (text_ok and amount_ok) if self.amount_and else (text_ok or amount_ok)
 
     def validate(self) -> None:
-        """Raise ``ValueError`` for a condition or assignment that cannot work."""
+        """Raise ``ValueError`` for a condition that cannot match anything."""
         if not self.search and not self.amount_enabled:
             raise ValueError("Add search text or enable the amount condition.")
         if self.search and not (self.match_memo or self.match_payee):
-            raise ValueError("Choose at least one field to search in (Memo or Payee).")
+            raise ValueError(
+                "Choose at least one field to search in (Memo or Payee)."
+            )
         if self.regex and self.search:
             try:
                 re.compile(self.search)
             except re.error as error:
-                raise ValueError(f"Invalid regular expression: {error}") from error
+                raise ValueError(
+                    f"Invalid regular expression: {error}"
+                ) from error
+
+
+@dataclass(slots=True)
+class Rule:
+    """A set of conditions plus the assignments applied to a transaction.
+
+    ``conditions`` are combined using ``condition_mode``: ``any`` means OR and
+    ``all`` means AND. Older callers can keep using the single-condition
+    fields; they act as the first condition when ``conditions`` is empty.
+    """
+
+    id: int = 0
+    name: str = ""
+    enabled: bool = True
+    sort_order: int = 0
+    search: str = ""
+    match_memo: bool = True
+    match_payee: bool = False
+    case_sensitive: bool = False
+    regex: bool = False
+    amount_enabled: bool = False
+    amount_and: bool = True
+    amount_op: str = "="
+    amount: float = 0.0
+    assign_payee: str = ""
+    payee_overwrite: bool = False
+    category_id: int | None = None
+    category_overwrite: bool = False
+    assign_payment: str = ""
+    payment_overwrite: bool = False
+    assign_tags: str = ""
+    tags_overwrite: bool = False
+    assign_memo: str = ""
+    memo_overwrite: bool = False
+    conditions: list[RuleCondition] = field(default_factory=list)
+    condition_mode: str = "any"
+
+    def legacy_condition(self) -> RuleCondition:
+        """Build the single-condition form used by older rules and callers."""
+        return RuleCondition(
+            search=self.search,
+            match_memo=self.match_memo,
+            match_payee=self.match_payee,
+            case_sensitive=self.case_sensitive,
+            regex=self.regex,
+            amount_enabled=self.amount_enabled,
+            amount_and=self.amount_and,
+            amount_op=self.amount_op,
+            amount=self.amount,
+        )
+
+    def effective_conditions(self) -> list[RuleCondition]:
+        """The configured conditions, falling back to the legacy fields."""
+        return list(self.conditions) if self.conditions else [self.legacy_condition()]
+
+    def text_matches(self, payee: str, memo: str) -> bool:
+        """Whether the legacy search text appears in the selected fields."""
+        return self.legacy_condition().text_matches(payee, memo)
+
+    def amount_matches(self, amount: float) -> bool:
+        """Whether the legacy amount filter matches the signed amount."""
+        return self.legacy_condition().amount_matches(amount)
+
+    def matches(self, payee: str, memo: str, amount: float) -> bool:
+        """Match a transaction against any or all configured conditions."""
+        results = [
+            condition.matches(payee, memo, amount)
+            for condition in self.effective_conditions()
+        ]
+        if self.condition_mode == "all":
+            return all(results)
+        return any(results)
+
+    def validate(self) -> None:
+        """Raise ``ValueError`` for a condition or assignment that cannot work."""
+        conditions = self.effective_conditions()
+        if not conditions:
+            raise ValueError("Add at least one condition.")
+        for index, condition in enumerate(conditions, 1):
+            try:
+                condition.validate()
+            except ValueError as error:
+                if len(conditions) > 1:
+                    raise ValueError(
+                        f"Condition {index}: {error}"
+                    ) from error
+                raise
 
 
 @dataclass(slots=True)

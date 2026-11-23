@@ -28,12 +28,13 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
 from ..db import DataStore
-from ..models import Rule, Template, ordered_categories
+from ..models import Rule, RuleCondition, Template, ordered_categories
 from ..theme import C, font
 from ..xhb_rules import import_xhb_rules
 from .dialogs import SearchCombo
@@ -223,85 +224,38 @@ class _AssignmentFieldsMixin:
             return None
 
 
-class RuleDialog(_AssignmentFieldsMixin, QDialog):
-    """Create or edit one assignment rule."""
+class _ConditionEditor(QFrame):
+    """One editable search/amount condition inside :class:`RuleDialog`."""
 
     def __init__(
         self,
-        store: DataStore,
-        rule: Rule | None = None,
+        condition: RuleCondition | None = None,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
-        self.store = store
-        self.rule_model = rule
-        self._rule: Rule | None = None
-        self.setWindowTitle("Edit Rule" if rule else "New Rule")
-        self.setModal(True)
-        self.setMinimumWidth(620)
-
-        root = QVBoxLayout(self)
-        root.setContentsMargins(20, 18, 20, 16)
-        root.setSpacing(10)
-
-        heading = QLabel("Edit rule" if rule else "New assignment rule")
-        heading.setFont(font(18, 600))
-        root.addWidget(heading)
-
-        intro = QLabel(
-            "When a new transaction matches the condition, the assignments are "
-            "applied automatically. Leave an assignment blank to skip it."
+        self.setObjectName("ruleCondition")
+        self.setStyleSheet(
+            f"QFrame#ruleCondition {{ background:{C.PANEL};"
+            f" border:1px solid {C.BORDER_SOFT}; border-radius:4px; }}"
         )
-        intro.setWordWrap(True)
-        intro.setFont(font(13, 400))
-        intro.setStyleSheet(f"color:{C.MUTED};")
-        root.addWidget(intro)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 9)
+        layout.setSpacing(4)
 
-        name_row = QHBoxLayout()
-        name_row.setSpacing(8)
-        name_row.addWidget(_label("Name"))
-        self.name_edit = QLineEdit()
-        self.name_edit.setPlaceholderText("Optional name, e.g. Coffee shops")
-        name_row.addWidget(self.name_edit, 1)
-        root.addLayout(name_row)
+        header = QHBoxLayout()
+        header.setSpacing(6)
+        self.title = QLabel("Condition")
+        self.title.setFont(font(13, 600))
+        self.title.setStyleSheet(f"color:{C.TITLE};")
+        header.addWidget(self.title)
+        header.addStretch(1)
+        self.remove_button = QPushButton("Remove")
+        self.remove_button.setAutoDefault(False)
+        self.remove_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.remove_button.setFont(font(12, 400))
+        header.addWidget(self.remove_button)
+        layout.addLayout(header)
 
-        condition, condition_layout = _section(
-            "Condition",
-            "Choose where to search, how to compare, and optionally limit by amount.",
-            self,
-        )
-        self._build_condition(condition_layout)
-        root.addWidget(condition)
-
-        assignments, assignments_layout = _section(
-            "Assignments",
-            "Overwrite forces the value; otherwise a field is only filled when empty.",
-            self,
-        )
-        self._build_assignments(assignments_layout)
-        root.addWidget(assignments)
-
-        buttons = QDialogButtonBox()
-        cancel = buttons.addButton("Cancel", QDialogButtonBox.ButtonRole.RejectRole)
-        save = buttons.addButton("Save", QDialogButtonBox.ButtonRole.AcceptRole)
-        for button in (cancel, save):
-            button.setCursor(Qt.CursorShape.PointingHandCursor)
-        cancel.setAutoDefault(False)
-        save.setProperty("role", "primary")
-        save.setAutoDefault(True)
-        save.setDefault(True)
-        buttons.rejected.connect(self.reject)
-        buttons.accepted.connect(self._save)
-        root.addWidget(buttons)
-
-        if rule is not None:
-            self._populate(rule)
-        else:
-            self.memo_check.setChecked(True)
-            self.amount_and_check.setChecked(True)
-
-    # ------------------------------------------------------------- condition
-    def _build_condition(self, layout: QVBoxLayout) -> None:
         search_row = QHBoxLayout()
         search_row.setSpacing(8)
         search_row.addWidget(_label("Search"))
@@ -341,8 +295,8 @@ class RuleDialog(_AssignmentFieldsMixin, QDialog):
         self.amount_and_check = QCheckBox("AND")
         self.amount_and_check.setFont(font(13, 400))
         self.amount_and_check.setToolTip(
-            "Require both the text and amount conditions. When unchecked, "
-            "matching either one is enough."
+            "Require both the text and amount parts of this condition. When "
+            "unchecked, matching either one is enough."
         )
         amount_row.addWidget(self.amount_and_check)
         self.amount_op_combo = QComboBox()
@@ -360,15 +314,6 @@ class RuleDialog(_AssignmentFieldsMixin, QDialog):
         amount_row.addStretch(1)
         layout.addLayout(amount_row)
 
-        hint = QLabel(
-            "Expenses are negative and income is positive. “At most -100” "
-            "matches expenses of 100 or more."
-        )
-        hint.setWordWrap(True)
-        hint.setFont(font(11, 400))
-        hint.setStyleSheet(f"color:{C.MUTED_DARK};")
-        layout.addWidget(hint)
-
         for widget in (
             self.amount_op_combo,
             self.amount_spin,
@@ -377,6 +322,15 @@ class RuleDialog(_AssignmentFieldsMixin, QDialog):
             widget.setEnabled(False)
         self.amount_check.toggled.connect(self._amount_toggled)
         self.search_edit.textChanged.connect(self._search_changed)
+
+        if condition is not None:
+            self.set_condition(condition)
+        else:
+            self.memo_check.setChecked(True)
+            self.amount_and_check.setChecked(True)
+
+    def set_index(self, index: int) -> None:
+        self.title.setText(f"Condition {index}")
 
     def _amount_toggled(self, checked: bool) -> None:
         for widget in (
@@ -393,19 +347,220 @@ class RuleDialog(_AssignmentFieldsMixin, QDialog):
         self.case_check.setEnabled(has_text)
         self.regex_check.setEnabled(has_text)
 
+    def set_condition(self, condition: RuleCondition) -> None:
+        self.search_edit.setText(condition.search)
+        self.memo_check.setChecked(condition.match_memo)
+        self.payee_check.setChecked(condition.match_payee)
+        self.case_check.setChecked(condition.case_sensitive)
+        self.regex_check.setChecked(condition.regex)
+        self.amount_check.setChecked(condition.amount_enabled)
+        self.amount_and_check.setChecked(condition.amount_and)
+        index = self.amount_op_combo.findData(condition.amount_op)
+        self.amount_op_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.amount_spin.setValue(condition.amount)
+        self._search_changed(condition.search)
+        self._amount_toggled(condition.amount_enabled)
+
+    def condition(self) -> RuleCondition:
+        return RuleCondition(
+            search=self.search_edit.text(),
+            match_memo=self.memo_check.isChecked(),
+            match_payee=self.payee_check.isChecked(),
+            case_sensitive=self.case_check.isChecked(),
+            regex=self.regex_check.isChecked(),
+            amount_enabled=self.amount_check.isChecked(),
+            amount_and=self.amount_and_check.isChecked(),
+            amount_op=self.amount_op_combo.currentData(),
+            amount=self.amount_spin.value(),
+        )
+
+
+class RuleDialog(_AssignmentFieldsMixin, QDialog):
+    """Create or edit one assignment rule."""
+
+    def __init__(
+        self,
+        store: DataStore,
+        rule: Rule | None = None,
+        parent: QWidget | None = None,
+    ):
+        super().__init__(parent)
+        self.store = store
+        self.rule_model = rule
+        self._rule: Rule | None = None
+        self.setWindowTitle("Edit Rule" if rule else "New Rule")
+        self.setModal(True)
+        self.setMinimumWidth(620)
+        self.resize(760, 760)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        root = QVBoxLayout(content)
+        root.setContentsMargins(20, 18, 20, 8)
+        root.setSpacing(10)
+        self.scroll_area.setWidget(content)
+        outer.addWidget(self.scroll_area, 1)
+
+        heading = QLabel("Edit rule" if rule else "New assignment rule")
+        heading.setFont(font(18, 600))
+        root.addWidget(heading)
+
+        intro = QLabel(
+            "When a new transaction matches the conditions, the assignments are "
+            "applied automatically. Leave an assignment blank to skip it."
+        )
+        intro.setWordWrap(True)
+        intro.setFont(font(13, 400))
+        intro.setStyleSheet(f"color:{C.MUTED};")
+        root.addWidget(intro)
+
+        name_row = QHBoxLayout()
+        name_row.setSpacing(8)
+        name_row.addWidget(_label("Name"))
+        self.name_edit = QLineEdit()
+        self.name_edit.setPlaceholderText("Optional name, e.g. Coffee shops")
+        name_row.addWidget(self.name_edit, 1)
+        root.addLayout(name_row)
+
+        conditions, conditions_layout = _section(
+            "Conditions",
+            "Match any or all of these conditions. Each one can search text, "
+            "filter by amount, or both.",
+            self,
+        )
+        self._build_conditions(conditions_layout)
+        root.addWidget(conditions)
+
+        assignments, assignments_layout = _section(
+            "Assignments",
+            "Overwrite forces the value; otherwise a field is only filled when empty.",
+            self,
+        )
+        self._build_assignments(assignments_layout)
+        root.addWidget(assignments)
+
+        buttons = QDialogButtonBox()
+        cancel = buttons.addButton("Cancel", QDialogButtonBox.ButtonRole.RejectRole)
+        save = buttons.addButton("Save", QDialogButtonBox.ButtonRole.AcceptRole)
+        for button in (cancel, save):
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel.setAutoDefault(False)
+        save.setProperty("role", "primary")
+        save.setAutoDefault(True)
+        save.setDefault(True)
+        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self._save)
+
+        button_bar = QWidget()
+        button_layout = QHBoxLayout(button_bar)
+        button_layout.setContentsMargins(20, 8, 20, 16)
+        button_layout.addWidget(buttons)
+        outer.addWidget(button_bar)
+
+        if rule is not None:
+            self._populate(rule)
+
+    # ------------------------------------------------------------ conditions
+    def _build_conditions(self, layout: QVBoxLayout) -> None:
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(8)
+        mode_row.addWidget(_label("Match"))
+        self.condition_mode_combo = QComboBox()
+        self.condition_mode_combo.addItem("any condition (OR)", "any")
+        self.condition_mode_combo.addItem("all conditions (AND)", "all")
+        self.condition_mode_combo.setFixedWidth(180)
+        mode_row.addWidget(self.condition_mode_combo)
+        mode_row.addStretch(1)
+        layout.addLayout(mode_row)
+
+        self.conditions_layout = QVBoxLayout()
+        self.conditions_layout.setContentsMargins(0, 0, 0, 0)
+        self.conditions_layout.setSpacing(6)
+        self.conditions_layout.addStretch(1)
+        layout.addLayout(self.conditions_layout)
+
+        add_row = QHBoxLayout()
+        self.add_condition_button = QPushButton("Add condition")
+        self.add_condition_button.setAutoDefault(False)
+        self.add_condition_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
+        self.add_condition_button.setFont(font(12, 400))
+        self.add_condition_button.clicked.connect(
+            lambda: self._add_condition()
+        )
+        add_row.addWidget(self.add_condition_button)
+        add_row.addStretch(1)
+        layout.addLayout(add_row)
+
+        hint = QLabel(
+            "Expenses are negative and income is positive. “At most -100” "
+            "matches expenses of 100 or more."
+        )
+        hint.setWordWrap(True)
+        hint.setFont(font(11, 400))
+        hint.setStyleSheet(f"color:{C.MUTED_DARK};")
+        layout.addWidget(hint)
+
+        self.condition_editors: list[_ConditionEditor] = []
+        self._add_condition()
+
+    def _add_condition(
+        self, condition: RuleCondition | None = None
+    ) -> _ConditionEditor:
+        editor = _ConditionEditor(condition, self)
+        editor.remove_button.clicked.connect(
+            lambda _checked=False, current=editor: self._remove_condition(
+                current
+            )
+        )
+        self.condition_editors.append(editor)
+        self.conditions_layout.insertWidget(
+            self.conditions_layout.count() - 1, editor
+        )
+        self._renumber_conditions()
+        return editor
+
+    def _remove_condition(self, editor: _ConditionEditor) -> None:
+        if len(self.condition_editors) <= 1:
+            return
+        self.condition_editors.remove(editor)
+        self.conditions_layout.removeWidget(editor)
+        editor.hide()
+        editor.setParent(None)
+        editor.deleteLater()
+        self._renumber_conditions()
+
+    def _renumber_conditions(self) -> None:
+        removable = len(self.condition_editors) > 1
+        for index, editor in enumerate(self.condition_editors, 1):
+            editor.set_index(index)
+            editor.remove_button.setEnabled(removable)
+
+    def _clear_conditions(self) -> None:
+        for editor in self.condition_editors:
+            self.conditions_layout.removeWidget(editor)
+            editor.hide()
+            editor.setParent(None)
+            editor.deleteLater()
+        self.condition_editors.clear()
+
     # --------------------------------------------------------------- values
     def _populate(self, rule: Rule) -> None:
         self.name_edit.setText(rule.name)
-        self.search_edit.setText(rule.search)
-        self.memo_check.setChecked(rule.match_memo)
-        self.payee_check.setChecked(rule.match_payee)
-        self.case_check.setChecked(rule.case_sensitive)
-        self.regex_check.setChecked(rule.regex)
-        self.amount_check.setChecked(rule.amount_enabled)
-        self.amount_and_check.setChecked(rule.amount_and)
-        index = self.amount_op_combo.findData(rule.amount_op)
-        self.amount_op_combo.setCurrentIndex(index if index >= 0 else 0)
-        self.amount_spin.setValue(rule.amount)
+        self._clear_conditions()
+        for condition in rule.effective_conditions():
+            self._add_condition(condition)
+        mode_index = self.condition_mode_combo.findData(rule.condition_mode)
+        self.condition_mode_combo.setCurrentIndex(
+            mode_index if mode_index >= 0 else 0
+        )
 
         self.payee_combo.setEditText(rule.assign_payee)
         self.payee_overwrite.setChecked(rule.payee_overwrite)
@@ -421,25 +576,30 @@ class RuleDialog(_AssignmentFieldsMixin, QDialog):
         self.tags_overwrite.setChecked(rule.tags_overwrite)
         self.memo_edit.setText(rule.assign_memo)
         self.memo_overwrite.setChecked(rule.memo_overwrite)
-        self._search_changed(rule.search)
-        self._amount_toggled(rule.amount_enabled)
 
     def values(self) -> Rule:
         """Build the rule from the current form values."""
+        conditions = [
+            editor.condition() for editor in self.condition_editors
+        ]
+        primary = conditions[0] if conditions else RuleCondition()
+        mode = self.condition_mode_combo.currentData() or "any"
         rule = Rule(
             id=self.rule_model.id if self.rule_model is not None else 0,
             name=self.name_edit.text().strip(),
             enabled=self.rule_model.enabled if self.rule_model is not None else True,
             sort_order=self.rule_model.sort_order if self.rule_model is not None else 0,
-            search=self.search_edit.text(),
-            match_memo=self.memo_check.isChecked(),
-            match_payee=self.payee_check.isChecked(),
-            case_sensitive=self.case_check.isChecked(),
-            regex=self.regex_check.isChecked(),
-            amount_enabled=self.amount_check.isChecked(),
-            amount_and=self.amount_and_check.isChecked(),
-            amount_op=self.amount_op_combo.currentData(),
-            amount=self.amount_spin.value(),
+            search=primary.search,
+            match_memo=primary.match_memo,
+            match_payee=primary.match_payee,
+            case_sensitive=primary.case_sensitive,
+            regex=primary.regex,
+            amount_enabled=primary.amount_enabled,
+            amount_and=primary.amount_and,
+            amount_op=primary.amount_op,
+            amount=primary.amount,
+            conditions=conditions,
+            condition_mode=mode,
             assign_payee=self.payee_combo.resolved_text(),
             payee_overwrite=self.payee_overwrite.isChecked(),
             category_id=self._resolved_category(),
@@ -452,7 +612,10 @@ class RuleDialog(_AssignmentFieldsMixin, QDialog):
             memo_overwrite=self.memo_overwrite.isChecked(),
         )
         if not rule.name:
-            rule.name = rule.search.strip() or "Amount rule"
+            if len(conditions) == 1:
+                rule.name = primary.search.strip() or "Amount rule"
+            else:
+                rule.name = f"{len(conditions)} conditions"
         return rule
 
     def _save(self) -> None:
@@ -1048,19 +1211,36 @@ class RulesDialog(QDialog):
         self.listing.blockSignals(False)
         self._update_buttons()
 
-    def _summary(self, rule: Rule) -> str:
+    @staticmethod
+    def _condition_summary(condition: RuleCondition) -> str:
         fields = []
-        if rule.match_memo:
+        if condition.match_memo:
             fields.append("Memo")
-        if rule.match_payee:
+        if condition.match_payee:
             fields.append("Payee")
         parts: list[str] = []
-        if rule.search:
-            parts.append(f"“{rule.search}” in {' + '.join(fields) or '—'}")
-        if rule.amount_enabled:
-            symbol = {"-": "≤", "+": "≥"}.get(rule.amount_op, "=")
-            parts.append(f"Amount {symbol} {rule.amount:,.2f}")
-        condition = " · ".join(parts) if parts else "No condition"
+        if condition.search:
+            parts.append(f"“{condition.search}” in {' + '.join(fields) or '—'}")
+        if condition.amount_enabled:
+            symbol = {"-": "≤", "+": "≥"}.get(condition.amount_op, "=")
+            parts.append(f"Amount {symbol} {condition.amount:,.2f}")
+        if not parts:
+            return "No condition"
+        if condition.search and condition.amount_enabled:
+            joiner = " AND " if condition.amount_and else " OR "
+            return joiner.join(parts)
+        return " · ".join(parts)
+
+    def _summary(self, rule: Rule) -> str:
+        conditions = rule.effective_conditions()
+        if len(conditions) == 1:
+            condition = self._condition_summary(conditions[0])
+        else:
+            joiner = " AND " if rule.condition_mode == "all" else " OR "
+            condition = joiner.join(
+                f"({self._condition_summary(item)})"
+                for item in conditions
+            )
         targets = []
         if rule.assign_payee:
             targets.append(f"Payee → {rule.assign_payee}")

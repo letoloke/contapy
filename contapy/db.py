@@ -35,6 +35,7 @@ from .models import (
     Payee,
     ReportRow,
     Rule,
+    RuleCondition,
     ScheduledItem,
     Slice,
     SplitDraft,
@@ -221,6 +222,8 @@ CREATE TABLE IF NOT EXISTS rules (
     amount_and        INTEGER NOT NULL DEFAULT 1,
     amount_op         TEXT NOT NULL DEFAULT '=',
     amount            REAL NOT NULL DEFAULT 0,
+    conditions        TEXT NOT NULL DEFAULT '',
+    condition_mode    TEXT NOT NULL DEFAULT 'any',
     assign_payee      TEXT NOT NULL DEFAULT '',
     payee_overwrite   INTEGER NOT NULL DEFAULT 0,
     category_id       INTEGER REFERENCES categories(id) ON DELETE SET NULL,
@@ -299,6 +302,52 @@ END;
 """
 
 KIND_LABELS = ["Bank", "Cash", "Credit card", "Savings"]
+
+
+def _rule_condition_data(condition: RuleCondition) -> dict:
+    """Serialise one rule condition for the ``rules.conditions`` JSON column."""
+    return {
+        "search": condition.search,
+        "match_memo": 1 if condition.match_memo else 0,
+        "match_payee": 1 if condition.match_payee else 0,
+        "case_sensitive": 1 if condition.case_sensitive else 0,
+        "regex": 1 if condition.regex else 0,
+        "amount_enabled": 1 if condition.amount_enabled else 0,
+        "amount_and": 1 if condition.amount_and else 0,
+        "amount_op": condition.amount_op,
+        "amount": float(condition.amount),
+    }
+
+
+def _rule_conditions_from_json(value: str) -> list[RuleCondition]:
+    """Read conditions from a JSON column, ignoring malformed entries."""
+    try:
+        data = json.loads(value) if value else []
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(data, list):
+        return []
+    conditions: list[RuleCondition] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        try:
+            conditions.append(
+                RuleCondition(
+                    search=str(item.get("search", "")),
+                    match_memo=bool(item.get("match_memo", 1)),
+                    match_payee=bool(item.get("match_payee", 0)),
+                    case_sensitive=bool(item.get("case_sensitive", 0)),
+                    regex=bool(item.get("regex", 0)),
+                    amount_enabled=bool(item.get("amount_enabled", 0)),
+                    amount_and=bool(item.get("amount_and", 1)),
+                    amount_op=str(item.get("amount_op", "=")),
+                    amount=float(item.get("amount", 0.0) or 0.0),
+                )
+            )
+        except (TypeError, ValueError):
+            continue
+    return conditions
 
 
 def _migrate_legacy_database(old_path: Path, new_path: Path) -> None:
@@ -466,6 +515,18 @@ class DataStore:
         if "status" not in template_columns:
             self.conn.execute(
                 "ALTER TABLE templates ADD COLUMN status TEXT NOT NULL DEFAULT ''"
+            )
+        rule_columns = {
+            row[1] for row in self.conn.execute("PRAGMA table_info(rules)")
+        }
+        if "conditions" not in rule_columns:
+            self.conn.execute(
+                "ALTER TABLE rules ADD COLUMN conditions TEXT NOT NULL DEFAULT ''"
+            )
+        if "condition_mode" not in rule_columns:
+            self.conn.execute(
+                "ALTER TABLE rules ADD COLUMN condition_mode TEXT NOT NULL "
+                "DEFAULT 'any'"
             )
 
     # ---------------------------------------------------------------- basics
@@ -2316,6 +2377,8 @@ class DataStore:
             tags_overwrite=bool(row["tags_overwrite"]),
             assign_memo=row["assign_memo"],
             memo_overwrite=bool(row["memo_overwrite"]),
+            conditions=_rule_conditions_from_json(row["conditions"]),
+            condition_mode=row["condition_mode"] or "any",
         )
 
     def rules(self) -> list[Rule]:
@@ -2329,6 +2392,12 @@ class DataStore:
 
     def add_rule(self, rule: Rule) -> int:
         rule.validate()
+        conditions = rule.effective_conditions()
+        primary = conditions[0]
+        conditions_json = json.dumps(
+            [_rule_condition_data(condition) for condition in conditions],
+            ensure_ascii=False,
+        )
         order = rule.sort_order
         if not order:
             row = self.conn.execute(
@@ -2338,23 +2407,26 @@ class DataStore:
         cur = self.conn.execute(
             "INSERT INTO rules(name, enabled, sort_order, search, match_memo, "
             "match_payee, case_sensitive, regex, amount_enabled, amount_and, "
-            "amount_op, amount, assign_payee, payee_overwrite, category_id, "
-            "category_overwrite, assign_payment, payment_overwrite, assign_tags, "
-            "tags_overwrite, assign_memo, memo_overwrite) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "amount_op, amount, conditions, condition_mode, assign_payee, "
+            "payee_overwrite, category_id, category_overwrite, assign_payment, "
+            "payment_overwrite, assign_tags, tags_overwrite, assign_memo, "
+            "memo_overwrite) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 rule.name,
                 1 if rule.enabled else 0,
                 order,
-                rule.search,
-                1 if rule.match_memo else 0,
-                1 if rule.match_payee else 0,
-                1 if rule.case_sensitive else 0,
-                1 if rule.regex else 0,
-                1 if rule.amount_enabled else 0,
-                1 if rule.amount_and else 0,
-                rule.amount_op,
-                float(rule.amount),
+                primary.search,
+                1 if primary.match_memo else 0,
+                1 if primary.match_payee else 0,
+                1 if primary.case_sensitive else 0,
+                1 if primary.regex else 0,
+                1 if primary.amount_enabled else 0,
+                1 if primary.amount_and else 0,
+                primary.amount_op,
+                float(primary.amount),
+                conditions_json,
+                rule.condition_mode,
                 rule.assign_payee,
                 1 if rule.payee_overwrite else 0,
                 rule.category_id,
@@ -2372,25 +2444,34 @@ class DataStore:
 
     def update_rule(self, rule: Rule) -> None:
         rule.validate()
+        conditions = rule.effective_conditions()
+        primary = conditions[0]
+        conditions_json = json.dumps(
+            [_rule_condition_data(condition) for condition in conditions],
+            ensure_ascii=False,
+        )
         self.conn.execute(
             "UPDATE rules SET name=?, enabled=?, search=?, match_memo=?, "
             "match_payee=?, case_sensitive=?, regex=?, amount_enabled=?, "
-            "amount_and=?, amount_op=?, amount=?, assign_payee=?, "
-            "payee_overwrite=?, category_id=?, category_overwrite=?, "
-            "assign_payment=?, payment_overwrite=?, assign_tags=?, "
-            "tags_overwrite=?, assign_memo=?, memo_overwrite=? WHERE id=?",
+            "amount_and=?, amount_op=?, amount=?, conditions=?, "
+            "condition_mode=?, assign_payee=?, payee_overwrite=?, category_id=?, "
+            "category_overwrite=?, assign_payment=?, payment_overwrite=?, "
+            "assign_tags=?, tags_overwrite=?, assign_memo=?, memo_overwrite=? "
+            "WHERE id=?",
             (
                 rule.name,
                 1 if rule.enabled else 0,
-                rule.search,
-                1 if rule.match_memo else 0,
-                1 if rule.match_payee else 0,
-                1 if rule.case_sensitive else 0,
-                1 if rule.regex else 0,
-                1 if rule.amount_enabled else 0,
-                1 if rule.amount_and else 0,
-                rule.amount_op,
-                float(rule.amount),
+                primary.search,
+                1 if primary.match_memo else 0,
+                1 if primary.match_payee else 0,
+                1 if primary.case_sensitive else 0,
+                1 if primary.regex else 0,
+                1 if primary.amount_enabled else 0,
+                1 if primary.amount_and else 0,
+                primary.amount_op,
+                float(primary.amount),
+                conditions_json,
+                rule.condition_mode,
                 rule.assign_payee,
                 1 if rule.payee_overwrite else 0,
                 rule.category_id,
