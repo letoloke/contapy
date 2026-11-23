@@ -750,6 +750,7 @@ class LedgerWindow(QMainWindow):
         self._undo_stack: list[_UndoEntry] = []
         self._sort_column = DATE
         self._sort_order = Qt.SortOrder.DescendingOrder
+        self._sort_selection_ids: list[int] | None = None
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.setMinimumSize(1180, 540)
         self.resize(1260, 680)
@@ -987,6 +988,7 @@ class LedgerWindow(QMainWindow):
         header.setSectionsClickable(True)
         header.setSortIndicatorShown(True)
         header.setSortIndicator(DATE, self._sort_order)
+        header.sectionPressed.connect(self._remember_sort_selection)
         header.sectionClicked.connect(self._header_clicked)
         header.setSectionResizeMode(FLAG, QHeaderView.ResizeMode.Fixed)
         header.resizeSection(FLAG, 30)
@@ -1261,7 +1263,12 @@ class LedgerWindow(QMainWindow):
             return Qt.SortOrder.AscendingOrder
         return Qt.SortOrder.AscendingOrder
 
+    def _remember_sort_selection(self, _column: int) -> None:
+        self._sort_selection_ids = self._selected_ids()
+
     def _header_clicked(self, column: int) -> None:
+        selected_ids = self._sort_selection_ids
+        self._sort_selection_ids = None
         if column == self._sort_column:
             self._sort_order = (
                 Qt.SortOrder.DescendingOrder
@@ -1274,7 +1281,7 @@ class LedgerWindow(QMainWindow):
         header = self.table.horizontalHeader()
         header.setSortIndicator(self._sort_column, self._sort_order)
         header.setSortIndicatorShown(True)
-        self._apply_filters()
+        self._apply_filters(selected_ids)
 
     @staticmethod
     def _status_rank(row: TransactionRow) -> int:
@@ -1424,18 +1431,27 @@ class LedgerWindow(QMainWindow):
         if not ids:
             return
         selection = QItemSelection()
+        current_index = None
         for row_index, row in enumerate(self.model.rows):
             if row.id in ids:
                 selection.select(
                     self.model.index(row_index, 0),
                     self.model.index(row_index, ROWS - 1),
                 )
+                if current_index is None:
+                    current_index = self.model.index(row_index, PAYEE)
         if not selection.isEmpty():
             self.table.selectionModel().select(
                 selection,
                 QItemSelectionModel.SelectionFlag.ClearAndSelect
                 | QItemSelectionModel.SelectionFlag.Rows,
             )
+            if current_index is not None:
+                self.table.selectionModel().setCurrentIndex(
+                    current_index,
+                    QItemSelectionModel.SelectionFlag.NoUpdate,
+                )
+                self.table.scrollTo(current_index)
 
     def _selected_rows(self) -> list[TransactionRow]:
         rows: list[TransactionRow] = []

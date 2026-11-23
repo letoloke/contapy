@@ -12,8 +12,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from unittest import mock
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QColor
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from contapy.db import DataStore
@@ -30,6 +31,7 @@ from contapy.widgets.ledger import (
     CUSTOM_RANGE,
     EXPENSE,
     HEADERS,
+    PAYEE,
     LedgerWindow,
     category_text_color,
     date_bounds,
@@ -531,6 +533,39 @@ class LedgerHintTests(unittest.TestCase):
             [-400.0, -600.0, -1_000.0],
         )
         self.assertEqual(self.window._selected_ids(), [by_amount[-600.0]])
+
+    def test_clicking_a_different_header_keeps_the_current_transaction(self) -> None:
+        by_amount = {row.amount: row.id for row in self.window.model.rows}
+        target = by_amount[-600.0]
+        self.window.show()
+        QTest.qWait(30)
+        self.window._select_ids([target])
+        QTest.qWait(10)
+        self.assertEqual(self.window._selected_ids(), [target])
+
+        header = self.window.table.horizontalHeader()
+        x = (
+            header.sectionViewportPosition(PAYEE)
+            + header.sectionSize(PAYEE) // 2
+        )
+        y = header.height() // 2
+        QTest.mouseClick(
+            header.viewport(),
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+            QPoint(x, y),
+        )
+        QTest.qWait(20)
+
+        self.assertEqual(self.window._selected_ids(), [target])
+        current = self.window.table.currentIndex()
+        self.assertTrue(current.isValid())
+        self.assertEqual(self.window.model.rows[current.row()].id, target)
+        self.assertTrue(
+            self.window.table.viewport().rect().intersects(
+                self.window.table.visualRect(current)
+            )
+        )
 
     def test_copy_memo_uses_the_system_clipboard(self) -> None:
         target = self.window.model.rows[0]
