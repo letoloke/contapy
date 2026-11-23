@@ -692,6 +692,8 @@ class TransactionDialog(QDialog):
         self._scheduled = scheduled
         self._draft: TransactionDraft | None = None
         self._type = "expense"
+        self._income_transfer_account_id: int | None = None
+        self._income_transfer_source_id: int | None = None
         self._cleared = True
         self._reconciled = False
         self._remind = False
@@ -1106,6 +1108,34 @@ class TransactionDialog(QDialog):
         if not self._scheduled:
             self._shortcut_status("reconciled")
 
+    def _reverse_transfer_accounts(self) -> None:
+        """Make the current account the destination of the transfer."""
+        account_id = self.account_combo.currentData()
+        to_account_id = self.to_account_combo.currentData()
+        if to_account_id is None or to_account_id == account_id:
+            return
+        self._income_transfer_account_id = account_id
+        self._income_transfer_source_id = to_account_id
+        for combo, value in (
+            (self.account_combo, to_account_id),
+            (self.to_account_combo, account_id),
+        ):
+            index = combo.findData(value)
+            if index >= 0:
+                combo.setCurrentIndex(index)
+
+    def _restore_income_account(self) -> None:
+        """Return to the income account when leaving a reversed transfer."""
+        original = self._income_transfer_account_id
+        source = self._income_transfer_source_id
+        self._income_transfer_account_id = None
+        self._income_transfer_source_id = None
+        if original is None or self.account_combo.currentData() != source:
+            return
+        index = self.account_combo.findData(original)
+        if index >= 0:
+            self.account_combo.setCurrentIndex(index)
+
     def _set_type(self, kind: str, adjust_amount: bool = True) -> None:
         if kind == "transfer" and self._scheduled:
             return
@@ -1128,8 +1158,12 @@ class TransactionDialog(QDialog):
                     if self.to_account_combo.itemData(i) != self.account_combo.currentData():
                         self.to_account_combo.setCurrentIndex(i)
                         break
+            if previous == "income" and not self._loading:
+                self._reverse_transfer_accounts()
             self.category_combo.setCurrentIndex(0)
         else:
+            if previous == "transfer" and not self._loading:
+                self._restore_income_account()
             self.payee_row.setVisible(True)
             self.category_row.setVisible(True)
             self.to_account_row.setVisible(False)
