@@ -567,6 +567,32 @@ class LedgerHintTests(unittest.TestCase):
             )
         )
 
+    def test_editing_marks_a_transaction_as_modified_for_the_session(self) -> None:
+        target = self.window.model.rows[0]
+        self.assertFalse(self.window.delegate.modified_ids)
+
+        self.store.update_transaction(
+            target.id,
+            TransactionDraft(
+                date=target.date,
+                account_id=target.account_id,
+                payee="Edited",
+                category_id=target.category_id,
+                amount=target.amount,
+                memo=target.memo,
+            ),
+        )
+        self.window.reload()
+
+        self.assertIn(target.id, self.store.session_modified_ids)
+        self.assertIn(target.id, self.window.delegate.modified_ids)
+
+        self.store.update_transaction_flags([target.id], cleared=False)
+        self.assertIn(target.id, self.store.session_modified_ids)
+
+        self.store.delete_transaction(target.id)
+        self.assertNotIn(target.id, self.store.session_modified_ids)
+
     def test_copy_memo_uses_the_system_clipboard(self) -> None:
         target = self.window.model.rows[0]
         self.store.update_transaction(

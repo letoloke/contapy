@@ -350,6 +350,7 @@ class LedgerDelegate(QStyledItemDelegate):
         self._badge_font = font(10, 600)
         self.highlight_ids: set[int] = set()
         self.recent_ids: set[int] = set()
+        self.modified_ids: set[int] = set()
 
     def sizeHint(self, option, index):  # noqa: N802
         return QSize(option.rect.width(), 27)
@@ -368,6 +369,7 @@ class LedgerDelegate(QStyledItemDelegate):
             and row.id in self.highlight_ids
         )
         recent = not row.is_split_child and row.id in self.recent_ids
+        modified = not row.is_split_child and row.id in self.modified_ids
 
         bg = QColor(C.ROW_SELECTED) if selected else QColor(
             C.PANEL if index.row() % 2 == 0 else C.ALT_ROW
@@ -468,25 +470,41 @@ class LedgerDelegate(QStyledItemDelegate):
             self._text(painter, rect, pad, ledger_date(row.date), self._small_font, muted)
         elif col == PAYEE:
             text_pad = pad
-            if recent and rect.width() > 90:
+            badges: list[tuple[str, str]] = []
+            if recent:
+                badges.append(("NEW", C.GREEN))
+            if modified:
+                badges.append(("EDIT", C.ORANGE))
+            if badges and rect.width() > 90:
                 metrics = QFontMetrics(self._badge_font)
-                chip_width = metrics.horizontalAdvance("NEW") + 12
-                chip = QRectF(
-                    rect.left() + pad, rect.top() + 6, chip_width, 15
-                )
-                fill = QColor(C.GREEN)
-                fill.setAlpha(40)
-                painter.setBrush(fill)
-                painter.setPen(QPen(QColor(C.GREEN), 1))
-                painter.drawRoundedRect(chip, 7, 7)
-                painter.setFont(self._badge_font)
-                painter.setPen(QColor(C.GREEN))
-                painter.drawText(
-                    chip, Qt.AlignmentFlag.AlignCenter, "NEW"
-                )
-                text_pad = pad + int(chip_width) + 6
+                for label, color in badges:
+                    chip_width = metrics.horizontalAdvance(label) + 12
+                    chip = QRectF(
+                        rect.left() + text_pad,
+                        rect.top() + 6,
+                        chip_width,
+                        15,
+                    )
+                    fill = QColor(color)
+                    fill.setAlpha(40)
+                    painter.setBrush(fill)
+                    painter.setPen(QPen(QColor(color), 1))
+                    painter.drawRoundedRect(chip, 7, 7)
+                    painter.setFont(self._badge_font)
+                    painter.setPen(QColor(color))
+                    painter.drawText(
+                        chip, Qt.AlignmentFlag.AlignCenter, label
+                    )
+                    text_pad += int(chip_width) + 4
+                text_pad += 2
             self._text(
-                painter, rect, text_pad, row.payee, self._payee_font, text_color
+                painter,
+                rect,
+                text_pad,
+                row.payee,
+                self._payee_font,
+                text_color,
+                right_pad=pad,
             )
         elif col == CATEGORY:
             if row.split_count:
@@ -607,10 +625,17 @@ class LedgerDelegate(QStyledItemDelegate):
         text_font,
         color: QColor,
         align=Qt.AlignmentFlag.AlignLeft,
+        right_pad: int | None = None,
     ) -> None:
         if not text:
             return
-        inner = QRectF(rect.left() + pad, rect.top(), rect.width() - pad * 2, rect.height())
+        right = pad if right_pad is None else right_pad
+        inner = QRectF(
+            rect.left() + pad,
+            rect.top(),
+            rect.width() - pad - right,
+            rect.height(),
+        )
         metrics = QFontMetrics(text_font)
         text = metrics.elidedText(text, Qt.TextElideMode.ElideRight, int(inner.width()))
         painter.setFont(text_font)
@@ -1141,6 +1166,7 @@ class LedgerWindow(QMainWindow):
     def set_recent_import_ids(self, transaction_ids: set[int]) -> None:
         """Mark rows imported in this session without changing the database."""
         self.delegate.recent_ids = set(transaction_ids)
+        self.delegate.modified_ids = set(self.store.session_modified_ids)
         self.table.viewport().update()
 
     def _focus_table(self, select_first: bool = True) -> None:
@@ -1167,6 +1193,7 @@ class LedgerWindow(QMainWindow):
         self.setWindowTitle(f"{self.account.name} — Account")
         self.account_label.setText(self.account.name)
         self.all_rows = self.store.ledger_rows(self.account_id)
+        self.delegate.modified_ids = set(self.store.session_modified_ids)
         self.balance_snapshot = self.store.balances().get(self.account_id)
 
         current_payee = self.payee_combo.currentText()

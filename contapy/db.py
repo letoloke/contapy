@@ -463,6 +463,7 @@ class DataStore:
         self.conn.executescript(SCHEMA)
         self._migrate()
         self.conn.commit()
+        self.session_modified_ids: set[int] = set()
         if seed:
             from .seed import seed_if_empty
 
@@ -1014,9 +1015,13 @@ class DataStore:
         if category is None:
             return 0
         target = category.parent_id
-        moved = self.conn.execute(
-            "SELECT COUNT(*) FROM transactions WHERE category_id=?", (category_id,)
-        ).fetchone()[0]
+        moved_ids = [
+            int(row["id"])
+            for row in self.conn.execute(
+                "SELECT id FROM transactions WHERE category_id=?", (category_id,)
+            )
+        ]
+        moved = len(moved_ids)
         self.conn.execute(
             "UPDATE transactions SET category_id=? WHERE category_id=?",
             (target, category_id),
@@ -1031,6 +1036,7 @@ class DataStore:
         self.conn.execute("DELETE FROM budgets WHERE category_id=?", (category_id,))
         self.conn.execute("DELETE FROM categories WHERE id=?", (category_id,))
         self.conn.commit()
+        self._mark_modified(*moved_ids)
         return int(moved)
 
 
@@ -1611,6 +1617,12 @@ class DataStore:
         self.conn.execute("DELETE FROM scheduled WHERE id=?", (item_id,))
         self.conn.commit()
 
+    def _mark_modified(self, *transaction_ids: int | None) -> None:
+        """Remember rows changed in this session for the ledger EDIT badge."""
+        for transaction_id in transaction_ids:
+            if transaction_id is not None:
+                self.session_modified_ids.add(int(transaction_id))
+
     # ----------------------------------------------------------- transactions
     def add_transaction(
         self, draft: TransactionDraft, *, apply_rules: bool = True
@@ -1656,6 +1668,9 @@ class DataStore:
         self.conn.execute("DELETE FROM transactions WHERE transfer_id=?", (transfer_id,))
         self._insert_transfer(draft, to_account_id, transfer_id)
         self.conn.commit()
+        self._mark_modified(
+            *(row.id for row in self.transfer_legs(transfer_id))
+        )
         return transfer_id
 
     def _insert_transfer(self, draft: TransactionDraft, to_account_id: int, group: str) -> None:
@@ -1721,6 +1736,7 @@ class DataStore:
         )
         self._insert_splits(transaction_id, draft.splits)
         self.conn.commit()
+        self._mark_modified(transaction_id)
 
     def _insert_splits(
         self, transaction_id: int, splits: list[SplitDraft]
@@ -1850,6 +1866,7 @@ class DataStore:
                 (*params, *chunk),
             )
         self.conn.commit()
+        self._mark_modified(*transaction_ids)
 
     def update_transaction_flags(
         self,
@@ -1890,18 +1907,28 @@ class DataStore:
         for transaction_id in transaction_ids:
             self.conn.execute(sql, (*params, transaction_id))
         self.conn.commit()
+        self._mark_modified(*transaction_ids)
 
     def delete_transaction(self, transaction_id: int) -> None:
         row = self.conn.execute(
             "SELECT transfer_id FROM transactions WHERE id=?", (transaction_id,)
         ).fetchone()
         if row is not None and row["transfer_id"]:
+            removed = [
+                int(item["id"])
+                for item in self.conn.execute(
+                    "SELECT id FROM transactions WHERE transfer_id=?",
+                    (row["transfer_id"],),
+                )
+            ]
             self.conn.execute(
                 "DELETE FROM transactions WHERE transfer_id=?", (row["transfer_id"],)
             )
         else:
+            removed = [int(transaction_id)]
             self.conn.execute("DELETE FROM transactions WHERE id=?", (transaction_id,))
         self.conn.commit()
+        self.session_modified_ids.difference_update(removed)
 
     def snapshot_transactions(self, transaction_ids: list[int]) -> list[dict]:
         """Return complete row values for the requested transaction ids."""
@@ -1981,6 +2008,11 @@ class DataStore:
                 ],
             )
         self.conn.commit()
+        restored = {int(row["id"]) for row in snapshot}
+        self.session_modified_ids.difference_update(
+            set(int(value) for value in remove_ids) - restored
+        )
+        self._mark_modified(*restored)
 
     def max_transaction_id(self) -> int:
         row = self.conn.execute(
@@ -2301,6 +2333,16 @@ class DataStore:
         existing = self.payee_by_name(name)
         if existing is not None and existing.id != int(payee_id):
             raise ValueError("A payee with that name already exists.")
+        renamed_ids: list[int] = []
+        if name != current.name:
+            renamed_ids = [
+                int(row["id"])
+                for row in self.conn.execute(
+                    "SELECT id FROM transactions "
+                    "WHERE TRIM(payee) = ? COLLATE NOCASE",
+                    (current.name,),
+                )
+            ]
         with self.conn:
             self.conn.execute(
                 "UPDATE payees SET name = ?, notes = ? WHERE id = ?",
@@ -2317,6 +2359,7 @@ class DataStore:
                     "WHERE TRIM(payee) = ? COLLATE NOCASE",
                     (name, current.name),
                 )
+        self._mark_modified(*renamed_ids)
 
     def delete_payee(
         self, payee_id: int, replacement_id: int | None = None
@@ -2326,6 +2369,7 @@ class DataStore:
         if payee is None:
             raise ValueError("That payee no longer exists.")
         usage = self.payee_usage(payee_id)
+        reassigned_ids: list[int] = []
         with self.conn:
             if usage:
                 if replacement_id is None:
@@ -2337,6 +2381,14 @@ class DataStore:
                 replacement = self.payee(int(replacement_id))
                 if replacement is None:
                     raise ValueError("The replacement payee no longer exists.")
+                reassigned_ids = [
+                    int(row["id"])
+                    for row in self.conn.execute(
+                        "SELECT id FROM transactions "
+                        "WHERE TRIM(payee) = ? COLLATE NOCASE",
+                        (payee.name,),
+                    )
+                ]
                 self.conn.execute(
                     "UPDATE transactions SET payee = ? "
                     "WHERE TRIM(payee) = ? COLLATE NOCASE",
@@ -2348,6 +2400,7 @@ class DataStore:
                     (replacement.name, payee.name),
                 )
             self.conn.execute("DELETE FROM payees WHERE id = ?", (int(payee_id),))
+        self._mark_modified(*reassigned_ids)
         return usage
 
     # ----------------------------------------------------------------- rules
@@ -2804,6 +2857,7 @@ class DataStore:
                         f"ELSE {column} END WHERE id IN ({placeholders})",
                         (*params, *(pair[0] for pair in chunk)),
                     )
+        self._mark_modified(*changes)
         return sorted(changes)
 
     # ------------------------------------------------------------------ meta
@@ -3123,6 +3177,7 @@ class DataStore:
         self.conn.execute("DELETE FROM sqlite_sequence WHERE name IN "
                           "('transactions','scheduled','accounts','categories')")
         self.conn.commit()
+        self.session_modified_ids.clear()
         from .seed import seed_if_empty
 
         seed_if_empty(self.conn, force=True)

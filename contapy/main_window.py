@@ -454,6 +454,7 @@ class MainWindow(QMainWindow):
         window = ReportsWindow(self.store, self)
         self.reports_window = window
         window.destroyed.connect(lambda _obj=None: setattr(self, "reports_window", None))
+        window.changed.connect(self.refresh_all)
         window.show()
         window.raise_()
         window.activateWindow()

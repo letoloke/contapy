@@ -643,6 +643,8 @@ class ReportPieView(QWidget):
 class ReportsWindow(QMainWindow):
     """A HomeBank-style report window backed by the live database."""
 
+    changed = Signal()
+
     def __init__(self, store: DataStore, parent: QWidget | None = None):
         super().__init__(parent, Qt.WindowType.Window)
         self.store = store
@@ -1043,6 +1045,7 @@ class ReportsWindow(QMainWindow):
         dialog.exec()
         if dialog.changed:
             self.reload()
+            self.changed.emit()
 
     def _reveal_table_label(self, label: str) -> None:
         self.set_view("table")
