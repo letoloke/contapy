@@ -97,6 +97,7 @@ COLUMN_KEYS = (
     "memo",
 )
 COLUMNS_SETTING = "ledger_columns"
+COMBINED_SETTING = "ledger_combined_amount"
 FILTER_DAY = 24
 CUSTOM_RANGE = "Custom range…"
 UNDO_LIMIT = 50
@@ -289,6 +290,7 @@ class LedgerModel(QAbstractTableModel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.rows: list[TransactionRow] = []
+        self.combined_amount = False
 
     def set_rows(self, rows: list[TransactionRow]) -> None:
         self.beginResetModel()
@@ -315,7 +317,11 @@ class LedgerModel(QAbstractTableModel):
                     return row.category_name
                 if col == TAGS:
                     return row.tags
+                if col == NUMBER:
+                    return row.number
                 if col == EXPENSE:
+                    if self.combined_amount:
+                        return money(row.amount) if row.amount else ""
                     return money(row.amount) if row.amount < 0 else ""
                 if col == INCOME:
                     return money(row.amount) if row.amount > 0 else ""
@@ -333,6 +339,8 @@ class LedgerModel(QAbstractTableModel):
             if col == NUMBER:
                 return row.number
             if col == EXPENSE:
+                if self.combined_amount:
+                    return money(row.amount) if row.amount else ""
                 return money(row.amount) if row.amount < 0 else ""
             if col == INCOME:
                 return money(row.amount) if row.amount > 0 else ""
@@ -351,6 +359,8 @@ class LedgerModel(QAbstractTableModel):
         if orientation != Qt.Orientation.Horizontal:
             return None
         if role == Qt.ItemDataRole.DisplayRole:
+            if section == EXPENSE and self.combined_amount:
+                return "Amount"
             return HEADERS[section]
         if role == Qt.ItemDataRole.TextAlignmentRole:
             if section in (EXPENSE, INCOME, BALANCE):
@@ -388,6 +398,7 @@ class LedgerDelegate(QStyledItemDelegate):
         )
         recent = not row.is_split_child and row.id in self.recent_ids
         modified = not row.is_split_child and row.id in self.modified_ids
+        combined = bool(getattr(model, "combined_amount", False))
 
         bg = QColor(C.ROW_SELECTED) if selected else QColor(
             C.PANEL if index.row() % 2 == 0 else C.ALT_ROW
@@ -439,12 +450,15 @@ class LedgerDelegate(QStyledItemDelegate):
                 self._text(
                     painter, rect, pad, row.tags, self._small_font, child_muted
                 )
-            elif col == EXPENSE and row.amount < 0:
-                color = (
-                    QColor(C.ROW_SELECTED_TEXT)
-                    if selected
-                    else QColor(C.MUTED_DARK if row.voided else C.RED_BAR)
-                )
+            elif col == EXPENSE and (
+                row.amount < 0 or (combined and row.amount > 0)
+            ):
+                if row.voided and not selected:
+                    color = QColor(C.MUTED_DARK)
+                elif selected:
+                    color = QColor(C.ROW_SELECTED_TEXT)
+                else:
+                    color = QColor(C.RED_BAR if row.amount < 0 else C.GREEN)
                 self._text(
                     painter,
                     rect,
@@ -558,11 +572,13 @@ class LedgerDelegate(QStyledItemDelegate):
             if row.remind and not row.voided:
                 draw_bell(painter, QRectF(x, rect.top() + 7, 14, 14), QColor(C.WARNING))
         elif col == EXPENSE:
-            if row.amount < 0:
+            if row.amount < 0 or (combined and row.amount > 0):
                 if row.voided and not selected:
                     color = QColor(C.MUTED_DARK)
+                elif selected:
+                    color = QColor(C.ROW_SELECTED_TEXT)
                 else:
-                    color = QColor(C.ROW_SELECTED_TEXT) if selected else QColor(C.RED_BAR)
+                    color = QColor(C.RED_BAR if row.amount < 0 else C.GREEN)
                 self._text(
                     painter,
                     rect,
@@ -797,6 +813,9 @@ class LedgerWindow(QMainWindow):
         self._sort_order = Qt.SortOrder.DescendingOrder
         self._sort_selection_ids: list[int] | None = None
         self._visible_columns = self._load_visible_columns()
+        self._combined_amount = (
+            self.store.get_setting(COMBINED_SETTING, "0") == "1"
+        )
         self._column_actions: dict[int, QAction] = {}
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.setMinimumSize(1180, 540)
@@ -808,6 +827,7 @@ class LedgerWindow(QMainWindow):
 
         self._build_menus()
         self._build_ui()
+        self.model.combined_amount = self._combined_amount
         self._apply_column_visibility()
         self.reload()
         self._restore_last_transaction()
@@ -894,6 +914,16 @@ class LedgerWindow(QMainWindow):
         edit_menu.addAction(self.act_select_all)
 
         view_menu = bar.addMenu("View")
+        self.act_combined_amount = QAction(
+            "Combine Income and Expense", self
+        )
+        self.act_combined_amount.setCheckable(True)
+        self.act_combined_amount.setChecked(self._combined_amount)
+        self.act_combined_amount.toggled.connect(
+            self._set_combined_amount
+        )
+        view_menu.addAction(self.act_combined_amount)
+        view_menu.addSeparator()
         columns_menu = view_menu.addMenu("Columns")
         for column, _key in enumerate(COLUMN_KEYS):
             action = QAction(HEADERS[column], self)
@@ -906,6 +936,7 @@ class LedgerWindow(QMainWindow):
             )
             columns_menu.addAction(action)
             self._column_actions[column] = action
+        self._sync_column_actions()
         view_menu.addSeparator()
         view_menu.addAction(
             self._action("Show All Columns", self._show_all_columns)
@@ -963,12 +994,64 @@ class LedgerWindow(QMainWindow):
     def _apply_column_visibility(self) -> None:
         if not hasattr(self, "table"):
             return
+        visible = set(self._visible_columns)
+        if self._combined_amount:
+            visible.add(EXPENSE)
+            visible.discard(INCOME)
         for column in range(ROWS):
-            self.table.setColumnHidden(
-                column, column not in self._visible_columns
+            self.table.setColumnHidden(column, column not in visible)
+
+    def _sync_column_actions(self) -> None:
+        expense = self._column_actions.get(EXPENSE)
+        income = self._column_actions.get(INCOME)
+        for action in (expense, income):
+            if action is not None:
+                action.blockSignals(True)
+        if self._combined_amount:
+            if expense is not None:
+                expense.setText("Amount")
+                expense.setEnabled(False)
+                expense.setChecked(True)
+            if income is not None:
+                income.setText(HEADERS[INCOME])
+                income.setEnabled(False)
+                income.setChecked(False)
+        else:
+            if expense is not None:
+                expense.setText(HEADERS[EXPENSE])
+                expense.setEnabled(True)
+                expense.setChecked(EXPENSE in self._visible_columns)
+            if income is not None:
+                income.setText(HEADERS[INCOME])
+                income.setEnabled(True)
+                income.setChecked(INCOME in self._visible_columns)
+        for action in (expense, income):
+            if action is not None:
+                action.blockSignals(False)
+
+    def _set_combined_amount(self, enabled: bool) -> None:
+        self._combined_amount = bool(enabled)
+        if hasattr(self, "model"):
+            self.model.combined_amount = self._combined_amount
+            self.model.headerDataChanged.emit(
+                Qt.Orientation.Horizontal, EXPENSE, EXPENSE
             )
+        self._sync_column_actions()
+        self._apply_column_visibility()
+        if hasattr(self, "table"):
+            if self._combined_amount and self._sort_column == INCOME:
+                self._sort_column = EXPENSE
+                self.table.horizontalHeader().setSortIndicator(
+                    EXPENSE, self._sort_order
+                )
+            self.table.viewport().update()
+        self.store.set_setting(
+            COMBINED_SETTING, "1" if self._combined_amount else "0"
+        )
 
     def _set_column_visible(self, column: int, visible: bool) -> None:
+        if self._combined_amount and column in (EXPENSE, INCOME):
+            return
         if visible:
             self._visible_columns.add(column)
         else:
@@ -989,6 +1072,7 @@ class LedgerWindow(QMainWindow):
             action.blockSignals(True)
             action.setChecked(True)
             action.blockSignals(False)
+        self._sync_column_actions()
         self._apply_column_visibility()
         self._save_visible_columns()
 

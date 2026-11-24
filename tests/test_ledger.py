@@ -25,12 +25,14 @@ from contapy.models import (
     TransactionDraft,
     TransactionRow,
 )
+from contapy.money import money
 from contapy.theme import C
 from contapy.widgets.dialogs import BulkEditDialog, DateRangeDialog
 from contapy.widgets.ledger import (
     CUSTOM_RANGE,
     EXPENSE,
     HEADERS,
+    INCOME,
     NUMBER,
     PAYEE,
     LedgerWindow,
@@ -324,6 +326,71 @@ class LedgerHintTests(unittest.TestCase):
         self.assertIn(
             '"number"', self.window.store.get_setting("ledger_columns", "")
         )
+
+    def test_combined_amount_mode_uses_one_signed_column(self) -> None:
+        income_id = self.store.add_transaction(
+            TransactionDraft(
+                date=date.today().isoformat(),
+                account_id=self.window.account_id,
+                payee="Income",
+                category_id=None,
+                amount=1_200,
+            )
+        )
+        self.window.reload()
+        self.window.show()
+        QTest.qWait(20)
+
+        self.window._set_combined_amount(True)
+
+        self.assertTrue(self.window.model.combined_amount)
+        self.assertEqual(
+            self.window.model.headerData(
+                EXPENSE, Qt.Orientation.Horizontal
+            ),
+            "Amount",
+        )
+        self.assertFalse(self.window.table.isColumnHidden(EXPENSE))
+        self.assertTrue(self.window.table.isColumnHidden(INCOME))
+        self.assertFalse(self.window._column_actions[EXPENSE].isEnabled())
+        self.assertFalse(self.window._column_actions[INCOME].isEnabled())
+
+        rows = self.window.model.rows
+        income_index = next(
+            index for index, row in enumerate(rows) if row.id == income_id
+        )
+        expense_index = next(
+            index for index, row in enumerate(rows) if row.amount < 0
+        )
+        self.assertEqual(
+            self.window.model.data(
+                self.window.model.index(income_index, EXPENSE)
+            ),
+            money(1_200),
+        )
+        self.assertEqual(
+            self.window.model.data(
+                self.window.model.index(expense_index, EXPENSE)
+            ),
+            money(rows[expense_index].amount),
+        )
+        self.assertEqual(
+            self.store.get_setting("ledger_combined_amount"), "1"
+        )
+
+        reopened = LedgerWindow(self.store, self.window.account_id)
+        self.addCleanup(reopened.close)
+        self.assertTrue(reopened.model.combined_amount)
+        self.assertTrue(reopened.table.isColumnHidden(INCOME))
+
+        self.window._set_combined_amount(False)
+        self.assertEqual(
+            self.window.model.headerData(
+                EXPENSE, Qt.Orientation.Horizontal
+            ),
+            "Expense",
+        )
+        self.assertFalse(self.window.table.isColumnHidden(INCOME))
 
     def test_ctrl_r_reconciles_the_selection(self) -> None:
         ids = [row.id for row in self.window.model.rows]
