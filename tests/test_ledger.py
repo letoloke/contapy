@@ -720,6 +720,25 @@ class LedgerHintTests(unittest.TestCase):
         self.store.delete_transaction(target.id)
         self.assertNotIn(target.id, self.store.session_modified_ids)
 
+    def test_selected_sum_includes_voided_transactions(self) -> None:
+        voided_id = self.store.add_transaction(
+            TransactionDraft(
+                date=date.today().isoformat(),
+                account_id=self.window.account_id,
+                payee="Voided",
+                category_id=None,
+                amount=-50,
+                voided=True,
+            )
+        )
+        self.window.reload()
+        by_amount = {row.amount: row.id for row in self.window.model.rows}
+
+        self.window._select_ids([by_amount[-400.0], voided_id])
+
+        self.assertIn(money(-450.0), self.window.summary.left.text())
+        self.assertIn("2 selected", self.window.summary.left.text())
+
     def test_copy_memo_uses_the_system_clipboard(self) -> None:
         target = self.window.model.rows[0]
         self.store.update_transaction(

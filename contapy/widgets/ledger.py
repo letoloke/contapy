@@ -1734,7 +1734,7 @@ class LedgerWindow(QMainWindow):
 
     def _update_summary(self) -> None:
         selected = self._selected_rows()
-        selected_sum = sum(row.amount for row in selected if not row.voided)
+        selected_sum = sum(row.amount for row in selected)
         parents = [row for row in self.model.rows if not row.is_split_child]
         total_sum = sum(row.amount for row in parents if not row.voided)
         self.summary.set_data(
