@@ -31,6 +31,7 @@ from contapy.widgets.ledger import (
     CUSTOM_RANGE,
     EXPENSE,
     HEADERS,
+    NUMBER,
     PAYEE,
     LedgerWindow,
     category_text_color,
@@ -264,6 +265,65 @@ class LedgerHintTests(unittest.TestCase):
             for index in range(self.window.model.rowCount())
         ]
         self.assertIn("home, tax", values)
+
+    def test_number_column_shows_and_sorts_cheque_or_reference(self) -> None:
+        rows = self.window.model.rows[:2]
+
+        for row, number in zip(rows, ("INV-B", "INV-A")):
+            self.store.update_transaction(
+                row.id,
+                TransactionDraft(
+                    date=row.date,
+                    account_id=row.account_id,
+                    payee=row.payee,
+                    category_id=row.category_id,
+                    amount=row.amount,
+                    memo=row.memo,
+                    number=number,
+                ),
+            )
+        self.window.reload()
+
+        self.assertEqual(
+            self.window.model.headerData(
+                NUMBER, Qt.Orientation.Horizontal
+            ),
+            "Number",
+        )
+        numbers = [
+            self.window.model.data(self.window.model.index(index, NUMBER))
+            for index in range(self.window.model.rowCount())
+        ]
+        self.assertIn("INV-A", numbers)
+        self.assertIn("INV-B", numbers)
+
+        self.window._header_clicked(NUMBER)
+        self.assertEqual(
+            [row.number for row in self.window.model.rows if row.number],
+            ["INV-A", "INV-B"],
+        )
+
+    def test_columns_menu_hides_and_restores_columns(self) -> None:
+        self.window.show()
+        QTest.qWait(20)
+        self.assertFalse(self.window.table.isColumnHidden(NUMBER))
+
+        self.window._set_column_visible(NUMBER, False)
+        self.assertTrue(self.window.table.isColumnHidden(NUMBER))
+        self.assertNotIn(NUMBER, self.window._load_visible_columns())
+        self.assertNotIn(
+            '"number"', self.window.store.get_setting("ledger_columns", "")
+        )
+
+        reopened = LedgerWindow(self.store, self.window.account_id)
+        self.addCleanup(reopened.close)
+        self.assertTrue(reopened.table.isColumnHidden(NUMBER))
+
+        self.window._show_all_columns()
+        self.assertFalse(self.window.table.isColumnHidden(NUMBER))
+        self.assertIn(
+            '"number"', self.window.store.get_setting("ledger_columns", "")
+        )
 
     def test_ctrl_r_reconciles_the_selection(self) -> None:
         ids = [row.id for row in self.window.model.rows]

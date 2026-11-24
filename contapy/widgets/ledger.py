@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import calendar
+import json
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -67,20 +68,35 @@ from .icons import (
 from .import_dialog import CsvImportDialog
 from .rules import TemplatesDialog
 
-ROWS = 10
-FLAG, DATE, PAYEE, CATEGORY, TAGS, STATUS, EXPENSE, INCOME, BALANCE, MEMO = range(ROWS)
+ROWS = 11
+FLAG, DATE, PAYEE, CATEGORY, TAGS, NUMBER, STATUS, EXPENSE, INCOME, BALANCE, MEMO = range(ROWS)
 HEADERS = (
     "Flag",
     "Date",
     "Payee",
     "Category",
     "Tags",
+    "Number",
     "Status",
     "Expense",
     "Income",
     "Balance",
     "Memo",
 )
+COLUMN_KEYS = (
+    "flag",
+    "date",
+    "payee",
+    "category",
+    "tags",
+    "number",
+    "status",
+    "expense",
+    "income",
+    "balance",
+    "memo",
+)
+COLUMNS_SETTING = "ledger_columns"
 FILTER_DAY = 24
 CUSTOM_RANGE = "Custom range…"
 UNDO_LIMIT = 50
@@ -314,6 +330,8 @@ class LedgerModel(QAbstractTableModel):
                 return row.category_name
             if col == TAGS:
                 return row.tags
+            if col == NUMBER:
+                return row.number
             if col == EXPENSE:
                 return money(row.amount) if row.amount < 0 else ""
             if col == INCOME:
@@ -520,6 +538,8 @@ class LedgerDelegate(QStyledItemDelegate):
                 )
         elif col == TAGS:
             self._text(painter, rect, pad, row.tags, self._small_font, muted)
+        elif col == NUMBER:
+            self._text(painter, rect, pad, row.number, self._small_font, muted)
         elif col == STATUS:
             x = rect.left() + 7
             if row.voided:
@@ -776,6 +796,8 @@ class LedgerWindow(QMainWindow):
         self._sort_column = DATE
         self._sort_order = Qt.SortOrder.DescendingOrder
         self._sort_selection_ids: list[int] | None = None
+        self._visible_columns = self._load_visible_columns()
+        self._column_actions: dict[int, QAction] = {}
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.setMinimumSize(1180, 540)
         self.resize(1260, 680)
@@ -786,6 +808,7 @@ class LedgerWindow(QMainWindow):
 
         self._build_menus()
         self._build_ui()
+        self._apply_column_visibility()
         self.reload()
         self._restore_last_transaction()
 
@@ -870,6 +893,24 @@ class LedgerWindow(QMainWindow):
         edit_menu.addSeparator()
         edit_menu.addAction(self.act_select_all)
 
+        view_menu = bar.addMenu("View")
+        columns_menu = view_menu.addMenu("Columns")
+        for column, _key in enumerate(COLUMN_KEYS):
+            action = QAction(HEADERS[column], self)
+            action.setCheckable(True)
+            action.setChecked(column in self._visible_columns)
+            action.toggled.connect(
+                lambda checked, col=column: self._set_column_visible(
+                    col, checked
+                )
+            )
+            columns_menu.addAction(action)
+            self._column_actions[column] = action
+        view_menu.addSeparator()
+        view_menu.addAction(
+            self._action("Show All Columns", self._show_all_columns)
+        )
+
         tools_menu = bar.addMenu("Tools")
         tools_menu.addAction(self._action("Mark Cleared", lambda: self._set_cleared(True)))
         self.act_reconcile = self._action(
@@ -900,6 +941,64 @@ class LedgerWindow(QMainWindow):
         )
         apply_menu.addAction(self.act_apply_rules_selected)
         apply_menu.addAction(self.act_apply_rules_all)
+
+    # -------------------------------------------------------------- columns
+    def _load_visible_columns(self) -> set[int]:
+        raw = self.store.get_setting(COLUMNS_SETTING, "") or ""
+        if not raw:
+            return set(range(ROWS))
+        try:
+            names = json.loads(raw)
+        except (TypeError, ValueError):
+            return set(range(ROWS))
+        if not isinstance(names, list):
+            return set(range(ROWS))
+        visible = {
+            index
+            for index, key in enumerate(COLUMN_KEYS)
+            if key in names
+        }
+        return visible or {PAYEE}
+
+    def _apply_column_visibility(self) -> None:
+        if not hasattr(self, "table"):
+            return
+        for column in range(ROWS):
+            self.table.setColumnHidden(
+                column, column not in self._visible_columns
+            )
+
+    def _set_column_visible(self, column: int, visible: bool) -> None:
+        if visible:
+            self._visible_columns.add(column)
+        else:
+            self._visible_columns.discard(column)
+        if not self._visible_columns:
+            self._visible_columns.add(PAYEE)
+            action = self._column_actions.get(PAYEE)
+            if action is not None and not action.isChecked():
+                action.blockSignals(True)
+                action.setChecked(True)
+                action.blockSignals(False)
+        self._apply_column_visibility()
+        self._save_visible_columns()
+
+    def _show_all_columns(self) -> None:
+        self._visible_columns = set(range(ROWS))
+        for action in self._column_actions.values():
+            action.blockSignals(True)
+            action.setChecked(True)
+            action.blockSignals(False)
+        self._apply_column_visibility()
+        self._save_visible_columns()
+
+    def _save_visible_columns(self) -> None:
+        names = [
+            key
+            for index, key in enumerate(COLUMN_KEYS)
+            if index in self._visible_columns
+        ]
+        self.store.set_setting(COLUMNS_SETTING, json.dumps(names))
 
     # --------------------------------------------------------------------- ui
     def _build_ui(self) -> None:
@@ -1025,6 +1124,8 @@ class LedgerWindow(QMainWindow):
         header.resizeSection(CATEGORY, 170)
         header.setSectionResizeMode(TAGS, QHeaderView.ResizeMode.Interactive)
         header.resizeSection(TAGS, 140)
+        header.setSectionResizeMode(NUMBER, QHeaderView.ResizeMode.Interactive)
+        header.resizeSection(NUMBER, 110)
         header.setSectionResizeMode(STATUS, QHeaderView.ResizeMode.Fixed)
         header.resizeSection(STATUS, 64)
         header.setSectionResizeMode(EXPENSE, QHeaderView.ResizeMode.Fixed)
@@ -1336,6 +1437,8 @@ class LedgerWindow(QMainWindow):
             primary = row.category_name.casefold()
         elif column == TAGS:
             primary = row.tags.casefold()
+        elif column == NUMBER:
+            primary = row.number.casefold()
         elif column == STATUS:
             primary = self._status_rank(row)
         elif column in (EXPENSE, INCOME):
