@@ -770,6 +770,91 @@ class TransferReportTests(unittest.TestCase):
         self.store.close()
         self.tmp.cleanup()
 
+    def test_transfers_always_keep_the_transfer_tag(self) -> None:
+        when = date(2035, 1, 15)
+        group = self.store.add_transfer(
+            TransactionDraft(
+                date=when.isoformat(),
+                account_id=self.source,
+                payee="Move",
+                category_id=None,
+                amount=-250.0,
+                tags="move",
+            ),
+            self.destination,
+        )
+        legs = self.store.transfer_legs(group)
+        self.assertEqual([leg.tags for leg in legs], ["move transfer"] * 2)
+
+        leg = legs[0]
+        self.store.update_transaction(
+            leg.id,
+            TransactionDraft(
+                date=leg.date,
+                account_id=leg.account_id,
+                payee=leg.payee,
+                category_id=None,
+                amount=leg.amount,
+                tags="",
+            ),
+        )
+        updated = self.store.transaction(leg.id)
+        assert updated is not None
+        self.assertEqual(updated.tags, "transfer")
+
+        self.store.update_transactions(
+            [item.id for item in legs], tags="other"
+        )
+        self.assertEqual(
+            [item.tags for item in self.store.transfer_legs(group)],
+            ["other transfer"] * 2,
+        )
+
+        self.store.update_transfer(
+            group,
+            TransactionDraft(
+                date=when.isoformat(),
+                account_id=self.source,
+                payee="Move",
+                category_id=None,
+                amount=-250.0,
+                tags="",
+            ),
+            self.destination,
+        )
+        self.assertEqual(
+            [item.tags for item in self.store.transfer_legs(group)],
+            ["transfer"] * 2,
+        )
+
+    def test_existing_transfer_tags_are_migrated(self) -> None:
+        path = Path(self.tmp.name) / "transfer-tag.db"
+        store = DataStore(path, seed=False)
+        source = store.add_account("Source", "Bank", 0)
+        destination = store.add_account("Destination", "Bank", 0)
+        group = store.add_transfer(
+            TransactionDraft(
+                date=date(2035, 1, 15).isoformat(),
+                account_id=source,
+                payee="Move",
+                category_id=None,
+                amount=-50.0,
+            ),
+            destination,
+        )
+        store.conn.execute(
+            "UPDATE transactions SET tags='' WHERE transfer_id=?", (group,)
+        )
+        store.conn.commit()
+        store.close()
+
+        reopened = DataStore(path, seed=False)
+        self.addCleanup(reopened.close)
+        self.assertEqual(
+            [leg.tags for leg in reopened.transfer_legs(group)],
+            ["transfer", "transfer"],
+        )
+
     def test_transfers_are_excluded_from_reports_and_uncategorized(self) -> None:
         when = date(2035, 1, 15)
         group = self.store.add_transfer(

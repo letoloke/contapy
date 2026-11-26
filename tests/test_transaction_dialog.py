@@ -67,6 +67,16 @@ class TransactionDialogTransferTests(unittest.TestCase):
         self.assertEqual(checking_leg.amount, 250.0)
         self.assertEqual(savings_leg.amount, -250.0)
 
+    def test_transfer_mode_keeps_the_transfer_tag_with_extra_tags(self) -> None:
+        self.dialog._set_type("income")
+        self.dialog.tags_combo.setEditText("move")
+
+        self.dialog._set_type("transfer")
+
+        self.assertEqual(
+            self.dialog.tags_combo.resolved_text(), "move transfer"
+        )
+
     def test_expense_to_transfer_keeps_the_expense_account_as_source(self) -> None:
         self.dialog._set_type("expense")
         self.select_account(self.checking)

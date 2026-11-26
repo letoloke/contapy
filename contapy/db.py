@@ -303,6 +303,18 @@ END;
 
 KIND_LABELS = ["Bank", "Cash", "Credit card", "Savings"]
 
+TRANSFER_TAG = "transfer"
+
+
+def with_transfer_tag(tags: str) -> str:
+    """Return tags with the permanent transfer tag included once."""
+    parts = [
+        part
+        for part in (tags or "").split()
+        if part.strip(",;").casefold() != TRANSFER_TAG
+    ]
+    return " ".join([*parts, TRANSFER_TAG]) if parts else TRANSFER_TAG
+
 
 def _rule_condition_data(condition: RuleCondition) -> dict:
     """Serialise one rule condition for the ``rules.conditions`` JSON column."""
@@ -462,6 +474,7 @@ class DataStore:
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
         self._migrate()
+        self._refresh_transfer_tags()
         self.conn.commit()
         self.session_modified_ids: set[int] = set()
         if seed:
@@ -529,6 +542,40 @@ class DataStore:
                 "ALTER TABLE rules ADD COLUMN condition_mode TEXT NOT NULL "
                 "DEFAULT 'any'"
             )
+
+    def _refresh_transfer_tags(
+        self, transaction_ids: list[int] | None = None
+    ) -> None:
+        """Keep the transfer tag on every transfer leg, including old rows."""
+        rows: list[sqlite3.Row] = []
+        if transaction_ids is None:
+            rows = self.conn.execute(
+                "SELECT id, tags FROM transactions WHERE transfer_id IS NOT NULL"
+            ).fetchall()
+        else:
+            ids = sorted({int(value) for value in transaction_ids})
+            for start in range(0, len(ids), 500):
+                chunk = ids[start : start + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                rows.extend(
+                    self.conn.execute(
+                        f"SELECT id, tags FROM transactions "
+                        f"WHERE transfer_id IS NOT NULL AND id IN ({placeholders})",
+                        chunk,
+                    ).fetchall()
+                )
+        changed = False
+        for row in rows:
+            current = row["tags"] or ""
+            tagged = with_transfer_tag(current)
+            if tagged != current:
+                self.conn.execute(
+                    "UPDATE transactions SET tags=? WHERE id=?",
+                    (tagged, row["id"]),
+                )
+                changed = True
+        if changed:
+            self.conn.commit()
 
     # ---------------------------------------------------------------- basics
     def close(self) -> None:
@@ -1648,7 +1695,11 @@ class DataStore:
                 1 if draft.voided else 0,
                 draft.payment.strip(),
                 draft.number.strip(),
-                draft.tags.strip(),
+                (
+                    with_transfer_tag(draft.tags.strip())
+                    if draft.transfer_id
+                    else draft.tags.strip()
+                ),
                 draft.transfer_id,
             ),
         )
@@ -1699,7 +1750,7 @@ class DataStore:
                     1 if draft.voided else 0,
                     draft.payment.strip(),
                     draft.number.strip(),
-                    draft.tags.strip(),
+                    with_transfer_tag(draft.tags.strip()),
                     group,
                 ),
             )
@@ -1736,6 +1787,7 @@ class DataStore:
         )
         self._insert_splits(transaction_id, draft.splits)
         self.conn.commit()
+        self._refresh_transfer_tags([transaction_id])
         self._mark_modified(transaction_id)
 
     def _insert_splits(
@@ -1866,6 +1918,8 @@ class DataStore:
                 (*params, *chunk),
             )
         self.conn.commit()
+        if tags is not _UNCHANGED:
+            self._refresh_transfer_tags(transaction_ids)
         self._mark_modified(*transaction_ids)
 
     def update_transaction_flags(
@@ -2012,6 +2066,7 @@ class DataStore:
         self.session_modified_ids.difference_update(
             set(int(value) for value in remove_ids) - restored
         )
+        self._refresh_transfer_tags(list(restored))
         self._mark_modified(*restored)
 
     def max_transaction_id(self) -> int:

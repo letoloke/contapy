@@ -67,7 +67,7 @@ from ..config import (
     theme_choice,
 )
 from ..dates import DATE_FORMATS, qt_date_format
-from ..db import DataStore
+from ..db import DataStore, with_transfer_tag
 from ..models import (
     Account,
     Category,
@@ -1160,6 +1160,7 @@ class TransactionDialog(QDialog):
                         break
             if previous == "income" and not self._loading:
                 self._reverse_transfer_accounts()
+            self._ensure_transfer_tag()
             self.category_combo.setCurrentIndex(0)
         else:
             if previous == "transfer" and not self._loading:
@@ -1254,6 +1255,14 @@ class TransactionDialog(QDialog):
             self.amount_spin.setValue(-abs(self.amount_spin.value()))
         elif self._type in ("income", "transfer"):
             self.amount_spin.setValue(abs(self.amount_spin.value()))
+
+    def _ensure_transfer_tag(self) -> None:
+        if self._type != "transfer":
+            return
+        current = self.tags_combo.resolved_text().strip()
+        tagged = with_transfer_tag(current)
+        if tagged != current:
+            self.tags_combo.setEditText(tagged)
 
     # ----------------------------------------------------------------- status
     def _status_clicked(self, key: str) -> None:
@@ -1427,6 +1436,7 @@ class TransactionDialog(QDialog):
         self.number_edit.setText(draft.number)
         self._set_combo_text(self.payee_combo, draft.payee)
         self._set_combo_text(self.tags_combo, draft.tags)
+        self._ensure_transfer_tag()
         # Category belongs to the type; select it by id after the choices exist.
         category_index = self.category_combo.findData(draft.category_id)
         if category_index >= 0:
@@ -1572,6 +1582,9 @@ class TransactionDialog(QDialog):
         if self._scheduled:
             cleared = True
             reconciled = False
+        tags = self.tags_combo.resolved_text().strip()
+        if self._type == "transfer":
+            tags = with_transfer_tag(tags)
         self._draft = TransactionDraft(
             date=self.date_edit.date().toString("yyyy-MM-dd"),
             account_id=account_id,
@@ -1588,7 +1601,7 @@ class TransactionDialog(QDialog):
             if self.payment_combo.resolved_text().strip() != "(none)"
             else "",
             number=self.number_edit.text().strip(),
-            tags=self.tags_combo.resolved_text().strip(),
+            tags=tags,
             transfer_account_id=transfer_account_id,
             transfer_id=self._transfer_id if transfer_account_id is not None else None,
             scheduled=self._scheduled,
