@@ -818,6 +818,39 @@ class CategoryDialogTests(unittest.TestCase):
         self.assertIn("2 transactions", dialog.summary.text())
         self.assertIn("$ -19.75", dialog.summary.text())
 
+    def test_category_transactions_dialog_hides_voided_by_default(self) -> None:
+        store, account_id, food = self._food_store()
+        insert_transaction(
+            store, account_id, food, -12.5, when=date(2026, 1, 2), payee="Cafe"
+        )
+        insert_transaction(
+            store,
+            account_id,
+            food,
+            -7.25,
+            when=date(2026, 1, 3),
+            payee="Voided bakery",
+        )
+        store.conn.execute(
+            "UPDATE transactions SET voided=1 WHERE payee='Voided bakery'"
+        )
+        store.conn.commit()
+
+        dialog = CategoryTransactionsDialog(store, store.category(food))
+        self.addCleanup(dialog.deleteLater)
+
+        self.assertFalse(dialog.voided_check.isChecked())
+        self.assertEqual(dialog.table.rowCount(), 1)
+        self.assertEqual(dialog.table.item(0, 2).text(), "Cafe")
+        self.assertNotIn("voided excluded", dialog.summary.text())
+
+        dialog.voided_check.setChecked(True)
+        self.assertEqual(dialog.table.rowCount(), 2)
+        self.assertIn("1 voided excluded", dialog.summary.text())
+
+        dialog.voided_check.setChecked(False)
+        self.assertEqual(dialog.table.rowCount(), 1)
+
     def test_category_transactions_dialog_sorts_by_header_click(self) -> None:
         store, account_id, food = self._food_store()
         insert_transaction(

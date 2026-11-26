@@ -2317,6 +2317,10 @@ class CategoryTransactionsDialog(QDialog):
         self.search_edit.setFixedWidth(300)
         controls.addWidget(self.search_edit)
         controls.addStretch(1)
+        self.voided_check = QCheckBox("Include voided")
+        self.voided_check.setChecked(False)
+        self.voided_check.setToolTip("Also show voided transactions.")
+        controls.addWidget(self.voided_check)
         self.sub_check = QCheckBox("Include subcategories")
         self.sub_check.setChecked(True)
         self.sub_check.setVisible(self._has_children)
@@ -2401,6 +2405,7 @@ class CategoryTransactionsDialog(QDialog):
         root.addLayout(close_row)
 
         self.search_edit.textChanged.connect(self._refresh)
+        self.voided_check.toggled.connect(self._refresh)
         self.sub_check.toggled.connect(self._reload)
         if initial_search:
             self.search_edit.setText(initial_search)
@@ -2429,6 +2434,8 @@ class CategoryTransactionsDialog(QDialog):
     def _refresh(self) -> None:
         text = self.search_edit.text().strip().casefold()
         rows = self._rows
+        if not self.voided_check.isChecked():
+            rows = [row for row in rows if not row.voided]
         if text:
             rows = [
                 row
