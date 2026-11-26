@@ -2318,9 +2318,13 @@ class LedgerWindow(QMainWindow):
         self._log_activity(
             f"Applied rules to {len(changed_ids)} transaction(s)"
         )
+        count = len(changed_ids)
+        noun = "transaction" if count == 1 else "transactions"
         self._keep_selection_after_change(selected_ids)
-        self._show_hint(
-            f"Rules applied · {len(changed_ids)} transaction(s) changed"
+        QMessageBox.information(
+            self,
+            "Apply rules",
+            f"Rules applied. {count} {noun} modified.",
         )
 
     def apply_rules_to_selected(self) -> None:

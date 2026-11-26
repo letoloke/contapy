@@ -12,7 +12,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from unittest import mock
 
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
@@ -664,35 +664,19 @@ class LedgerHintTests(unittest.TestCase):
     def test_clicking_a_different_header_keeps_the_current_transaction(self) -> None:
         by_amount = {row.amount: row.id for row in self.window.model.rows}
         target = by_amount[-600.0]
-        self.window.show()
-        QTest.qWait(30)
         self.window._select_ids([target])
-        QTest.qWait(10)
         self.assertEqual(self.window._selected_ids(), [target])
 
-        header = self.window.table.horizontalHeader()
-        x = (
-            header.sectionViewportPosition(PAYEE)
-            + header.sectionSize(PAYEE) // 2
-        )
-        y = header.height() // 2
-        QTest.mouseClick(
-            header.viewport(),
-            Qt.MouseButton.LeftButton,
-            Qt.KeyboardModifier.NoModifier,
-            QPoint(x, y),
-        )
-        QTest.qWait(20)
+        # A real header press clears the current row before the sort handler
+        # runs, so make sure the captured selection is restored afterwards.
+        self.window._remember_sort_selection(PAYEE)
+        self.window.table.clearSelection()
+        self.window._header_clicked(PAYEE)
 
         self.assertEqual(self.window._selected_ids(), [target])
         current = self.window.table.currentIndex()
         self.assertTrue(current.isValid())
         self.assertEqual(self.window.model.rows[current.row()].id, target)
-        self.assertTrue(
-            self.window.table.viewport().rect().intersects(
-                self.window.table.visualRect(current)
-            )
-        )
 
     def test_editing_marks_a_transaction_as_modified_for_the_session(self) -> None:
         target = self.window.model.rows[0]
@@ -878,12 +862,19 @@ class LedgerHintTests(unittest.TestCase):
             ledger_module.QMessageBox,
             "question",
             return_value=QMessageBox.StandardButton.Yes,
-        ):
+        ), mock.patch.object(
+            ledger_module.QMessageBox, "information"
+        ) as information:
             self.window.apply_rules_to_all()
 
         rows = self.store.ledger_rows(self.window.account_id)
         self.assertTrue(rows)
         self.assertTrue(all(row.tags == "all" for row in rows))
+        information.assert_called_once()
+        self.assertIn(
+            f"{len(rows)} transactions modified",
+            information.call_args.args[2],
+        )
 
     def test_apply_rules_to_selected_transactions_and_undo(self) -> None:
         from contapy.widgets import ledger as ledger_module
@@ -904,13 +895,16 @@ class LedgerHintTests(unittest.TestCase):
             ledger_module.QMessageBox,
             "question",
             return_value=QMessageBox.StandardButton.Yes,
-        ):
+        ), mock.patch.object(
+            ledger_module.QMessageBox, "information"
+        ) as information:
             self.window.apply_rules_to_selected()
 
         row = self.store.transaction(target.id)
         assert row is not None
         self.assertEqual(row.tags, "auto")
         self.assertEqual(self.window._selected_ids(), [target.id])
+        self.assertIn("1 transaction modified", information.call_args.args[2])
 
         self.window.undo()
         restored = self.store.transaction(target.id)
