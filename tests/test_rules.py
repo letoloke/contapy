@@ -11,6 +11,7 @@ from unittest import mock
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from contapy.db import DataStore
@@ -1033,6 +1034,29 @@ class TemplateDialogTests(unittest.TestCase):
 
         self.assertTrue(values.category_set)
         self.assertIsNone(values.category_id)
+
+    def test_picker_arrows_select_and_enter_applies_a_template(self) -> None:
+        for name in ("Alpha", "Beta", "Gamma"):
+            self.store.add_template(Template(name=name))
+        dialog = TemplatesDialog(self.store, count=2)
+        self.addCleanup(dialog.deleteLater)
+        dialog.search_edit.setText("a")
+        self.assertEqual(dialog.listing.count(), 3)
+        self.assertEqual(dialog.listing.currentRow(), 0)
+        self.assertTrue(dialog.listing.currentItem().isSelected())
+
+        QTest.keyClick(dialog.search_edit, Qt.Key.Key_Down)
+        self.assertEqual(dialog.listing.currentRow(), 1)
+        QTest.keyClick(dialog.search_edit, Qt.Key.Key_Down)
+        self.assertEqual(dialog.listing.currentRow(), 2)
+        QTest.keyClick(dialog.search_edit, Qt.Key.Key_Up)
+        self.assertEqual(dialog.listing.currentRow(), 1)
+
+        QTest.keyClick(dialog.search_edit, Qt.Key.Key_Return)
+        self.assertEqual(dialog.result(), QDialog.DialogCode.Accepted)
+        chosen = dialog.template_values()
+        assert chosen is not None
+        self.assertEqual(chosen.name, "Beta")
 
     def test_manager_lists_searches_and_deletes_templates(self) -> None:
         coffee = self.store.add_template(

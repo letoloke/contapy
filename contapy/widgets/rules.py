@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import replace
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -843,6 +843,7 @@ class TemplatesDialog(QDialog):
         self.search_edit.setClearButtonEnabled(True)
         self.search_edit.setFont(font(13, 400))
         self.search_edit.textChanged.connect(self._search_changed)
+        self.search_edit.installEventFilter(self)
         root.addWidget(self.search_edit)
         find_shortcut = QShortcut(QKeySequence("Ctrl+F"), self)
         find_shortcut.activated.connect(self._focus_search)
@@ -853,6 +854,12 @@ class TemplatesDialog(QDialog):
         self.listing.setWordWrap(True)
         self.listing.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.listing.setStyleSheet(
+            f"QListWidget::item:selected {{ background:{C.ACCENT};"
+            f" color:{C.ON_ACCENT}; }}"
+            f"QListWidget::item:selected:!active {{ background:{C.ACCENT};"
+            f" color:{C.ON_ACCENT}; }}"
         )
         self.listing.itemDoubleClicked.connect(
             lambda _item: self._item_activated()
@@ -927,6 +934,34 @@ class TemplatesDialog(QDialog):
         self.search_edit.setFocus(Qt.FocusReason.ShortcutFocusReason)
         self.search_edit.selectAll()
 
+    def eventFilter(self, watched, event):  # noqa: N802
+        if (
+            watched is self.search_edit
+            and event.type() == QEvent.Type.KeyPress
+        ):
+            if event.key() == Qt.Key.Key_Down:
+                self._move_selection(1)
+                return True
+            if event.key() == Qt.Key.Key_Up:
+                self._move_selection(-1)
+                return True
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                self._item_activated()
+                return True
+        return super().eventFilter(watched, event)
+
+    def _move_selection(self, step: int) -> None:
+        count = self.listing.count()
+        if count == 0:
+            return
+        current = self.listing.currentRow()
+        if current < 0:
+            row = 0 if step > 0 else count - 1
+        else:
+            row = max(0, min(count - 1, current + step))
+        self.listing.setCurrentRow(row)
+        self.listing.scrollToItem(self.listing.item(row))
+
     def _search_changed(self, _text: str) -> None:
         self._reload_list(select_id=self._current_id())
 
@@ -943,6 +978,10 @@ class TemplatesDialog(QDialog):
             self.listing.addItem(item)
             if select_id is not None and template.id == select_id:
                 self.listing.setCurrentItem(item)
+        if self.listing.count() and self.listing.currentRow() < 0:
+            if query or select_id is not None:
+                self.listing.setCurrentRow(0)
+                self.listing.scrollToItem(self.listing.item(0))
         if not templates:
             self.empty_hint.setText(
                 "No templates yet. Use New… to create one."
