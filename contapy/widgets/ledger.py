@@ -2068,12 +2068,10 @@ class LedgerWindow(QMainWindow):
                 self.revealRequested.emit(row.account_id, transaction_id)
                 return
 
-        # The transaction is still in this account but hidden by a date,
-        # payee, type, status or search filter. Reset the filters so the saved
-        # row can be reselected and shown.
-        self._clear_filters()
-        self._select_ids(ids)
+        # The transaction is still in this account but hidden by an active
+        # filter. Keep the filter in place; the user chose it.
         self._focus_table(select_first=False)
+        self._show_hint("Saved transaction is hidden by the active filters")
 
     def _bulk_edit_transactions(self, selected: list[TransactionRow]) -> None:
         editable = [

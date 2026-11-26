@@ -501,7 +501,7 @@ class LedgerHintTests(unittest.TestCase):
         self.assertNotIn(tagged_id, [row.id for row in rows])
         self.assertNotIn(voided_id, [row.id for row in rows])
 
-    def test_finish_edit_reveals_row_hidden_by_filters(self) -> None:
+    def test_finish_edit_keeps_filters_when_row_is_hidden(self) -> None:
         target = self.window.model.rows[0]
         self.window.status_combo.setCurrentIndex(
             self.window.status_combo.findData("reconciled")
@@ -513,9 +513,38 @@ class LedgerHintTests(unittest.TestCase):
 
         self.window._finish_selection_after_change([target.id])
 
-        self.assertIsNone(self.window.status_combo.currentData())
-        self.assertEqual(self.window._selected_ids(), [target.id])
-        self.assertIn(target.id, [row.id for row in self.window.model.rows])
+        self.assertEqual(
+            self.window.status_combo.currentData(), "reconciled"
+        )
+        self.assertEqual(self.window._selected_ids(), [])
+        self.assertNotIn(
+            target.id, [row.id for row in self.window.model.rows]
+        )
+        self.assertIn(
+            "hidden by the active filters",
+            self.window.keyboard_hint.text(),
+        )
+
+    def test_editing_to_add_tags_keeps_no_tags_filter_active(self) -> None:
+        target = self.window.model.rows[0]
+        self.window.status_combo.setCurrentIndex(
+            self.window.status_combo.findData("no_tags")
+        )
+        self.assertIn(
+            target.id, [row.id for row in self.window.model.rows]
+        )
+
+        self.store.update_transactions([target.id], tags="now tagged")
+        self.window._keep_selection_after_change([target.id])
+        QTest.qWait(30)
+
+        self.assertEqual(
+            self.window.status_combo.currentData(), "no_tags"
+        )
+        self.assertNotIn(
+            target.id, [row.id for row in self.window.model.rows]
+        )
+        self.assertEqual(self.window._selected_ids(), [])
 
     def test_finish_edit_follows_transaction_to_another_account(self) -> None:
         destination = self.store.add_account("Savings", "Bank", 0)
