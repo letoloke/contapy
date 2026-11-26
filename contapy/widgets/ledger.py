@@ -1142,6 +1142,7 @@ class LedgerWindow(QMainWindow):
         self.status_combo.addItem("Remind", "remind")
         self.status_combo.addItem("Flagged", "flagged")
         self.status_combo.addItem("Voided", "voided")
+        self.status_combo.addItem("No tags", "no_tags")
         default_status = ledger_status_choice()
         status_index = self.status_combo.findData(
             None if default_status == "any" else default_status
@@ -1602,6 +1603,13 @@ class LedgerWindow(QMainWindow):
                     continue
                 if status_filter == "flagged" and not row.flagged:
                     continue
+                if status_filter == "no_tags":
+                    tagged = row.tags.strip() or any(
+                        child.tags.strip()
+                        for child in children.get(row.id, [])
+                    )
+                    if tagged:
+                        continue
                 if amount_filters and not all(
                     amount_filter.matches(row.amount)
                     for amount_filter in amount_filters

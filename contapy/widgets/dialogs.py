@@ -2029,6 +2029,7 @@ class PreferencesDialog(QDialog):
             ("remind", "Remind"),
             ("flagged", "Flagged"),
             ("voided", "Voided"),
+            ("no_tags", "No tags"),
         ):
             self.ledger_status_combo.addItem(label, key)
         status_index = self.ledger_status_combo.findData(ledger_status_choice())

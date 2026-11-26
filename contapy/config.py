@@ -28,6 +28,7 @@ LEDGER_STATUSES = (
     "remind",
     "flagged",
     "voided",
+    "no_tags",
 )
 
 

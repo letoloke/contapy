@@ -468,6 +468,39 @@ class LedgerHintTests(unittest.TestCase):
         color = category_text_color(transfer, QColor("#ffffff"), False)
         self.assertEqual(color.name(), QColor(C.MUTED).name())
 
+    def test_status_filter_shows_transactions_without_tags(self) -> None:
+        tagged_id = self.store.add_transaction(
+            TransactionDraft(
+                date=date.today().isoformat(),
+                account_id=self.window.account_id,
+                payee="Tagged",
+                category_id=None,
+                amount=-10,
+                tags="home",
+            )
+        )
+        voided_id = self.store.add_transaction(
+            TransactionDraft(
+                date=date.today().isoformat(),
+                account_id=self.window.account_id,
+                payee="Voided untagged",
+                category_id=None,
+                amount=-20,
+                voided=True,
+            )
+        )
+        self.window.reload()
+
+        self.window.status_combo.setCurrentIndex(
+            self.window.status_combo.findData("no_tags")
+        )
+
+        rows = self.window.model.rows
+        self.assertEqual(len(rows), 3)
+        self.assertTrue(all(not row.tags.strip() for row in rows))
+        self.assertNotIn(tagged_id, [row.id for row in rows])
+        self.assertNotIn(voided_id, [row.id for row in rows])
+
     def test_finish_edit_reveals_row_hidden_by_filters(self) -> None:
         target = self.window.model.rows[0]
         self.window.status_combo.setCurrentIndex(
