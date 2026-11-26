@@ -623,6 +623,40 @@ class RuleDialogTests(unittest.TestCase):
         dialog.search_edit.clear()
         self.assertEqual(dialog.listing.count(), 3)
 
+    def test_search_enter_offers_to_create_a_missing_rule(self) -> None:
+        dialog = RulesDialog(self.store)
+        self.addCleanup(dialog.deleteLater)
+        dialog.search_edit.setText("Netflix")
+        self.assertEqual(dialog.listing.count(), 0)
+
+        class FakeDialog:
+            def __init__(self, store, parent=None):
+                self.name_edit = mock.Mock()
+                self.condition_editors = []
+
+            def exec(self) -> QDialog.DialogCode:
+                return QDialog.DialogCode.Accepted
+
+            def rule(self) -> Rule:
+                return Rule(name="Netflix", search="netflix", match_memo=True)
+
+        with mock.patch(
+            "contapy.widgets.rules.RuleDialog", FakeDialog
+        ), mock.patch(
+            "contapy.widgets.rules.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ) as question:
+            dialog.search_edit.returnPressed.emit()
+
+        self.assertEqual(question.call_count, 1)
+        self.assertIn("Netflix", question.call_args.args[2])
+        rules = self.store.rules()
+        self.assertEqual(len(rules), 1)
+        self.assertEqual(rules[0].name, "Netflix")
+        self.assertTrue(dialog.changed)
+        self.assertEqual(dialog.search_edit.text(), "")
+        self.assertEqual(dialog.listing.count(), 1)
+
     def test_manager_summary_shows_all_conditions(self) -> None:
         self.store.add_rule(
             Rule(

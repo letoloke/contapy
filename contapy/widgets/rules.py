@@ -1137,7 +1137,11 @@ class RulesDialog(QDialog):
         )
         self.search_edit.setClearButtonEnabled(True)
         self.search_edit.setFont(font(13, 400))
+        self.search_edit.setToolTip(
+            "Press Enter when nothing matches to create a new rule."
+        )
         self.search_edit.textChanged.connect(self._search_changed)
+        self.search_edit.returnPressed.connect(self._search_returned)
         root.addWidget(self.search_edit)
         find_shortcut = QShortcut(QKeySequence("Ctrl+F"), self)
         find_shortcut.activated.connect(self._focus_search)
@@ -1189,6 +1193,27 @@ class RulesDialog(QDialog):
     def _search_changed(self, _text: str) -> None:
         current = self._current_id()
         self._reload_list(select_id=current)
+
+    def _search_returned(self) -> None:
+        text = self.search_edit.text().strip()
+        if not text or self.listing.count():
+            return
+        answer = QMessageBox.question(
+            self,
+            "No matching rule",
+            f"No rule matches “{text}”.\n\nCreate a new rule?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        rule_id = self._open_new_rule(text)
+        if rule_id is None:
+            return
+        self.search_edit.blockSignals(True)
+        self.search_edit.clear()
+        self.search_edit.blockSignals(False)
+        self._reload_list(rule_id)
 
     def _reload_list(self, select_id: int | None = None) -> None:
         query = self.search_edit.text().strip().casefold()
@@ -1274,11 +1299,24 @@ class RulesDialog(QDialog):
         item.setForeground(QColor(C.TEXT if enabled else C.MUTED_DARK))
         self.changed = True
 
-    def new_rule(self) -> None:
+    def _open_new_rule(self, prefill: str | None = None) -> int | None:
         dialog = RuleDialog(self.store, parent=self)
-        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.rule() is not None:
-            rule_id = self.store.add_rule(dialog.rule())
-            self.changed = True
+        if prefill:
+            dialog.name_edit.setText(prefill)
+            if dialog.condition_editors:
+                dialog.condition_editors[0].search_edit.setText(prefill)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return None
+        rule = dialog.rule()
+        if rule is None:
+            return None
+        rule_id = self.store.add_rule(rule)
+        self.changed = True
+        return rule_id
+
+    def new_rule(self) -> None:
+        rule_id = self._open_new_rule()
+        if rule_id is not None:
             self._reload_list(rule_id)
 
     def import_homebank(self) -> None:
