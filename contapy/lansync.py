@@ -77,6 +77,10 @@ class SyncServer:
         return int(self._httpd.server_address[1])
 
     @property
+    def running(self) -> bool:
+        return self._httpd is not None
+
+    @property
     def url(self) -> str:
         return f"http://{lan_ip()}:{self.port_in_use}"
 

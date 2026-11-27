@@ -24,9 +24,16 @@ from PySide6.QtWidgets import (
 from .airbnb import transform as transform_airbnb
 from .banamex import transform as transform_banamex
 from .booking import transform as transform_booking
-from .config import date_format_choice, remember_database, theme_choice
+from .config import (
+    date_format_choice,
+    remember_database,
+    sync_port,
+    sync_token,
+    theme_choice,
+)
 from .dates import set_date_format
 from .db import DataStore
+from .lansync import lan_ip
 from .mercadopago import transform as transform_mercadopago
 from .models import ScheduledItem
 from .activity import ActivityLog, activity_log_path, transaction_detail
@@ -39,6 +46,7 @@ from .widgets.charts import ChartCard, DonutChart, SpendingRevenueChart
 from .widgets.import_dialog import CsvImportDialog
 from .widgets.ledger import LedgerWindow
 from .widgets.payees import PayeesDialog
+from .widgets.phone import ConnectPhoneDialog
 from .widgets.reports import ReportsWindow
 from .widgets.rules import RulesDialog, TemplatesDialog
 from .widgets.dialogs import (
@@ -221,6 +229,11 @@ class MainWindow(QMainWindow):
 
         tools_menu = bar.addMenu("Tools")
         tools_menu.addAction(self.act_preferences)
+        tools_menu.addAction(
+            self._action(
+                "Connect LetoBank GO (QR)…", self.show_connect_phone
+            )
+        )
         tools_menu.addAction(self._action("Open Data Folder", self.open_data_folder))
         tools_menu.addSeparator()
         tools_menu.addAction(self.act_import)
@@ -913,6 +926,18 @@ class MainWindow(QMainWindow):
         if dialog.changed:
             self._record_activity("Updated payees")
             self.refresh_all()
+
+    def show_connect_phone(self) -> None:
+        server = getattr(self, "sync_server", None)
+        if server is not None:
+            url = server.url
+            running = server.running
+        else:
+            url = f"http://{lan_ip()}:{sync_port()}"
+            running = False
+        ConnectPhoneDialog(
+            url, sync_token(), running=running, parent=self
+        ).exec()
 
     def open_data_folder(self) -> None:
         self._record_activity("Opened data folder")

@@ -116,6 +116,7 @@ def main(argv: list[str] | None = None) -> int:
             port=sync_port(),
             on_ingest=notifier.ingested.emit,
         )
+        window.sync_server = server
         if server.start() is None:
             print(
                 f"LAN sync: port {sync_port()} is already in use; "
