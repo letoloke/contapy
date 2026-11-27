@@ -637,7 +637,7 @@ date,account,payee,category,memo,amount,cleared,reconciled,remind,flagged,voided
 
 ## LAN sync (Android companion)
 
-LetoBank accepts transactions from a phone on the same network, so the phone app only has to capture and queue. The endpoint starts with the app and prints its address and token:
+LetoBank accepts transactions from a phone on the same network, so the phone app only has to capture and queue. The Android companion lives in [`letobank-android`](../letobank-android). The endpoint starts with the app and prints its address and token:
 
 ```
 LAN sync: http://192.168.1.165:8787  token: xeynVrqQfdPeXGgbcBsrahmmNRAw0eJA
