@@ -57,6 +57,13 @@ class SyncStoreTests(unittest.TestCase):
             self.store.conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0]
         )
 
+    def test_ingested_rows_are_marked_go_not_modified(self) -> None:
+        result = self.store.ingest_sync_transactions([txn()])[0]
+
+        self.assertEqual(result["status"], "inserted")
+        self.assertIn(result["id"], self.store.session_go_ids)
+        self.assertNotIn(result["id"], self.store.session_modified_ids)
+
     def test_insert_then_retry_is_idempotent(self) -> None:
         first = self.store.ingest_sync_transactions([txn()])
         self.assertEqual(first[0]["status"], "inserted")
@@ -200,14 +207,14 @@ class SyncServerTests(unittest.TestCase):
         store = DataStore(self.path, seed=False)
         store.add_account("Wallet", "Cash", 0.0)
         store.close()
-        self.ingested: list[int] = []
+        self.ingested: list[list[int]] = []
         self.done = threading.Event()
         self.server = SyncServer(
             self.path,
             TOKEN,
             port=0,
             host="127.0.0.1",
-            on_ingest=lambda count: (self.ingested.append(count), self.done.set()),
+            on_ingest=lambda ids: (self.ingested.append(ids), self.done.set()),
         )
         self.assertIsNotNone(self.server.start())
         self.base = f"http://127.0.0.1:{self.server.port_in_use}"
@@ -251,7 +258,9 @@ class SyncServerTests(unittest.TestCase):
         self.assertEqual(body["inserted"], 1)
         self.assertEqual(body["errors"], 0)
         self.assertTrue(self.done.wait(timeout=2))
-        self.assertEqual(self.ingested, [1])
+        self.assertEqual(
+            self.ingested, [[body["results"][0]["id"]]]
+        )
 
         status, body = self.request(
             "/api/transactions", {"transactions": [txn()]}

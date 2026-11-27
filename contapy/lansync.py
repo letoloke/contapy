@@ -60,7 +60,7 @@ class SyncServer:
         *,
         port: int = 8787,
         host: str = "0.0.0.0",
-        on_ingest: Callable[[int], None] | None = None,
+        on_ingest: Callable[[list[int]], None] | None = None,
     ) -> None:
         self.db_path = Path(db_path)
         self.token = token
@@ -207,11 +207,16 @@ class SyncServer:
                     return self._json(500, {"error": f"database error: {exc}"})
 
                 inserted = sum(1 for r in results if r["status"] == "inserted")
+                inserted_ids = [
+                    int(r["id"])
+                    for r in results
+                    if r["status"] == "inserted" and r["id"] is not None
+                ]
                 duplicates = sum(1 for r in results if r["status"] == "duplicate")
                 errors = sum(1 for r in results if r["status"] == "error")
-                if inserted and server.on_ingest is not None:
+                if inserted_ids and server.on_ingest is not None:
                     try:
-                        server.on_ingest(inserted)
+                        server.on_ingest(inserted_ids)
                     except Exception:  # a UI refresh must never fail the sync
                         pass
                 return self._json(

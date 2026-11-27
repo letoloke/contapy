@@ -740,6 +740,14 @@ class LedgerHintTests(unittest.TestCase):
         self.assertTrue(current.isValid())
         self.assertEqual(self.window.model.rows[current.row()].id, target)
 
+    def test_go_import_marker_is_exposed_to_the_ledger(self) -> None:
+        target = self.window.model.rows[0]
+        self.store.session_go_ids.add(target.id)
+
+        self.window.reload()
+
+        self.assertIn(target.id, self.window.delegate.go_ids)
+
     def test_editing_marks_a_transaction_as_modified_for_the_session(self) -> None:
         target = self.window.model.rows[0]
         self.assertFalse(self.window.delegate.modified_ids)

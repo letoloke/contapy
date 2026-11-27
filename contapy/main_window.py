@@ -523,6 +523,16 @@ class MainWindow(QMainWindow):
         )
         self._refresh_recent_import_marks()
 
+    def handle_go_import(self, transaction_ids) -> None:
+        ids = [int(transaction_id) for transaction_id in transaction_ids]
+        if not ids:
+            return
+        self.store.session_go_ids.update(ids)
+        self._record_activity(
+            "Imported from LetoBank GO", f"{len(ids)} transaction(s)"
+        )
+        self.refresh_all()
+
     def _refresh_recent_import_marks(self) -> None:
         for ledger in list(self.ledgers.values()):
             try:

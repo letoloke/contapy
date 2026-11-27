@@ -32,7 +32,7 @@ from .window_watermark import install_window_watermarks
 class SyncNotifier(QObject):
     """Moves sync-server callbacks onto the Qt main thread."""
 
-    ingested = Signal(int)
+    ingested = Signal(list)
 
 
 
@@ -109,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.screenshot and sync_enabled():
         notifier = SyncNotifier()
-        notifier.ingested.connect(lambda _count: window.refresh_all())
+        notifier.ingested.connect(window.handle_go_import)
         server = SyncServer(
             store.path,
             sync_token(),

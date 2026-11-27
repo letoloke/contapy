@@ -379,6 +379,7 @@ class LedgerDelegate(QStyledItemDelegate):
         self.highlight_ids: set[int] = set()
         self.recent_ids: set[int] = set()
         self.modified_ids: set[int] = set()
+        self.go_ids: set[int] = set()
 
     def sizeHint(self, option, index):  # noqa: N802
         return QSize(option.rect.width(), 27)
@@ -398,6 +399,7 @@ class LedgerDelegate(QStyledItemDelegate):
         )
         recent = not row.is_split_child and row.id in self.recent_ids
         modified = not row.is_split_child and row.id in self.modified_ids
+        go_import = not row.is_split_child and row.id in self.go_ids
         combined = bool(getattr(model, "combined_amount", False))
 
         bg = QColor(C.ROW_SELECTED) if selected else QColor(
@@ -505,6 +507,8 @@ class LedgerDelegate(QStyledItemDelegate):
             badges: list[tuple[str, str]] = []
             if recent:
                 badges.append(("NEW", C.GREEN))
+            if go_import:
+                badges.append(("GO", C.ACCENT))
             if modified:
                 badges.append(("EDIT", C.ORANGE))
             if badges and rect.width() > 90:
@@ -1353,6 +1357,7 @@ class LedgerWindow(QMainWindow):
         """Mark rows imported in this session without changing the database."""
         self.delegate.recent_ids = set(transaction_ids)
         self.delegate.modified_ids = set(self.store.session_modified_ids)
+        self.delegate.go_ids = set(self.store.session_go_ids)
         self.table.viewport().update()
 
     def _focus_table(self, select_first: bool = True) -> None:
@@ -1380,6 +1385,7 @@ class LedgerWindow(QMainWindow):
         self.account_label.setText(self.account.name)
         self.all_rows = self.store.ledger_rows(self.account_id)
         self.delegate.modified_ids = set(self.store.session_modified_ids)
+        self.delegate.go_ids = set(self.store.session_go_ids)
         self.balance_snapshot = self.store.balances().get(self.account_id)
 
         current_payee = self.payee_combo.currentText()

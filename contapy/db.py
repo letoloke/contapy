@@ -489,6 +489,7 @@ class DataStore:
         # failing immediately with "database is locked".
         self.conn.execute("PRAGMA busy_timeout = 5000")
         self.session_modified_ids: set[int] = set()
+        self.session_go_ids: set[int] = set()
         if prepare:
             self.conn.executescript(SCHEMA)
             self._migrate()
@@ -1699,6 +1700,12 @@ class DataStore:
             if transaction_id is not None:
                 self.session_modified_ids.add(int(transaction_id))
 
+    def _mark_go_import(self, *transaction_ids: int | None) -> None:
+        """Remember rows received from LetoBank GO for the GO badge."""
+        for transaction_id in transaction_ids:
+            if transaction_id is not None:
+                self.session_go_ids.add(int(transaction_id))
+
     # ----------------------------------------------------------- transactions
     def add_transaction(
         self,
@@ -2018,6 +2025,7 @@ class DataStore:
             self.conn.execute("DELETE FROM transactions WHERE id=?", (transaction_id,))
         self.conn.commit()
         self.session_modified_ids.difference_update(removed)
+        self.session_go_ids.difference_update(removed)
 
     def snapshot_transactions(self, transaction_ids: list[int]) -> list[dict]:
         """Return complete row values for the requested transaction ids."""
@@ -3358,7 +3366,7 @@ class DataStore:
                     "error": None,
                 }
             raise
-        self._mark_modified(transaction_id)
+        self._mark_go_import(transaction_id)
         return {
             "uuid": sync_id,
             "status": "inserted",
@@ -3431,6 +3439,7 @@ class DataStore:
                           "('transactions','scheduled','accounts','categories')")
         self.conn.commit()
         self.session_modified_ids.clear()
+        self.session_go_ids.clear()
         from .seed import seed_if_empty
 
         seed_if_empty(self.conn, force=True)
