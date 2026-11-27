@@ -131,7 +131,8 @@ CREATE TABLE IF NOT EXISTS transactions (
     payment     TEXT NOT NULL DEFAULT '',
     number      TEXT NOT NULL DEFAULT '',
     tags        TEXT NOT NULL DEFAULT '',
-    transfer_id TEXT
+    transfer_id TEXT,
+    uuid        TEXT
 );
 
 CREATE TABLE IF NOT EXISTS transaction_splits (
@@ -466,22 +467,38 @@ def import_fingerprint(
     return (int(account_id), kind, text, date_text, round(float(amount), 2))
 
 
+_SYNC_STATUS_FLAGS: dict[str, dict[str, bool]] = {
+    "none": {"cleared": False},
+    "cleared": {"cleared": True},
+    "reconciled": {"cleared": True, "reconciled": True},
+    "remind": {"cleared": True, "remind": True},
+    "flagged": {"cleared": True, "flagged": True},
+    "voided": {"cleared": True, "voided": True},
+}
+
+
 class DataStore:
-    def __init__(self, path: str | Path | None = None, seed: bool = True):
+    def __init__(
+        self, path: str | Path | None = None, seed: bool = True, prepare: bool = True
+    ):
         self.path = Path(path).expanduser() if path else default_db_path()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(self.path)
         self.conn.row_factory = sqlite3.Row
-        self.conn.executescript(SCHEMA)
-        self._migrate()
-        self._refresh_transfer_tags()
-        self.conn.commit()
+        # A LAN sync request may briefly overlap a UI write; wait instead of
+        # failing immediately with "database is locked".
+        self.conn.execute("PRAGMA busy_timeout = 5000")
         self.session_modified_ids: set[int] = set()
-        if seed:
-            from .seed import seed_if_empty
+        if prepare:
+            self.conn.executescript(SCHEMA)
+            self._migrate()
+            self._refresh_transfer_tags()
+            self.conn.commit()
+            if seed:
+                from .seed import seed_if_empty
 
-            if seed_if_empty(self.conn):
-                self.conn.commit()
+                if seed_if_empty(self.conn):
+                    self.conn.commit()
 
     def _migrate(self) -> None:
         """Add ledger state columns to databases created before they existed."""
@@ -520,6 +537,18 @@ class DataStore:
                 )
         if "transfer_id" not in columns:
             self.conn.execute("ALTER TABLE transactions ADD COLUMN transfer_id TEXT")
+        if "uuid" not in columns:
+            self.conn.execute("ALTER TABLE transactions ADD COLUMN uuid TEXT")
+        # Give every existing row a stable identity so the phone companion can
+        # deduplicate what it sends without relying on the autoincrement id.
+        self.conn.execute(
+            "UPDATE transactions SET uuid = lower(hex(randomblob(16))) "
+            "WHERE uuid IS NULL OR uuid = ''"
+        )
+        self.conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tx_uuid "
+            "ON transactions(uuid) WHERE uuid IS NOT NULL"
+        )
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_tx_transfer ON transactions(transfer_id)"
         )
@@ -1672,15 +1701,19 @@ class DataStore:
 
     # ----------------------------------------------------------- transactions
     def add_transaction(
-        self, draft: TransactionDraft, *, apply_rules: bool = True
+        self,
+        draft: TransactionDraft,
+        *,
+        apply_rules: bool = True,
+        sync_uuid: str | None = None,
     ) -> int:
         if apply_rules and not draft.splits:
             draft = self.apply_rules(draft)
         cleared = draft.reconciled or draft.cleared
         cur = self.conn.execute(
             "INSERT INTO transactions(account_id, date, payee, category_id, amount, memo, "
-            "cleared, reconciled, remind, flagged, voided, payment, number, tags, transfer_id) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "cleared, reconciled, remind, flagged, voided, payment, number, tags, transfer_id, uuid) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 draft.account_id,
                 draft.date,
@@ -1701,6 +1734,7 @@ class DataStore:
                     else draft.tags.strip()
                 ),
                 draft.transfer_id,
+                sync_uuid or uuid.uuid4().hex,
             ),
         )
         transaction_id = int(cur.lastrowid)
@@ -1734,8 +1768,8 @@ class DataStore:
         ):
             self.conn.execute(
                 "INSERT INTO transactions(account_id, date, payee, category_id, amount, memo, "
-                "cleared, reconciled, remind, flagged, voided, payment, number, tags, transfer_id) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "cleared, reconciled, remind, flagged, voided, payment, number, tags, transfer_id, uuid) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     account_id,
                     draft.date,
@@ -1752,6 +1786,7 @@ class DataStore:
                     draft.number.strip(),
                     with_transfer_tag(draft.tags.strip()),
                     group,
+                    uuid.uuid4().hex,
                 ),
             )
 
@@ -3222,6 +3257,169 @@ class DataStore:
             ),
         )
         return int(cur.lastrowid)
+
+    # --------------------------------------------------------------- LAN sync
+    def transaction_uuid(self, transaction_id: int) -> str | None:
+        """Return the sync identity stored for a row, if it has one."""
+        row = self.conn.execute(
+            "SELECT uuid FROM transactions WHERE id = ?", (int(transaction_id),)
+        ).fetchone()
+        return None if row is None else row["uuid"]
+
+    def sync_meta(self) -> dict:
+        """Reference data the phone companion needs to label its form.
+
+        Categories are flattened to HomeBank's ``Parent : Child`` form so the
+        phone can send back a single display name.
+        """
+        categories = []
+        for category in self.categories():
+            name = (
+                f"{category.parent_name} : {category.name}"
+                if category.parent_name
+                else category.name
+            )
+            categories.append({"name": name, "kind": category.kind})
+        return {
+            "accounts": [{"name": a.name, "kind": a.kind} for a in self.accounts()],
+            "categories": categories,
+            "payees": self.payees(),
+            "payments": self.payments(),
+            "tags": self.tags(),
+            "statuses": list(_SYNC_STATUS_FLAGS),
+        }
+
+    def ingest_sync_transactions(
+        self, items: list[dict], *, apply_rules: bool = True
+    ) -> list[dict]:
+        """Insert transactions posted by the phone; safe to retry.
+
+        Each item is validated and inserted independently, so one bad row does
+        not block the rest. A repeated ``uuid`` is reported as ``duplicate``
+        without touching the database.
+        """
+        return [
+            self._ingest_sync_transaction(item, apply_rules=apply_rules)
+            for item in items
+        ]
+
+    def _ingest_sync_transaction(
+        self, item: dict, *, apply_rules: bool = True
+    ) -> dict:
+        if not isinstance(item, dict):
+            return {
+                "uuid": None,
+                "status": "error",
+                "id": None,
+                "error": "transaction must be a JSON object",
+            }
+        raw_uuid = item.get("uuid")
+        if not isinstance(raw_uuid, str) or not raw_uuid.strip():
+            return {
+                "uuid": None,
+                "status": "error",
+                "id": None,
+                "error": "uuid is required",
+            }
+        sync_id = raw_uuid.strip()
+        existing = self.conn.execute(
+            "SELECT id FROM transactions WHERE uuid = ?", (sync_id,)
+        ).fetchone()
+        if existing is not None:
+            return {
+                "uuid": sync_id,
+                "status": "duplicate",
+                "id": int(existing["id"]),
+                "error": None,
+            }
+        try:
+            draft = self._sync_draft(item)
+        except ValueError as exc:
+            return {
+                "uuid": sync_id,
+                "status": "error",
+                "id": None,
+                "error": str(exc),
+            }
+        try:
+            transaction_id = self.add_transaction(
+                draft, apply_rules=apply_rules, sync_uuid=sync_id
+            )
+        except sqlite3.IntegrityError:
+            # Two phone batches raced on the same uuid; the other one won.
+            row = self.conn.execute(
+                "SELECT id FROM transactions WHERE uuid = ?", (sync_id,)
+            ).fetchone()
+            if row is not None:
+                return {
+                    "uuid": sync_id,
+                    "status": "duplicate",
+                    "id": int(row["id"]),
+                    "error": None,
+                }
+            raise
+        self._mark_modified(transaction_id)
+        return {
+            "uuid": sync_id,
+            "status": "inserted",
+            "id": transaction_id,
+            "error": None,
+        }
+
+    def _sync_draft(self, item: dict) -> TransactionDraft:
+        """Turn one phone payload into a draft, raising ``ValueError`` on junk."""
+        date_text = str(item.get("date") or "").strip()
+        try:
+            parsed_date = date.fromisoformat(date_text)
+        except ValueError as exc:
+            raise ValueError("date must be YYYY-MM-DD") from exc
+
+        account_name = str(item.get("account") or "").strip()
+        if not account_name:
+            raise ValueError("account is required")
+        account_id = next(
+            (
+                account.id
+                for account in self.accounts()
+                if account.name.casefold() == account_name.casefold()
+            ),
+            None,
+        )
+        if account_id is None:
+            raise ValueError(f"unknown account: {account_name}")
+
+        try:
+            amount = round(float(item.get("amount")), 2)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("amount must be a number") from exc
+        if amount == 0:
+            raise ValueError("amount cannot be zero")
+
+        status = str(item.get("status") or "cleared").strip().lower()
+        flags = _SYNC_STATUS_FLAGS.get(status)
+        if flags is None:
+            raise ValueError(f"unknown status: {status}")
+
+        category_name = str(item.get("category") or "").strip()
+
+        return TransactionDraft(
+            date=parsed_date.isoformat(),
+            account_id=account_id,
+            payee=str(item.get("payee") or "").strip(),
+            category_id=(
+                self.ensure_category(
+                    category_name, "income" if amount > 0 else "expense"
+                )
+                if category_name
+                else None
+            ),
+            amount=amount,
+            memo=str(item.get("memo") or "").strip(),
+            payment=str(item.get("payment") or "").strip(),
+            number=str(item.get("number") or "").strip(),
+            tags=str(item.get("tags") or "").strip(),
+            **flags,
+        )
 
     # ----------------------------------------------------------------- reset
     def reset_demo_data(self) -> None:

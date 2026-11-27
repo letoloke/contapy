@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 from pathlib import Path
 
 from .dates import DATE_FORMATS, DEFAULT_DATE_FORMAT
@@ -103,6 +104,57 @@ def ledger_status_choice(environ: dict[str, str] | None = None) -> str:
 def remember_ledger_status(status: str, environ: dict[str, str] | None = None) -> None:
     data = _read(environ)
     data["ledger_status"] = status.strip()
+    _write(data, environ)
+
+
+DEFAULT_SYNC_PORT = 8787
+
+
+def sync_enabled(environ: dict[str, str] | None = None) -> bool:
+    """Whether the LAN sync endpoint should start with the app."""
+    value = _read(environ).get("sync_enabled")
+    if isinstance(value, bool):
+        return value
+    return True
+
+
+def remember_sync_enabled(enabled: bool, environ: dict[str, str] | None = None) -> None:
+    data = _read(environ)
+    data["sync_enabled"] = bool(enabled)
+    _write(data, environ)
+
+
+def sync_port(environ: dict[str, str] | None = None) -> int:
+    """The port the phone companion connects to, defaulting to 8787."""
+    value = _read(environ).get("sync_port")
+    try:
+        port = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_SYNC_PORT
+    return port if 1 <= port <= 65535 else DEFAULT_SYNC_PORT
+
+
+def remember_sync_port(port: int, environ: dict[str, str] | None = None) -> None:
+    data = _read(environ)
+    data["sync_port"] = int(port)
+    _write(data, environ)
+
+
+def sync_token(environ: dict[str, str] | None = None) -> str:
+    """Return the shared LAN token, generating and saving one on first use."""
+    data = _read(environ)
+    value = data.get("sync_token")
+    if isinstance(value, str) and len(value.strip()) >= 16:
+        return value.strip()
+    token = secrets.token_urlsafe(24)
+    data["sync_token"] = token
+    _write(data, environ)
+    return token
+
+
+def remember_sync_token(token: str, environ: dict[str, str] | None = None) -> None:
+    data = _read(environ)
+    data["sync_token"] = token.strip()
     _write(data, environ)
 
 

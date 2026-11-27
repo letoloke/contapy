@@ -635,6 +635,49 @@ date,account,payee,category,memo,amount,cleared,reconciled,remind,flagged,voided
 
 `date` and `amount` are required; missing accounts/categories are created during import, and category text may be a `parent : child` label, which builds the subcategory automatically. Dates may be `YYYY-MM-DD`, `MM/DD/YYYY` or `DD/MM/YYYY`. Status, payment, number and tags columns are optional for older CSVs. Imports also accept HomeBank-style headers (`Fecha`, `Importe`, `Beneficiario`, `Memo`, `Pago`, `Número`, `Categoría`, `Etiquetas`), and a file without an Account column is imported into the account selected in the import dialog. Header mappings can be edited in the dialog and are remembered per header set.
 
+## LAN sync (Android companion)
+
+LetoBank accepts transactions from a phone on the same network, so the phone app only has to capture and queue. The endpoint starts with the app and prints its address and token:
+
+```
+LAN sync: http://192.168.1.165:8787  token: xeynVrqQfdPeXGgbcBsrahmmNRAw0eJA
+```
+
+The port and token live in `~/.config/contapy/config.json` (`sync_port`, default `8787`, and `sync_token`, generated on first launch). Set `"sync_enabled": false` to turn the endpoint off. It listens only while LetoBank is running, is plain HTTP and is meant for a trusted LAN — there is no TLS and no cloud hop.
+
+Request with `X-Sync-Token: <token>` (or `Authorization: Bearer <token>`):
+
+- `GET /api/ping` — liveness plus version.
+- `GET /api/meta` — accounts, categories (`Parent : Child` labels), payees, payments, tags and the allowed statuses, for populating the phone's form.
+- `POST /api/transactions` — `{"transactions": [...]}` or a bare JSON array; up to 500 rows per request.
+
+```json
+{
+  "transactions": [
+    {
+      "uuid": "0f7c...e91",
+      "date": "2026-11-26",
+      "account": "eCash",
+      "payee": "Coffee shop",
+      "category": "Food : Coffee",
+      "amount": -85.5,
+      "memo": "Morning coffee",
+      "payment": "Cash",
+      "number": "",
+      "tags": "coffee",
+      "status": "cleared"
+    }
+  ]
+}
+```
+
+- `uuid` is required and makes retries safe: re-sending an accepted row returns `duplicate` and changes nothing, so the phone can keep its queue until it gets a 200.
+- `date` is ISO `YYYY-MM-DD`; a negative `amount` is an expense, a positive one is income.
+- `account` must match an existing account name (case-insensitive); unknown categories are created, like CSV import does.
+- `status` is one of `none`, `cleared`, `reconciled`, `remind`, `flagged`, `voided` (default `cleared`). Add `"apply_rules": false` to skip the automatic assignment rules for a batch.
+- The response lists a per-row result (`inserted`, `duplicate` or `error` with a reason) and totals. Rows are independent: one bad row does not block the rest, and `503` means the database was busy — retry later.
+- Accepted rows appear in the dashboard immediately; the desktop store adds a stable `uuid` to every transaction (existing rows are backfilled on open).
+
 ## How it works
 
 ```
@@ -645,6 +688,7 @@ contapy/
   dates.py                  selectable date display formats
   main_window.py            chrome, menus, actions, refresh
   db.py                     SQLite schema, balances, reports, CSV
+  lansync.py                LAN HTTP endpoint for the phone companion
   seed.py                   deterministic reference-shaped demo data
   omarchy.py                reads Omarchy colors.toml, derives semantic tokens
   theme.py                  Qt tokens, stylesheet, palette, font selection
@@ -676,11 +720,11 @@ tests/test_omarchy.py       palette parsing, dark/light tokens and fallbacks
 python3 -m unittest discover -s tests -v
 ```
 
-Three hundred and thirty tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter including the No tags view, bulk ledger editing, ledger undo, sortable ledger columns with selection restoration, number column, remembered column visibility and combined Amount mode, selected sums including voided rows, post-edit reselection with active-filter preservation and account following, reopening a ledger on the last edited transaction, ledger transaction copy/paste, bare-number amount/memo search and amount expressions, memo and amount clipboard, the E edit shortcut, rule search and applying rules to existing ledger transactions with modified-count feedback, saved templates (storage and order, editor round-trips, status assignment and migration, manager search, duplication and deletion, template-picker arrow navigation and Enter-to-apply, applying a chosen template, per-field overwrite/fill-empty, memo append, transfer/split skipping and ledger integration), payee CRUD and reassignment, strict payee/category typing and category autocomplete focus, Markdown activity history, database switching, Ctrl+R reconciliation in the ledger and transaction editor, split transactions (storage, editing, balanced allocation, ledger children, reports, budgets, category lists and undo), income-to-transfer direction and account restoration, uncategorized category highlighting, transfer and voided category labels, permanent transfer tags with migration, responsive account-sidebar columns, exact-amount highlighting for voiding with its Alt+V hint, assignment rules (multiple conditions with ANY/ALL, missing-rule creation from search, memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists with header sorting and editing, voided-row toggle, transaction counts with parent roll-up and split de-duplication, name/count sorting, search, single and multi-category deletion, E confirmation, Enter-to-edit and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, interactive chart drill-down (dashboard slices and months, report category and uncategorized transaction lists with date/account/search filters, non-category row selection, transfer exclusion from reports, Sankey account-to-group flows with Other folding), app-wide internal-window-name watermarks with click-to-copy behavior, the dashboard budgets panel beside the scheduled strip, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the searchable Ctrl+K shortcut list and its window-level action, HomeBank automatic-assignment import (conditions, payees, categories, payments, tags, notes, overwrite flags, duplicates and invalid references), the 70-row HomeBank bank-CSV import, Airbnb transaction conversion with `Monto` reconciliation, custom and remembered header mappings, the Ctrl+I import menu, sortable import previews with bulk row selection/checking, memo-as-payee defaulting off, session-only NEW badges for imported rows and EDIT badges for modified rows, pre-import database backups, reverting the last main-window import (including split and transfer rows), CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, Banamex HTML statement conversion, Mercado Pago PDF statement conversion (including installment memos, opening-balance skipping and year rollover), and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast).
+Three hundred and forty-seven tests cover the reference balances, the rolling donut total and income breakdown, selectable date formats and their default, the saved ledger status filter including the No tags view, bulk ledger editing, ledger undo, sortable ledger columns with selection restoration, number column, remembered column visibility and combined Amount mode, selected sums including voided rows, post-edit reselection with active-filter preservation and account following, reopening a ledger on the last edited transaction, ledger transaction copy/paste, bare-number amount/memo search and amount expressions, memo and amount clipboard, the E edit shortcut, rule search and applying rules to existing ledger transactions with modified-count feedback, saved templates (storage and order, editor round-trips, status assignment and migration, manager search, duplication and deletion, template-picker arrow navigation and Enter-to-apply, applying a chosen template, per-field overwrite/fill-empty, memo append, transfer/split skipping and ledger integration), payee CRUD and reassignment, strict payee/category typing and category autocomplete focus, Markdown activity history, database switching, Ctrl+R reconciliation in the ledger and transaction editor, split transactions (storage, editing, balanced allocation, ledger children, reports, budgets, category lists and undo), income-to-transfer direction and account restoration, uncategorized category highlighting, transfer and voided category labels, permanent transfer tags with migration, responsive account-sidebar columns, exact-amount highlighting for voiding with its Alt+V hint, assignment rules (multiple conditions with ANY/ALL, missing-rule creation from search, memo/payee matching, case sensitivity, regular expressions, amount operators and AND/OR, overwrite versus fill-empty, storage, add and import integration and the rules dialogs), subcategories (typed creation in the editor and imports, storage, reports, budgets, category transaction lists with header sorting and editing, voided-row toggle, transaction counts with parent roll-up and split de-duplication, name/count sorting, search, single and multi-category deletion, E confirmation, Enter-to-edit and the Expense/Income manager tabs), monthly budgets with configurable period start days and six-month budget trends, interactive chart drill-down (dashboard slices and months, report category and uncategorized transaction lists with date/account/search filters, non-category row selection, transfer exclusion from reports, Sankey account-to-group flows with Other folding), app-wide internal-window-name watermarks with click-to-copy behavior, the dashboard budgets panel beside the scheduled strip, posting schedules, running ledger balances, reconciled/cleared transitions, voided transactions, unreconciled-account alerts, the searchable Ctrl+K shortcut list and its window-level action, HomeBank automatic-assignment import (conditions, payees, categories, payments, tags, notes, overwrite flags, duplicates and invalid references), the 70-row HomeBank bank-CSV import, Airbnb transaction conversion with `Monto` reconciliation, custom and remembered header mappings, the Ctrl+I import menu, sortable import previews with bulk row selection/checking, memo-as-payee defaulting off, session-only NEW badges for imported rows and EDIT badges for modified rows, pre-import database backups, reverting the last main-window import (including split and transfer rows), CSV round-trips, duplicate detection, report aggregation, remind flags, demo reset, the Booking/Sabee consolidation, Banamex HTML statement conversion, Mercado Pago PDF statement conversion (including installment memos, opening-balance skipping and year rollover), and Omarchy palette parsing, theme discovery and fallbacks (dark, light, contrast), and the LAN sync endpoint (token auth, idempotent ingest, row-level validation errors and the HTTP round-trip).
 
 ## Notes / limitations
 
-- One currency; amounts display with `$`, and the transaction editor labels the configured code (`MXN` by default). No bank syncing.
+- One currency; amounts display with `$`, and the transaction editor labels the configured code (`MXN` by default). No bank syncing — the LAN companion endpoint only accepts what the phone sends.
 - Schedules are one-off; there is no recurrence engine yet.
 - HomeBank's Budget/Statistics report windows are not implemented yet.
 - Internal transfers are stored as two linked legs; CSV export writes those legs separately, and re-importing does not relink them.

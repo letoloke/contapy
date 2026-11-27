@@ -7,18 +7,33 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, QTimer, Qt
+from PySide6.QtCore import QObject, QPointF, QRectF, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication
 
 from . import __version__
 from .branding import APP_DESCRIPTION, APP_NAME
-from .config import date_format_choice, last_database, theme_choice
+from .config import (
+    date_format_choice,
+    last_database,
+    sync_enabled,
+    sync_port,
+    sync_token,
+    theme_choice,
+)
 from .dates import set_date_format
 from .db import DataStore, default_db_path
+from .lansync import SyncServer
 from .main_window import MainWindow
 from .theme import C, DONUT_COLORS, apply_theme, select_theme
 from .window_watermark import install_window_watermarks
+
+
+class SyncNotifier(QObject):
+    """Moves sync-server callbacks onto the Qt main thread."""
+
+    ingested = Signal(int)
+
 
 
 def build_app_icon() -> QIcon:
@@ -91,6 +106,25 @@ def main(argv: list[str] | None = None) -> int:
     store = DataStore(startup_database(args.db))
     window = MainWindow(store)
     window.setWindowIcon(build_app_icon())
+
+    if not args.screenshot and sync_enabled():
+        notifier = SyncNotifier()
+        notifier.ingested.connect(lambda _count: window.refresh_all())
+        server = SyncServer(
+            store.path,
+            sync_token(),
+            port=sync_port(),
+            on_ingest=notifier.ingested.emit,
+        )
+        if server.start() is None:
+            print(
+                f"LAN sync: port {sync_port()} is already in use; "
+                "sync is off for this run.",
+                file=sys.stderr,
+            )
+        else:
+            print(f"LAN sync: {server.url}  token: {sync_token()}")
+            app.aboutToQuit.connect(server.stop)
 
     if args.screenshot:
         try:
