@@ -14,11 +14,14 @@ from contapy.omarchy import (
     LETOBANK_CLI_COLORS,
     ONE_DARK_COLORS,
     available_themes,
+    base_category_color,
     contrast,
     find_theme_dir,
     load_palette,
     parse_colors,
     read_colors,
+    set_category_color_overrides,
+    theme_category_color,
     theme_path,
     tokens_from_colors,
 )
@@ -222,6 +225,15 @@ class ChartColorTests(unittest.TestCase):
 
     def test_vivid_color_is_preserved(self) -> None:
         self.assertEqual(chart_color("#ff9e64", 0), "#ff9e64")
+
+    def test_user_override_wins_over_the_theme_color(self) -> None:
+        try:
+            base = base_category_color("renta")
+            set_category_color_overrides({"renta": "#123456"})
+            self.assertEqual(theme_category_color("renta"), "#123456")
+            self.assertEqual(base_category_color("renta"), base)
+        finally:
+            set_category_color_overrides({})
 
 
 if __name__ == "__main__":

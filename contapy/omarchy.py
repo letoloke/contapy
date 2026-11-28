@@ -861,12 +861,25 @@ def _is_near_gray(value: str) -> bool:
     return max(red, green, blue) - min(red, green, blue) < 18
 
 
-def theme_category_color(name: str, stored: str | None = None) -> str:
-    """Colour for a category, preferring the active theme for known names.
+_CATEGORY_COLOR_OVERRIDES: dict[str, str] = {}
 
-    Neutral greys (the old default for custom categories) are replaced with
-    a stable colour from the same palette the Sankey diagram uses.
-    """
+
+def set_category_color_overrides(colors: dict[str, str]) -> None:
+    """Set user-chosen category colors (applied before theme colours)."""
+    global _CATEGORY_COLOR_OVERRIDES
+    _CATEGORY_COLOR_OVERRIDES = {
+        name: color
+        for name, color in colors.items()
+        if name and normalize_hex(color)
+    }
+
+
+def category_color_overrides() -> dict[str, str]:
+    return dict(_CATEGORY_COLOR_OVERRIDES)
+
+
+def base_category_color(name: str, stored: str | None = None) -> str:
+    """Theme colour for a category, ignoring user overrides."""
     palette = load_palette()
     known = palette.category_colors.get(name)
     if known:
@@ -882,3 +895,16 @@ def theme_category_color(name: str, stored: str | None = None) -> str:
         )
         return colors[seed % len(colors)]
     return palette.tokens["MUTED"]
+
+
+def theme_category_color(name: str, stored: str | None = None) -> str:
+    """Colour for a category, preferring the active theme for known names.
+
+    User overrides win first. Neutral greys (the old default for custom
+    categories) are replaced with a stable colour from the same palette the
+    Sankey diagram uses.
+    """
+    override = _CATEGORY_COLOR_OVERRIDES.get(name)
+    if override:
+        return override
+    return base_category_color(name, stored)

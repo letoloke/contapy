@@ -11,6 +11,7 @@ from contapy.config import (
     DEFAULT_FRAME_COLORS,
     DEFAULT_LEDGER_STATUS,
     FRAME_PANEL_KEYS,
+    category_color_overrides,
     chart_style_choice,
     config_path,
     date_format_choice,
@@ -20,6 +21,7 @@ from contapy.config import (
     frame_color_settings,
     last_database,
     ledger_status_choice,
+    remember_category_colors,
     remember_chart_style,
     remember_database,
     remember_date_format,
@@ -159,6 +161,17 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(chart_style_choice(self.env), style)
         remember_chart_style("treemap", self.env)
         self.assertEqual(chart_style_choice(self.env), "donut")
+
+    def test_category_color_overrides_round_trip(self) -> None:
+        self.assertEqual(category_color_overrides(self.env), {})
+        remember_category_colors(
+            {"renta": "#ABCDEF", "bad": "not-a-color"}, self.env
+        )
+        self.assertEqual(
+            category_color_overrides(self.env), {"renta": "#abcdef"}
+        )
+        remember_category_colors({}, self.env)
+        self.assertEqual(category_color_overrides(self.env), {})
 
     def test_corrupt_config_returns_none(self) -> None:
         config = config_path(self.env)

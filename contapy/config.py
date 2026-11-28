@@ -357,6 +357,40 @@ def remember_chart_style(
     _write(data, environ)
 
 
+# ------------------------------------------------------------ category colors
+def category_color_overrides(
+    environ: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """User-chosen colors for named categories."""
+    raw = _read(environ).get("category_colors")
+    colors: dict[str, str] = {}
+    if isinstance(raw, dict):
+        for name, value in raw.items():
+            if isinstance(name, str) and name.strip():
+                color = _valid_color(value)
+                if color:
+                    colors[name.strip()] = color
+    return colors
+
+
+def remember_category_colors(
+    colors: dict[str, str], environ: dict[str, str] | None = None
+) -> None:
+    """Persist user-chosen category colors (empty clears the overrides)."""
+    stored: dict[str, str] = {}
+    for name, value in (colors or {}).items():
+        if isinstance(name, str) and name.strip():
+            color = _valid_color(value)
+            if color:
+                stored[name.strip()] = color
+    data = _read(environ)
+    if stored:
+        data["category_colors"] = stored
+    else:
+        data.pop("category_colors", None)
+    _write(data, environ)
+
+
 def _write(data: dict, environ: dict[str, str] | None = None) -> None:
     config = config_path(environ)
     config.parent.mkdir(parents=True, exist_ok=True)

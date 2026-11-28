@@ -68,6 +68,21 @@ class StoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.category_slices(date.today(), date.today(), "transfer")
 
+    def test_category_usage_covers_every_top_level_category(self) -> None:
+        usage = {
+            name: (amount, uses)
+            for name, _color, amount, uses in self.store.category_usage()
+        }
+        top_level = {
+            category.name
+            for category in self.store.categories()
+            if category.parent_id is None
+        }
+        self.assertEqual(set(usage), top_level)
+        amount, uses = usage["renta"]
+        self.assertGreater(amount, 0)
+        self.assertGreater(uses, 0)
+
     def test_schedules_are_not_in_balances_until_posted(self) -> None:
         account = self.account("eCash")
         before = self.store.balances()[account.id]

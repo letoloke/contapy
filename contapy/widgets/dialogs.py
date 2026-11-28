@@ -67,11 +67,13 @@ from ..branding import APP_NAME
 from ..config import (
     DEFAULT_FRAME_COLORS,
     FRAME_PANEL_KEYS,
+    category_color_overrides,
     date_format_choice,
     font_family_choice,
     font_weights_choice,
     frame_color_settings,
     ledger_status_choice,
+    remember_category_colors,
     remember_date_format,
     remember_font_family,
     remember_font_weights,
@@ -80,6 +82,7 @@ from ..config import (
     remember_theme,
     theme_choice,
 )
+from ..omarchy import base_category_color
 from ..dates import DATE_FORMATS, qt_date_format
 from ..db import DataStore, with_transfer_tag
 from ..models import (
@@ -2246,13 +2249,18 @@ class ColorChoiceButton(QPushButton):
 class VisualsDialog(QDialog):
     """Choose the interface typeface, weights and panel frame colors."""
 
-    def __init__(self, parent: QWidget | None = None):
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        store: DataStore | None = None,
+    ):
         super().__init__(parent)
         self.changed = False
+        self.store = store
         self.setWindowTitle("Visuals")
         self.setModal(True)
         self.setMinimumSize(560, 480)
-        self.resize(660, 760)
+        self.resize(660, 840)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(22, 20, 22, 18)
@@ -2278,8 +2286,9 @@ class VisualsDialog(QDialog):
         layout.addWidget(heading)
 
         intro = QLabel(
-            "Choose a typeface, the weight used by each role, and the "
-            "color of every panel frame. Changes apply immediately."
+            "Choose a typeface, the weight used by each role, the color of "
+            "every panel frame and the color of each category. Changes apply "
+            "immediately."
         )
         intro.setWordWrap(True)
         intro.setFont(font(13, 400))
@@ -2383,6 +2392,68 @@ class VisualsDialog(QDialog):
         self.frame_mode_combo.currentIndexChanged.connect(
             self.frame_stack.setCurrentIndex
         )
+
+        categories_heading = QLabel("CATEGORY COLORS")
+        categories_heading.setFont(font(11, 600))
+        categories_heading.setStyleSheet(
+            f"color:{C.TITLE}; letter-spacing:1px;"
+        )
+        layout.addWidget(categories_heading)
+
+        self._saved_category_colors = category_color_overrides()
+        usage = store.category_usage() if store is not None else []
+        self._category_usage = usage
+        self._category_defaults = {
+            name: base_category_color(name, stored)
+            for name, stored, _amount, _uses in usage
+        }
+        self._category_colors = {
+            name: self._saved_category_colors.get(name, default)
+            for name, default in self._category_defaults.items()
+        }
+
+        sort_row = QHBoxLayout()
+        sort_row.setSpacing(10)
+        sort_label = QLabel("Sort by")
+        sort_label.setFont(font(13, 400))
+        sort_label.setStyleSheet(f"color:{C.TEXT_SOFT};")
+        sort_label.setFixedWidth(110)
+        sort_row.addWidget(sort_label)
+        self.category_sort_combo = QComboBox()
+        self.category_sort_combo.setFont(font(13, 400))
+        self.category_sort_combo.addItem("Amount (high → low)", "amount")
+        self.category_sort_combo.addItem("Uses (high → low)", "uses")
+        self.category_sort_combo.addItem("Name (A → Z)", "name")
+        self.category_sort_combo.currentIndexChanged.connect(
+            self._rebuild_category_table
+        )
+        sort_row.addWidget(self.category_sort_combo, 1)
+        layout.addLayout(sort_row)
+
+        self.category_table = QTableWidget()
+        self.category_table.setColumnCount(4)
+        self.category_table.setHorizontalHeaderLabels(
+            ["Color", "Category", "Amount", "Uses"]
+        )
+        self.category_table.verticalHeader().setVisible(False)
+        self.category_table.verticalHeader().setDefaultSectionSize(30)
+        self.category_table.setShowGrid(False)
+        self.category_table.setSelectionMode(
+            QAbstractItemView.SelectionMode.NoSelection
+        )
+        self.category_table.setEditTriggers(
+            QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+        self.category_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.category_table.setMinimumHeight(230)
+        header = self.category_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self.category_table.setColumnWidth(0, 128)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        layout.addWidget(self.category_table)
+        self._rebuild_category_table()
 
         preview_label = QLabel("Preview")
         preview_label.setFont(font(11, 600))
@@ -2501,6 +2572,45 @@ class VisualsDialog(QDialog):
             self.frame_color_buttons[key] = button
         return page
 
+    def _rebuild_category_table(self, *_args) -> None:
+        rows = list(self._category_usage)
+        mode = self.category_sort_combo.currentData()
+        if mode == "uses":
+            rows.sort(key=lambda row: (-row[3], -row[2], row[0].casefold()))
+        elif mode == "name":
+            rows.sort(key=lambda row: row[0].casefold())
+        else:
+            rows.sort(key=lambda row: (-row[2], -row[3], row[0].casefold()))
+
+        self.category_table.setRowCount(0)
+        self.category_table.setRowCount(len(rows))
+        self.category_color_buttons: dict[str, ColorChoiceButton] = {}
+        for index, (name, stored, amount, uses) in enumerate(rows):
+            color = self._category_colors.get(
+                name, base_category_color(name, stored)
+            )
+            button = ColorChoiceButton(color)
+            button.setFont(font(11, 400))
+            button.setFixedWidth(114)
+            button.colorChanged.connect(
+                lambda chosen, key=name: self._category_colors.__setitem__(
+                    key, chosen
+                )
+            )
+            self.category_table.setCellWidget(index, 0, button)
+            self.category_color_buttons[name] = button
+
+            for column, text, align in (
+                (1, name, Qt.AlignmentFlag.AlignLeft),
+                (2, money(amount), Qt.AlignmentFlag.AlignRight),
+                (3, str(uses), Qt.AlignmentFlag.AlignRight),
+            ):
+                item = QTableWidgetItem(text)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                item.setTextAlignment(align | Qt.AlignmentFlag.AlignVCenter)
+                item.setFont(font(12, 400))
+                self.category_table.setItem(index, column, item)
+
     @staticmethod
     def _normalized_frame_colors(settings: dict) -> dict:
         panels = {key: DEFAULT_FRAME_COLORS[key] for key in FRAME_PANEL_KEYS}
@@ -2543,10 +2653,20 @@ class VisualsDialog(QDialog):
                 "panels": panels,
             }
         )
+        overrides = dict(self._saved_category_colors)
+        for name, button in self.category_color_buttons.items():
+            self._category_colors[name] = button.color()
+        for name, default in self._category_defaults.items():
+            chosen = self._category_colors.get(name, default)
+            if chosen == default:
+                overrides.pop(name, None)
+            else:
+                overrides[name] = chosen
         if (
             family != font_family_choice()
             or weights != font_weights_choice()
             or frames != self._initial_frame_colors
+            or overrides != self._saved_category_colors
         ):
             remember_font_family(family)
             remember_font_weights(weights)
@@ -2557,6 +2677,7 @@ class VisualsDialog(QDialog):
                     "panels": panels,
                 }
             )
+            remember_category_colors(overrides)
             self.changed = True
         super().accept()
 

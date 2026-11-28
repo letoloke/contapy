@@ -31,6 +31,7 @@ from .airbnb import transform as transform_airbnb
 from .banamex import transform as transform_banamex
 from .booking import transform as transform_booking
 from .config import (
+    category_color_overrides,
     chart_style_choice,
     date_format_choice,
     font_family_choice,
@@ -43,6 +44,7 @@ from .config import (
     sync_token,
     theme_choice,
 )
+from .omarchy import set_category_color_overrides
 from .dates import set_date_format
 from .db import DataStore
 from .lansync import lan_ip
@@ -954,7 +956,7 @@ class MainWindow(QMainWindow):
             self._rebuild_for_theme()
 
     def open_visuals(self) -> None:
-        dialog = VisualsDialog(self)
+        dialog = VisualsDialog(self, self.store)
         dialog.exec()
         if not dialog.changed:
             return
@@ -973,6 +975,7 @@ class MainWindow(QMainWindow):
             f"{family} · {detail} · frames: {frame_color_settings()['mode']}",
         )
         set_font_override(font_family_choice() or None, weights)
+        set_category_color_overrides(category_color_overrides())
         self._rebuild_for_theme()
 
     def _rebuild_for_theme(self) -> None:

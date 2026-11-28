@@ -976,6 +976,42 @@ class DataStore:
             result[category.id] = (direct_count, total)
         return result
 
+    def category_usage(self) -> list[tuple[str, str, float, int]]:
+        """Amount and transaction count per top-level category.
+
+        Returns ``(name, stored_color, total_amount, uses)`` for every
+        top-level category, including ones with no transactions.
+        """
+        amounts = {
+            int(row["top_id"]): float(row["total_amount"])
+            for row in self._rows(
+                """
+                SELECT COALESCE(p.id, c.id) AS top_id,
+                       SUM(ABS(l.amount)) AS total_amount
+                FROM transaction_lines l
+                JOIN categories c ON c.id = l.category_id
+                LEFT JOIN categories p ON p.id = c.parent_id
+                WHERE l.voided = 0
+                GROUP BY top_id
+                """
+            )
+        }
+        counts = self.category_transaction_counts()
+        usage: list[tuple[str, str, float, int]] = []
+        for category in self.categories():
+            if category.parent_id is not None:
+                continue
+            _direct, total = counts.get(category.id, (0, 0))
+            usage.append(
+                (
+                    category.name,
+                    category.color,
+                    amounts.get(category.id, 0.0),
+                    total,
+                )
+            )
+        return usage
+
     def _next_category_order(self) -> int:
         row = self.conn.execute(
             "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM categories"
