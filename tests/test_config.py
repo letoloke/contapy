@@ -12,12 +12,14 @@ from contapy.config import (
     date_format_choice,
     font_family_choice,
     font_weight_choice,
+    font_weights_choice,
     last_database,
     ledger_status_choice,
     remember_database,
     remember_date_format,
     remember_font_family,
     remember_font_weight,
+    remember_font_weights,
     remember_ledger_status,
     remember_theme,
     theme_choice,
@@ -79,6 +81,28 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(font_weight_choice(self.env), 0)
         config.write_text('{"font_weight": "heavy"}', encoding="utf-8")
         self.assertEqual(font_weight_choice(self.env), 0)
+
+    def test_font_weights_are_stored_per_role(self) -> None:
+        remember_font_weights(
+            {"body": 300, "heading": 500, "emphasis": 700}, self.env
+        )
+        self.assertEqual(
+            font_weights_choice(self.env),
+            {"body": 300, "heading": 500, "emphasis": 700},
+        )
+        self.assertEqual(font_weight_choice(self.env, "heading"), 500)
+        remember_font_weight(400, self.env, role="heading")
+        self.assertEqual(font_weight_choice(self.env, "heading"), 400)
+        self.assertEqual(font_weight_choice(self.env, "body"), 300)
+
+    def test_legacy_single_weight_applies_to_every_role(self) -> None:
+        config = config_path(self.env)
+        config.parent.mkdir(parents=True)
+        config.write_text('{"font_weight": 300}', encoding="utf-8")
+        self.assertEqual(
+            font_weights_choice(self.env),
+            {"body": 300, "heading": 300, "emphasis": 300},
+        )
 
     def test_corrupt_config_returns_none(self) -> None:
         config = config_path(self.env)

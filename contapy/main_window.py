@@ -33,7 +33,7 @@ from .booking import transform as transform_booking
 from .config import (
     date_format_choice,
     font_family_choice,
-    font_weight_choice,
+    font_weights_choice,
     remember_database,
     sync_port,
     sync_token,
@@ -940,11 +940,17 @@ class MainWindow(QMainWindow):
         if not dialog.changed:
             return
         family = font_family_choice() or "theme default"
-        weight = font_weight_choice() or "theme default"
-        self._record_activity("Changed font", f"{family} · {weight}")
-        set_font_override(
-            font_family_choice() or None, font_weight_choice() or None
+        weights = font_weights_choice()
+        detail = " / ".join(
+            str(weights.get(role, default))
+            for role, default in (
+                ("body", 300),
+                ("heading", 500),
+                ("emphasis", 700),
+            )
         )
+        self._record_activity("Changed font", f"{family} · {detail}")
+        set_font_override(font_family_choice() or None, weights)
         self._rebuild_for_theme()
 
     def _rebuild_for_theme(self) -> None:

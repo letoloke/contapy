@@ -63,11 +63,11 @@ from ..branding import APP_NAME
 from ..config import (
     date_format_choice,
     font_family_choice,
-    font_weight_choice,
+    font_weights_choice,
     ledger_status_choice,
     remember_date_format,
     remember_font_family,
-    remember_font_weight,
+    remember_font_weights,
     remember_ledger_status,
     remember_theme,
     theme_choice,
@@ -83,7 +83,15 @@ from ..models import (
     ordered_categories,
 )
 from ..money import friendly_date, money
-from ..theme import C, CLEARED, font, font_family, radius, theme_options
+from ..theme import (
+    C,
+    CLEARED,
+    font,
+    font_family,
+    radius,
+    role_weight,
+    theme_options,
+)
 from .icons import (
     IconButton,
     draw_bell,
@@ -2153,27 +2161,46 @@ WEIGHT_OPTIONS: list[tuple[str, int]] = [
 ]
 
 
+FONT_ROLE_ROWS: tuple[tuple[str, str, str], ...] = (
+    (
+        "body",
+        "Body text",
+        "Account rows, values, table cells, menus and most labels",
+    ),
+    (
+        "heading",
+        "Headings",
+        "Column headers, chart titles, group names, dialog headings and buttons",
+    ),
+    (
+        "emphasis",
+        "Emphasis",
+        "Grand totals, primary buttons and key figures",
+    ),
+)
+
+
 class VisualsDialog(QDialog):
-    """Choose the interface typeface and weight."""
+    """Choose the interface typeface and the weight used for each role."""
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.changed = False
         self.setWindowTitle("Visuals")
         self.setModal(True)
-        self.setMinimumWidth(560)
+        self.setMinimumWidth(620)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(22, 20, 22, 18)
-        root.setSpacing(14)
+        root.setSpacing(12)
 
         heading = QLabel("Visuals")
         heading.setFont(font(18, 600))
         root.addWidget(heading)
 
         intro = QLabel(
-            "Choose the typeface and weight used across the interface. "
-            "Changes apply to every screen and are remembered."
+            "Choose a typeface and the weight used by each part of the "
+            "interface. Changes apply to every screen and are remembered."
         )
         intro.setWordWrap(True)
         intro.setFont(font(13, 400))
@@ -2206,44 +2233,73 @@ class VisualsDialog(QDialog):
         family_row.addWidget(self.family_combo, 1)
         root.addLayout(family_row)
 
-        weight_row = QHBoxLayout()
-        weight_row.setSpacing(10)
-        weight_label = QLabel("Weight")
-        weight_label.setFont(font(13, 400))
-        weight_label.setStyleSheet(f"color:{C.TEXT_SOFT};")
-        weight_label.setFixedWidth(110)
-        weight_row.addWidget(weight_label)
-        self.weight_combo = QComboBox()
-        self.weight_combo.setFont(font(13, 400))
-        for label, value in WEIGHT_OPTIONS:
-            self.weight_combo.addItem(label, value)
-        current_weight = font_weight_choice() or int(font(14).weight())
-        weight_index = self.weight_combo.findData(current_weight)
-        if weight_index >= 0:
-            self.weight_combo.setCurrentIndex(weight_index)
-        weight_row.addWidget(self.weight_combo, 1)
-        root.addLayout(weight_row)
+        scale_heading = QLabel("TYPE SCALE")
+        scale_heading.setFont(font(11, 600))
+        scale_heading.setStyleSheet(f"color:{C.TITLE}; letter-spacing:1px;")
+        root.addWidget(scale_heading)
+
+        saved_weights = font_weights_choice()
+        self.weight_combos: dict[str, QComboBox] = {}
+        for role, label, description in FONT_ROLE_ROWS:
+            row = QHBoxLayout()
+            row.setSpacing(10)
+            name = QLabel(label)
+            name.setFont(font(13, 400))
+            name.setStyleSheet(f"color:{C.TEXT_SOFT};")
+            name.setFixedWidth(110)
+            row.addWidget(name)
+
+            combo = QComboBox()
+            combo.setFont(font(13, 400))
+            for option_label, value in WEIGHT_OPTIONS:
+                combo.addItem(option_label, value)
+            current = saved_weights.get(role) or role_weight(role)
+            index = combo.findData(current)
+            if index >= 0:
+                combo.setCurrentIndex(index)
+            row.addWidget(combo, 1)
+            root.addLayout(row)
+
+            hint = QLabel(description)
+            hint.setWordWrap(True)
+            hint.setFont(font(11, 400))
+            hint.setStyleSheet(f"color:{C.MUTED_DARK};")
+            hint.setContentsMargins(120, 0, 0, 4)
+            root.addWidget(hint)
+
+            self.weight_combos[role] = combo
 
         preview_label = QLabel("Preview")
         preview_label.setFont(font(11, 600))
         preview_label.setStyleSheet(f"color:{C.MUTED_DARK};")
         root.addWidget(preview_label)
 
-        self.preview = QLabel(
-            "The quick brown fox jumps over the lazy dog\n"
-            "0123456789  ·  $ 12,345.67  ·  Budgeted   Spent   Remaining"
+        preview_box = QFrame()
+        preview_box.setStyleSheet(
+            f"background:{C.INPUT_BG}; border:1px solid {C.INPUT_BORDER};"
+            f"border-radius:{radius(4)};"
         )
-        self.preview.setWordWrap(True)
-        self.preview.setMinimumHeight(96)
-        self.preview.setAlignment(
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        preview_layout = QVBoxLayout(preview_box)
+        preview_layout.setContentsMargins(12, 10, 12, 10)
+        preview_layout.setSpacing(6)
+        self.preview_body = QLabel(
+            "Account row · MercadoRM · $ 1,234.56 · Table cell"
         )
-        self.preview.setStyleSheet(
-            f"background:{C.INPUT_BG}; color:{C.TEXT};"
-            f"border:1px solid {C.INPUT_BORDER};"
-            f"border-radius:{radius(4)}; padding:12px;"
+        self.preview_heading = QLabel(
+            "Column header · Chart title · Dialog heading"
         )
-        root.addWidget(self.preview)
+        self.preview_emphasis = QLabel(
+            "GRAND TOTAL · $ 20,289.30 · Primary button"
+        )
+        for preview in (
+            self.preview_body,
+            self.preview_heading,
+            self.preview_emphasis,
+        ):
+            preview.setWordWrap(True)
+            preview.setStyleSheet(f"color:{C.TEXT};")
+            preview_layout.addWidget(preview)
+        root.addWidget(preview_box)
 
         buttons = QHBoxLayout()
         buttons.addStretch(1)
@@ -2261,23 +2317,32 @@ class VisualsDialog(QDialog):
         root.addLayout(buttons)
 
         self.family_combo.currentTextChanged.connect(self._update_preview)
-        self.weight_combo.currentIndexChanged.connect(self._update_preview)
+        for combo in self.weight_combos.values():
+            combo.currentIndexChanged.connect(self._update_preview)
         self._update_preview()
 
     def _update_preview(self, *_args) -> None:
         family = self.family_combo.currentText().strip() or font_family()
-        weight = int(self.weight_combo.currentData() or 400)
-        preview = QFont(family)
-        preview.setPixelSize(18)
-        preview.setWeight(QFont.Weight(weight))
-        self.preview.setFont(preview)
+        for role, preview in (
+            ("body", self.preview_body),
+            ("heading", self.preview_heading),
+            ("emphasis", self.preview_emphasis),
+        ):
+            weight = int(self.weight_combos[role].currentData() or 400)
+            chosen = QFont(family)
+            chosen.setPixelSize(15 if role == "body" else 16)
+            chosen.setWeight(QFont.Weight(weight))
+            preview.setFont(chosen)
 
     def accept(self) -> None:
         family = self.family_combo.currentText().strip()
-        weight = int(self.weight_combo.currentData() or 0)
-        if family != font_family_choice() or weight != font_weight_choice():
+        weights = {
+            role: int(combo.currentData() or 0)
+            for role, combo in self.weight_combos.items()
+        }
+        if family != font_family_choice() or weights != font_weights_choice():
             remember_font_family(family)
-            remember_font_weight(weight)
+            remember_font_weights(weights)
             self.changed = True
         super().accept()
 

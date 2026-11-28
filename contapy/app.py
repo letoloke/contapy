@@ -16,7 +16,7 @@ from .branding import APP_DESCRIPTION, APP_NAME
 from .config import (
     date_format_choice,
     font_family_choice,
-    font_weight_choice,
+    font_weights_choice,
     last_database,
     sync_enabled,
     sync_port,
@@ -107,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationVersion(__version__)
     set_date_format(date_format_choice())
     select_theme(theme_choice())
-    set_font_override(font_family_choice(), font_weight_choice())
+    set_font_override(font_family_choice(), font_weights_choice())
     apply_theme(app)
     app.setWindowIcon(build_app_icon())
     install_window_watermarks(app)

@@ -98,26 +98,76 @@ def remember_font_family(
     _write(data, environ)
 
 
-def font_weight_choice(environ: dict[str, str] | None = None) -> int:
-    """The saved UI font weight, or 0 for the theme default."""
-    value = _read(environ).get("font_weight")
+FONT_WEIGHT_ROLES = ("body", "heading", "emphasis")
+
+
+def font_weights_choice(
+    environ: dict[str, str] | None = None,
+) -> dict[str, int]:
+    """Per-role UI font weights. Missing roles fall back to the theme."""
+    data = _read(environ)
+    weights: dict[str, int] = {}
+    stored = data.get("font_weights")
+    if isinstance(stored, dict):
+        for role in FONT_WEIGHT_ROLES:
+            try:
+                value = int(stored.get(role, 0))
+            except (TypeError, ValueError):
+                continue
+            if 100 <= value <= 900:
+                weights[role] = value
+    # Older configs stored one weight for every role.
     try:
-        weight = int(value)
+        legacy = int(data.get("font_weight"))
     except (TypeError, ValueError):
-        return 0
-    return weight if 100 <= weight <= 900 else 0
+        legacy = 0
+    if 100 <= legacy <= 900:
+        for role in FONT_WEIGHT_ROLES:
+            weights.setdefault(role, legacy)
+    return weights
+
+
+def font_weight_choice(
+    environ: dict[str, str] | None = None, role: str = "body"
+) -> int:
+    """The saved weight for one role, or 0 for the theme default."""
+    return font_weights_choice(environ).get(role, 0)
+
+
+def remember_font_weights(
+    weights: dict[str, int], environ: dict[str, str] | None = None
+) -> None:
+    """Persist the per-role UI font weights."""
+    data = _read(environ)
+    stored: dict[str, int] = {}
+    for role in FONT_WEIGHT_ROLES:
+        try:
+            value = int(weights.get(role, 0))
+        except (TypeError, ValueError):
+            continue
+        if 100 <= value <= 900:
+            stored[role] = value
+    if stored:
+        data["font_weights"] = stored
+    else:
+        data.pop("font_weights", None)
+    data.pop("font_weight", None)
+    _write(data, environ)
 
 
 def remember_font_weight(
-    weight: int, environ: dict[str, str] | None = None
+    weight: int,
+    environ: dict[str, str] | None = None,
+    role: str = "body",
 ) -> None:
-    """Persist the selected UI font weight (0 clears the override)."""
-    data = _read(environ)
-    if weight:
-        data["font_weight"] = int(weight)
+    """Persist the weight for one role (0 clears it)."""
+    weights = font_weights_choice(environ)
+    value = int(weight or 0)
+    if 100 <= value <= 900:
+        weights[role] = value
     else:
-        data.pop("font_weight", None)
-    _write(data, environ)
+        weights.pop(role, None)
+    remember_font_weights(weights, environ)
 
 
 def date_format_choice(environ: dict[str, str] | None = None) -> str:

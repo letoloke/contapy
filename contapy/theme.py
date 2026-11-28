@@ -82,7 +82,10 @@ def palette_mode() -> str:
 _FONT_FAMILY: str | None = None
 _EMOJI_FAMILY: str | None = None
 _FONT_OVERRIDE_FAMILY: str | None = None
-_FONT_OVERRIDE_WEIGHT: int | None = None
+_FONT_OVERRIDE_WEIGHTS: dict[str, int] = {}
+
+FONT_ROLES = ("body", "heading", "emphasis")
+TERMINAL_ROLE_WEIGHTS = {"body": 300, "heading": 500, "emphasis": 700}
 
 
 def terminal_theme() -> bool:
@@ -150,6 +153,24 @@ def emoji_family() -> str:
     return _EMOJI_FAMILY
 
 
+def _role_for_weight(weight: int) -> str:
+    """Map a semantic weight to the UI role it belongs to."""
+    if weight >= 700:
+        return "emphasis"
+    if weight >= 500:
+        return "heading"
+    return "body"
+
+
+def role_weight(role: str) -> int:
+    """The effective weight for a role: override first, then theme default."""
+    if role in _FONT_OVERRIDE_WEIGHTS:
+        return _FONT_OVERRIDE_WEIGHTS[role]
+    if terminal_theme():
+        return TERMINAL_ROLE_WEIGHTS.get(role, 400)
+    return {"body": 400, "heading": 600, "emphasis": 700}.get(role, 400)
+
+
 def font(size: int = 14, weight: int = 400, family: str | None = None) -> QFont:
     f = QFont(family or font_family())
     f.setPixelSize(size)
@@ -159,12 +180,14 @@ def font(size: int = 14, weight: int = 400, family: str | None = None) -> QFont:
         600: QFont.Weight.DemiBold,
         700: QFont.Weight.Bold,
     }
-    if _FONT_OVERRIDE_WEIGHT:
-        f.setWeight(QFont.Weight(_FONT_OVERRIDE_WEIGHT))
+    if _FONT_OVERRIDE_WEIGHTS:
+        role = _role_for_weight(weight)
+        f.setWeight(QFont.Weight(_FONT_OVERRIDE_WEIGHTS.get(role, weight)))
     elif terminal_theme():
-        # The terminal look is intentionally light: every text role uses
-        # JetBrains Mono ExtraLight. Size and colour still carry the hierarchy.
-        f.setWeight(QFont.Weight.ExtraLight)
+        # The terminal look is intentionally light: body text is Light,
+        # headings Medium and emphasis Bold. Size and colour still help.
+        role = _role_for_weight(weight)
+        f.setWeight(QFont.Weight(TERMINAL_ROLE_WEIGHTS[role]))
     else:
         f.setWeight(weights.get(weight, QFont.Weight.Normal))
     # Line up digits in tables where the platform font supports it.
@@ -175,17 +198,36 @@ def font(size: int = 14, weight: int = 400, family: str | None = None) -> QFont:
     return f
 
 
-def set_font_override(family: str | None, weight: int | None) -> None:
-    """Pin the UI to a user-chosen family and weight (None = theme default)."""
-    global _FONT_FAMILY, _FONT_OVERRIDE_FAMILY, _FONT_OVERRIDE_WEIGHT
+def set_font_override(
+    family: str | None,
+    weights: dict[str, int] | int | None = None,
+) -> None:
+    """Pin the UI to a chosen family and per-role weights.
+
+    ``None`` restores the theme defaults. An ``int`` applies one weight to
+    every role (kept for older callers).
+    """
+    global _FONT_FAMILY, _FONT_OVERRIDE_FAMILY, _FONT_OVERRIDE_WEIGHTS
     _FONT_OVERRIDE_FAMILY = (family or "").strip() or None
-    _FONT_OVERRIDE_WEIGHT = int(weight) if weight else None
+    cleaned: dict[str, int] = {}
+    if isinstance(weights, int):
+        if 100 <= weights <= 900:
+            cleaned = {role: weights for role in FONT_ROLES}
+    elif isinstance(weights, dict):
+        for role in FONT_ROLES:
+            try:
+                value = int(weights.get(role, 0))
+            except (TypeError, ValueError):
+                continue
+            if 100 <= value <= 900:
+                cleaned[role] = value
+    _FONT_OVERRIDE_WEIGHTS = cleaned
     _FONT_FAMILY = None
 
 
-def font_override() -> tuple[str | None, int | None]:
+def font_override() -> tuple[str | None, dict[str, int]]:
     """The active font override, if the user chose one."""
-    return _FONT_OVERRIDE_FAMILY, _FONT_OVERRIDE_WEIGHT
+    return _FONT_OVERRIDE_FAMILY, dict(_FONT_OVERRIDE_WEIGHTS)
 
 
 def qcolor(token: str, alpha: int | None = None) -> QColor:
@@ -539,13 +581,13 @@ def stylesheet() -> str:
         color: {C.ACCENT};
         border-right: 1px solid {C.BORDER_SOFT};
         border-bottom: 1px solid {C.BORDER};
-        font-weight: {_FONT_OVERRIDE_WEIGHT or 200};
+        font-weight: {_FONT_OVERRIDE_WEIGHTS.get("heading", 500)};
     }}
     QPushButton, QPushButton[role="action"] {{
-        font-weight: {_FONT_OVERRIDE_WEIGHT or 200};
+        font-weight: {_FONT_OVERRIDE_WEIGHTS.get("heading", 500)};
     }}
     QPushButton[role="primary"] {{
-        font-weight: {_FONT_OVERRIDE_WEIGHT or 200};
+        font-weight: {_FONT_OVERRIDE_WEIGHTS.get("emphasis", 700)};
     }}
     QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
         border-radius: 0px;
