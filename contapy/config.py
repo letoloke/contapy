@@ -334,6 +334,29 @@ def resolved_frame_colors(
     return dict(DEFAULT_FRAME_COLORS)
 
 
+# ---------------------------------------------------------------- chart style
+CHART_STYLES = ("donut", "pie", "bars")
+
+
+def chart_style_choice(environ: dict[str, str] | None = None) -> str:
+    """The saved Top Spending chart style."""
+    value = _read(environ).get("chart_style")
+    if isinstance(value, str) and value.strip().lower() in CHART_STYLES:
+        return value.strip().lower()
+    return "donut"
+
+
+def remember_chart_style(
+    style: str, environ: dict[str, str] | None = None
+) -> None:
+    value = style.strip().lower()
+    if value not in CHART_STYLES:
+        value = "donut"
+    data = _read(environ)
+    data["chart_style"] = value
+    _write(data, environ)
+
+
 def _write(data: dict, environ: dict[str, str] | None = None) -> None:
     config = config_path(environ)
     config.parent.mkdir(parents=True, exist_ok=True)

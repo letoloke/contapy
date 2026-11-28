@@ -31,10 +31,12 @@ from .airbnb import transform as transform_airbnb
 from .banamex import transform as transform_banamex
 from .booking import transform as transform_booking
 from .config import (
+    chart_style_choice,
     date_format_choice,
     font_family_choice,
     font_weights_choice,
     frame_color_settings,
+    remember_chart_style,
     remember_database,
     resolved_frame_colors,
     sync_port,
@@ -322,6 +324,11 @@ class MainWindow(QMainWindow):
             self.donut,
             modes=["Expenses", "Income"],
             current_mode="Expenses",
+            styles=["Donut", "Pie", "Bars"],
+            current_style=chart_style_choice().capitalize(),
+        )
+        self.donut_card.styleChanged.connect(
+            lambda style: remember_chart_style(style.lower())
         )
         self.bars = SpendingRevenueChart()
         self.bar_card = ChartCard(

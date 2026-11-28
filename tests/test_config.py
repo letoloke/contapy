@@ -7,9 +7,11 @@ import unittest
 from pathlib import Path
 
 from contapy.config import (
+    CHART_STYLES,
     DEFAULT_FRAME_COLORS,
     DEFAULT_LEDGER_STATUS,
     FRAME_PANEL_KEYS,
+    chart_style_choice,
     config_path,
     date_format_choice,
     font_family_choice,
@@ -18,6 +20,7 @@ from contapy.config import (
     frame_color_settings,
     last_database,
     ledger_status_choice,
+    remember_chart_style,
     remember_database,
     remember_date_format,
     remember_font_family,
@@ -148,6 +151,14 @@ class ConfigTests(unittest.TestCase):
             resolved_frame_colors(self.env)["accounts"],
             DEFAULT_FRAME_COLORS["accounts"],
         )
+
+    def test_chart_style_defaults_and_round_trips(self) -> None:
+        self.assertEqual(chart_style_choice(self.env), "donut")
+        for style in CHART_STYLES:
+            remember_chart_style(style, self.env)
+            self.assertEqual(chart_style_choice(self.env), style)
+        remember_chart_style("treemap", self.env)
+        self.assertEqual(chart_style_choice(self.env), "donut")
 
     def test_corrupt_config_returns_none(self) -> None:
         config = config_path(self.env)

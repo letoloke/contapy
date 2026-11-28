@@ -31,6 +31,7 @@ FOOTER_H = 42
 class ChartFooter(QWidget):
     periodChanged = Signal(str)
     modeChanged = Signal(str)
+    styleChanged = Signal(str)
     refreshRequested = Signal()
     saveRequested = Signal()
 
@@ -41,8 +42,14 @@ class ChartFooter(QWidget):
         parent: QWidget | None = None,
         modes: list[str] | None = None,
         current_mode: str | None = None,
+        styles: list[str] | None = None,
+        current_style: str | None = None,
     ):
         super().__init__(parent)
+        self.styles = list(styles or [])
+        self.current_style = current_style or (
+            self.styles[0] if self.styles else ""
+        )
         self.setFixedHeight(FOOTER_H)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(15, 6, 10, 6)
@@ -51,7 +58,20 @@ class ChartFooter(QWidget):
         self.label = QLabel("")
         self.label.setFont(font(14, 400))
         self.label.setStyleSheet(f"color:{C.TEXT_SOFT};")
-        layout.addWidget(self.label)
+        self.style_combo: QComboBox | None = None
+        if self.styles:
+            self.style_combo = QComboBox(self)
+            self.style_combo.addItems(self.styles)
+            if self.current_style:
+                self.style_combo.setCurrentText(self.current_style)
+            self.style_combo.setFixedSize(96, 29)
+            self.style_combo.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.style_combo.setFont(font(13, 400))
+            self.style_combo.setToolTip("Chart style")
+            self.style_combo.currentTextChanged.connect(self._choose_style)
+            layout.addWidget(self.style_combo)
+        else:
+            layout.addWidget(self.label)
         layout.addStretch(1)
 
         self.mode_combo: QComboBox | None = None
@@ -85,6 +105,12 @@ class ChartFooter(QWidget):
         menu.addAction("Save chart image…", self.saveRequested.emit)
         menu.exec(self.gear.mapToGlobal(self.gear.rect().bottomLeft()))
 
+    def _choose_style(self, style: str) -> None:
+        if style == self.current_style:
+            return
+        self.current_style = style
+        self.styleChanged.emit(style)
+
     def paintEvent(self, event):  # noqa: N802
         p = QPainter(self)
         p.fillRect(self.rect(), QColor(C.PANEL))
@@ -96,6 +122,8 @@ class ChartFooter(QWidget):
 class ChartCard(QWidget):
     """Card with a painted title block, a chart body and a footer toolbar."""
 
+    styleChanged = Signal(str)
+
     def __init__(
         self,
         title: str,
@@ -106,6 +134,8 @@ class ChartCard(QWidget):
         content: QWidget,
         modes: list[str] | None = None,
         current_mode: str | None = None,
+        styles: list[str] | None = None,
+        current_style: str | None = None,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
@@ -129,14 +159,25 @@ class ChartCard(QWidget):
             self,
             modes=modes,
             current_mode=current_mode,
+            styles=styles,
+            current_style=current_style,
         )
         self.footer.label.setText(footer_label)
         layout.addWidget(self.footer)
 
         self.footer.saveRequested.connect(self._save_image)
+        self.footer.styleChanged.connect(self._apply_chart_style)
+        if current_style:
+            self._apply_chart_style(current_style)
 
         self.frame_color = C.MUTED_DARK
         self.frame = RoundedFrame(self)
+
+    def _apply_chart_style(self, style: str) -> None:
+        setter = getattr(self.content, "set_style", None)
+        if callable(setter):
+            setter(style)
+        self.styleChanged.emit(style)
 
     def set_frame_color(self, color: str) -> None:
         self.frame_color = color
@@ -214,11 +255,13 @@ class DonutChart(QWidget):
         self.total = 0.0
         self.empty_text = "No spending in this period"
         self.show_legend = True
+        self._style = "donut"
         self._hover = -1
         self._center = QPointF(0, 0)
         self._radius = 0.0
         self._inner = 0.0
         self._legend_rects: list[QRectF] = []
+        self._bar_rects: list[QRectF] = []
         self.setMouseTracking(True)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumHeight(180)
@@ -229,6 +272,16 @@ class DonutChart(QWidget):
         self._hover = -1
         self.update()
 
+    def set_style(self, style: str) -> None:
+        normalized = style.strip().lower()
+        if normalized not in ("donut", "pie", "bars"):
+            return
+        if normalized == self._style:
+            return
+        self._style = normalized
+        self._hover = -1
+        self.update()
+
     # ------------------------------------------------------------------ paint
     def paintEvent(self, event):  # noqa: N802
         p = QPainter(self)
@@ -236,6 +289,7 @@ class DonutChart(QWidget):
         p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         p.fillRect(self.rect(), QColor(C.PANEL))
         self._legend_rects = []
+        self._bar_rects = []
 
         width, height = self.width(), self.height()
         if not self.slices or self.total <= 0:
@@ -245,28 +299,28 @@ class DonutChart(QWidget):
             p.end()
             return
 
-        if not self.show_legend:
-            radius = min(150.0, height * 0.47, width * 0.42)
-            cx = width * 0.5
-            legend_x = width
-        elif width >= (620 if terminal_theme() else 540):
-            radius = min(150.0, height * 0.47, width * 0.252)
-            cx = width * 0.382
-            legend_x = width * 0.732
+        row_h = 20.0 if terminal_theme() else 22.5
+        columns = 2 if len(self.slices) > 5 and width >= 320 else 1
+        rows = math.ceil(len(self.slices) / columns)
+        chart_h = max(70.0, height - (rows * row_h + 6))
+
+        if self._style == "bars":
+            self._paint_bars(p, width, chart_h)
         else:
-            legend_font = font(12 if terminal_theme() else 14, 400)
-            metrics = QFontMetrics(legend_font)
-            max_label = max(metrics.horizontalAdvance(item.name) for item in self.slices)
-            left_fraction = 0.52 if terminal_theme() else 0.60
-            legend_x = max(width * left_fraction, width - max_label - 30)
-            cx = width * 0.33
-            radius = min(150.0, height * 0.47, legend_x - cx - 18)
-            radius = max(70.0, radius)
-        cy = height * 0.545
+            self._paint_pie(p, width, chart_h)
+
+        if self.show_legend:
+            self._paint_legend(p, width, chart_h, columns, rows, row_h)
+        p.end()
+
+    def _paint_pie(self, p: QPainter, width: float, chart_h: float) -> None:
+        radius = min(150.0, chart_h * 0.46, width * 0.36)
+        radius = max(20.0, radius)
+        cx = width * 0.5
+        cy = chart_h * 0.5
         self._center = QPointF(cx, cy)
         self._radius = radius
-        self._inner = radius * 0.55
-
+        self._inner = radius * 0.55 if self._style == "donut" else 0.0
         outer = QRectF(cx - radius, cy - radius, radius * 2, radius * 2)
         angle = 90.0
         for index, item in enumerate(self.slices):
@@ -290,38 +344,78 @@ class DonutChart(QWidget):
             p.drawPie(rect, int(round(angle * 16)), int(round(-span * 16)))
             angle -= span
 
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(C.PANEL))
-        p.drawEllipse(QPointF(cx, cy), self._inner, self._inner)
+        if self._style == "donut" and self._inner > 0:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(C.PANEL))
+            p.drawEllipse(QPointF(cx, cy), self._inner, self._inner)
 
-        # Legend
-        if not self.show_legend:
-            p.end()
+    def _paint_bars(self, p: QPainter, width: float, chart_h: float) -> None:
+        count = len(self.slices)
+        if count == 0:
             return
-        row_h = 20.0 if terminal_theme() else 22.5
-        top = 4.0
-        legend_font = font(12 if terminal_theme() else 14, 400)
-        p.setFont(legend_font)
+        gap = 8.0
+        bar_w = min(46.0, max(6.0, (width - 40 - gap * (count - 1)) / count))
+        total_w = count * bar_w + gap * (count - 1)
+        start = (width - total_w) / 2
+        base_y = chart_h - 10
+        plot_h = max(20.0, chart_h - 30)
+        max_percent = max(item.percent for item in self.slices) or 1
         for index, item in enumerate(self.slices):
-            y = top + index * row_h
+            x = start + index * (bar_w + gap)
+            bar_h = plot_h * item.percent / max_percent
+            rect = QRectF(x, base_y - bar_h, bar_w, bar_h)
+            color = QColor(item.color)
+            if index == self._hover:
+                color = color.lighter(115)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(color)
+            p.drawRoundedRect(rect, 2, 2)
+            self._bar_rects.append(QRectF(x, 0, bar_w, chart_h))
+
+    def _paint_legend(
+        self,
+        p: QPainter,
+        width: float,
+        chart_h: float,
+        columns: int,
+        rows: int,
+        row_h: float,
+    ) -> None:
+        legend_font = font(12 if terminal_theme() else 14, 400)
+        metrics = QFontMetrics(legend_font)
+        col_w = width / columns
+        top = chart_h + 2
+        for index, item in enumerate(self.slices):
+            column = index // rows
+            row = index % rows
+            x = column * col_w + 8
+            y = top + row * row_h
             self._legend_rects.append(
-                QRectF(legend_x, y, max(40, width - legend_x), row_h)
+                QRectF(x, y, max(40.0, col_w - 16), row_h)
             )
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QColor(item.color))
-            p.drawEllipse(QPointF(legend_x + 6, y + row_h / 2), 6.2, 6.2)
+            p.drawEllipse(QPointF(x + 7, y + row_h / 2), 5.5, 5.5)
             p.setPen(QColor(C.TEXT if index == self._hover else C.TEXT_SOFT))
             p.setFont(legend_font)
-            p.drawText(
-                QRectF(legend_x + 19, y, max(40, width - legend_x - 24), row_h),
-                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                item.name,
+            text_width = int(max(20.0, col_w - 40))
+            label = metrics.elidedText(
+                item.name, Qt.TextElideMode.ElideRight, text_width
             )
-        p.end()
+            p.drawText(
+                QRectF(x + 18, y, text_width, row_h),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                label,
+            )
 
     # ------------------------------------------------------------- interaction
     def _slice_at(self, pos: QPointF) -> int:
         if not self.slices:
+            return -1
+        if self._style == "bars":
+            for index, rect in enumerate(self._bar_rects):
+                if rect.contains(pos):
+                    return index
             return -1
         dx = pos.x() - self._center.x()
         dy = pos.y() - self._center.y()
