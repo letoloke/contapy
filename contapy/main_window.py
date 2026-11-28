@@ -74,6 +74,10 @@ from .widgets.toolbar import AppToolbar
 
 
 class MainWindow(QMainWindow):
+    # Below this main-window width, Spending & Revenue is hidden so the
+    # remaining chart stays readable instead of being squeezed.
+    CHART_BAR_MIN_WIDTH = 1280
+
     def __init__(self, store: DataStore, parent: QWidget | None = None):
         super().__init__(parent)
         self.store = store
@@ -101,6 +105,11 @@ class MainWindow(QMainWindow):
         self._toast_timer = QTimer(self)
         self._toast_timer.setSingleShot(True)
         self._toast_timer.timeout.connect(self._hide_toast)
+
+        # Deferred so the splitter has its new width after a resize.
+        self._charts_timer = QTimer(self)
+        self._charts_timer.setSingleShot(True)
+        self._charts_timer.timeout.connect(self._sync_chart_visibility)
 
         self._backup_timer = QTimer(self)
         self._backup_timer.setInterval(60 * 60 * 1000)
@@ -1520,6 +1529,22 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event):  # noqa: N802
         super().resizeEvent(event)
         self._position_toast()
+        if hasattr(self, "_charts_timer"):
+            self._charts_timer.start(0)
+
+    def _sync_chart_visibility(self) -> None:
+        """Hide Spending & Revenue when the charts row gets too narrow."""
+        split = getattr(self, "charts_split", None)
+        card = getattr(self, "bar_card", None)
+        if split is None or card is None:
+            return
+        should_show = self.width() >= self.CHART_BAR_MIN_WIDTH
+        if should_show and card.isHidden():
+            card.show()
+            half = max(1, split.width() // 2)
+            split.setSizes([half, half])
+        elif not should_show and not card.isHidden():
+            card.hide()
 
     def closeEvent(self, event):  # noqa: N802
         self._closing = True
