@@ -42,7 +42,7 @@ from PySide6.QtWidgets import (
 from ..db import DataStore
 from ..models import Category, MonthFlow, ReportRow, Slice
 from ..money import friendly_date, money, money_short
-from ..theme import C, DONUT_COLORS, font
+from ..theme import C, DONUT_COLORS, chart_color, font
 from .charts import DonutChart, SpendingRevenueChart
 from .dialogs import CategoryTransactionsDialog
 from .icons import IconButton, draw_bars, draw_pie, draw_sankey, draw_table
@@ -131,7 +131,11 @@ class CategoryBarChart(QWidget):
         self.setMinimumHeight(260)
 
     def set_data(self, bars: list[tuple[str, float, str]], empty_text: str = "") -> None:
-        self.bars = [(label, amount, color) for label, amount, color in bars if amount > 0]
+        self.bars = [
+            (label, amount, chart_color(color, index))
+            for index, (label, amount, color) in enumerate(bars)
+            if amount > 0
+        ]
         if empty_text:
             self.empty_text = empty_text
         self._hover = -1

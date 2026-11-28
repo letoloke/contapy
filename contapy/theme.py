@@ -39,6 +39,20 @@ DONUT_COLORS = list(_PALETTE.donut_colors)
 CLEARED = "#171b18"
 
 
+def chart_color(color: str, index: int = 0) -> str:
+    """Return a vivid chart colour, replacing neutral grays.
+
+    Categories created outside the theme keep a neutral grey by default.
+    Charts should use the same palette as the Sankey diagram instead.
+    """
+    sample = QColor(color)
+    if sample.isValid() and sample.saturation() >= 40:
+        return color
+    if DONUT_COLORS:
+        return DONUT_COLORS[index % len(DONUT_COLORS)]
+    return color
+
+
 def _install_palette(palette) -> None:
     """Refresh the shared colour tokens after a theme change."""
     global _PALETTE, _FONT_FAMILY, _EMOJI_FAMILY

@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 
 from ..models import MonthFlow, Slice
 from ..money import money, money_short
-from ..theme import C, font, terminal_theme
+from ..theme import C, chart_color, font, terminal_theme
 from .icons import IconButton, draw_gear
 from .rounded_frame import RoundedFrame
 
@@ -267,7 +267,15 @@ class DonutChart(QWidget):
         self.setMinimumHeight(180)
 
     def set_data(self, slices: list[Slice], total: float) -> None:
-        self.slices = slices
+        self.slices = [
+            Slice(
+                name=item.name,
+                amount=item.amount,
+                color=chart_color(item.color, index),
+                percent=item.percent,
+            )
+            for index, item in enumerate(slices)
+        ]
         self.total = total
         self._hover = -1
         self.update()

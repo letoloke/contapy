@@ -853,10 +853,32 @@ def reset_cache() -> None:
     _cached = None
 
 
+def _is_near_gray(value: str) -> bool:
+    normalized = normalize_hex(value)
+    if not normalized:
+        return True
+    red, green, blue = rgb(normalized)
+    return max(red, green, blue) - min(red, green, blue) < 18
+
+
 def theme_category_color(name: str, stored: str | None = None) -> str:
-    """Colour for a category, preferring the active theme for known names."""
+    """Colour for a category, preferring the active theme for known names.
+
+    Neutral greys (the old default for custom categories) are replaced with
+    a stable colour from the same palette the Sankey diagram uses.
+    """
     palette = load_palette()
     known = palette.category_colors.get(name)
     if known:
         return known
-    return stored or palette.tokens["MUTED"]
+    if not name:
+        return stored or palette.tokens["MUTED"]
+    if stored and not _is_near_gray(stored):
+        return stored
+    colors = palette.donut_colors
+    if colors:
+        seed = sum(
+            (index + 1) * ord(char) for index, char in enumerate(name or "")
+        )
+        return colors[seed % len(colors)]
+    return palette.tokens["MUTED"]

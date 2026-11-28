@@ -22,6 +22,7 @@ from contapy.omarchy import (
     theme_path,
     tokens_from_colors,
 )
+from contapy.theme import DONUT_COLORS, chart_color
 
 DARK = """
 mode = "dark"
@@ -212,6 +213,15 @@ class PaletteTokenTests(unittest.TestCase):
             )
         finally:
             omarchy.set_theme_choice(previous)
+
+
+class ChartColorTests(unittest.TestCase):
+    def test_neutral_gray_is_replaced_with_a_palette_color(self) -> None:
+        self.assertIn(chart_color("#838483", 0), DONUT_COLORS)
+        self.assertIn(chart_color("#8a8a8a", 2), DONUT_COLORS)
+
+    def test_vivid_color_is_preserved(self) -> None:
+        self.assertEqual(chart_color("#ff9e64", 0), "#ff9e64")
 
 
 if __name__ == "__main__":
