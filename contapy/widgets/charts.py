@@ -184,6 +184,10 @@ class ChartCard(QWidget):
         if not self._flash:
             self.frame.set_color(color)
 
+    def preferred_width(self) -> int:
+        """The width the footer controls need; used as the default width."""
+        return max(self.minimumSizeHint().width(), 1)
+
     def set_title(self, text: str) -> None:
         self.title = text
         self.update()

@@ -93,6 +93,7 @@ class MainWindow(QMainWindow):
         self.reports_window: ReportsWindow | None = None
         self.budget_window: BudgetWindow | None = None
         self._initial_focus_done = False
+        self._charts_default_applied = False
         self._closing = False
         self._keep_store = False
         self._update_window_title()
@@ -361,7 +362,9 @@ class MainWindow(QMainWindow):
         self.charts_split.setStyleSheet(f"QSplitter {{ background: {C.BG}; }} QSplitter::handle {{ background: {C.BG}; }}")
         self.charts_split.addWidget(self.donut_card)
         self.charts_split.addWidget(self.bar_card)
-        self.charts_split.setStretchFactor(0, 1)
+        # Top Spending defaults to the width its footer needs; the remaining
+        # width goes to Spending & Revenue.
+        self.charts_split.setStretchFactor(0, 0)
         self.charts_split.setStretchFactor(1, 1)
 
         self.hsplit = QSplitter(Qt.Orientation.Horizontal)
@@ -1535,6 +1538,18 @@ class MainWindow(QMainWindow):
         if not self._initial_focus_done:
             self._initial_focus_done = True
             QTimer.singleShot(0, self.accounts_panel.focus_list)
+        if not self._charts_default_applied:
+            self._charts_default_applied = True
+            QTimer.singleShot(0, self._apply_default_chart_widths)
+
+    def _apply_default_chart_widths(self) -> None:
+        """Give Top Spending its minimum usable width, the rest to revenue."""
+        total = self.charts_split.width()
+        if total <= 0 or self.bar_card.isHidden():
+            return
+        donut = min(self.donut_card.preferred_width(), total)
+        remaining = max(1, total - donut - self.charts_split.handleWidth())
+        self.charts_split.setSizes([donut, remaining])
 
     def resizeEvent(self, event):  # noqa: N802
         super().resizeEvent(event)
@@ -1551,8 +1566,7 @@ class MainWindow(QMainWindow):
         should_show = self.width() >= self.CHART_BAR_MIN_WIDTH
         if should_show and card.isHidden():
             card.show()
-            half = max(1, split.width() // 2)
-            split.setSizes([half, half])
+            self._apply_default_chart_widths()
         elif not should_show and not card.isHidden():
             card.hide()
 
