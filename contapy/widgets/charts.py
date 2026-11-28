@@ -20,9 +20,9 @@ from PySide6.QtWidgets import (
 
 from ..models import MonthFlow, Slice
 from ..money import money, money_short
-from ..theme import C, font
+from ..theme import C, font, terminal_theme
 from .icons import IconButton, draw_gear
-from .rounded_frame import RADIUS, RoundedFrame
+from .rounded_frame import RoundedFrame
 
 HEADER_SPACE = 62
 FOOTER_H = 42
@@ -176,11 +176,11 @@ class ChartCard(QWidget):
         p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(C.PANEL))
-        p.drawRoundedRect(QRectF(self.rect()), RADIUS, RADIUS)
+        p.drawRoundedRect(QRectF(self.rect()), self.frame.radius, self.frame.radius)
         p.setBrush(Qt.BrushStyle.NoBrush)
 
         p.setPen(QColor(C.TITLE))
-        p.setFont(font(20, 400))
+        p.setFont(font(20, 600 if terminal_theme() else 400))
         p.drawText(
             QRectF(15, 12, self.width() - 30, 28),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
@@ -241,15 +241,16 @@ class DonutChart(QWidget):
             radius = min(150.0, height * 0.47, width * 0.42)
             cx = width * 0.5
             legend_x = width
-        elif width >= 540:
+        elif width >= (620 if terminal_theme() else 540):
             radius = min(150.0, height * 0.47, width * 0.252)
             cx = width * 0.382
             legend_x = width * 0.732
         else:
-            legend_font = font(14, 400)
+            legend_font = font(12 if terminal_theme() else 14, 400)
             metrics = QFontMetrics(legend_font)
             max_label = max(metrics.horizontalAdvance(item.name) for item in self.slices)
-            legend_x = max(width * 0.60, width - max_label - 30)
+            left_fraction = 0.52 if terminal_theme() else 0.60
+            legend_x = max(width * left_fraction, width - max_label - 30)
             cx = width * 0.33
             radius = min(150.0, height * 0.47, legend_x - cx - 18)
             radius = max(70.0, radius)
@@ -289,9 +290,10 @@ class DonutChart(QWidget):
         if not self.show_legend:
             p.end()
             return
-        row_h = 22.5
+        row_h = 20.0 if terminal_theme() else 22.5
         top = 4.0
-        p.setFont(font(14, 400))
+        legend_font = font(12 if terminal_theme() else 14, 400)
+        p.setFont(legend_font)
         for index, item in enumerate(self.slices):
             y = top + index * row_h
             self._legend_rects.append(
@@ -301,7 +303,7 @@ class DonutChart(QWidget):
             p.setBrush(QColor(item.color))
             p.drawEllipse(QPointF(legend_x + 6, y + row_h / 2), 6.2, 6.2)
             p.setPen(QColor(C.TEXT if index == self._hover else C.TEXT_SOFT))
-            p.setFont(font(14, 400))
+            p.setFont(legend_font)
             p.drawText(
                 QRectF(legend_x + 19, y, max(40, width - legend_x - 24), row_h),
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,

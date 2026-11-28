@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from ..db import KIND_LABELS
 from ..models import Account, Balance
 from ..money import money
-from ..theme import C, font
+from ..theme import C, font, terminal_theme
 from .icons import (
     IconButton,
     draw_chevron,
@@ -28,7 +28,7 @@ from .icons import (
     draw_pencil,
     draw_warning,
 )
-from .rounded_frame import RADIUS, RoundedFrame
+from .rounded_frame import RoundedFrame
 
 HEADER_H = 26
 FOOTER_H = 36
@@ -92,8 +92,8 @@ class AccountsHeader(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         p.fillRect(self.rect(), QColor(C.PANEL))
-        p.setFont(font(14, 400))
-        p.setPen(QColor(C.MUTED))
+        p.setFont(font(14, 600 if terminal_theme() else 400))
+        p.setPen(QColor(C.TITLE))
         p.drawText(QRectF(40, 0, 120, HEADER_H),
                    Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "Accounts")
         panel = self.parent()
@@ -518,7 +518,7 @@ class AccountsPanel(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(C.PANEL))
-        p.drawRoundedRect(QRectF(self.rect()), RADIUS, RADIUS)
+        p.drawRoundedRect(QRectF(self.rect()), self.frame.radius, self.frame.radius)
         p.end()
 
     # ------------------------------------------------------------- data flow

@@ -74,14 +74,14 @@ class ConfigTests(unittest.TestCase):
         config.write_text('{"database": "   "}', encoding="utf-8")
         self.assertIsNone(last_database(self.env))
 
-    def test_theme_defaults_to_one_dark(self) -> None:
+    def test_theme_defaults_to_the_branch_default(self) -> None:
         self.assertEqual(theme_choice(self.env), DEFAULT_THEME)
 
     def test_remember_theme_round_trip(self) -> None:
         remember_theme("tokyo-night", self.env)
         self.assertEqual(theme_choice(self.env), "tokyo-night")
 
-    def test_blank_saved_theme_falls_back_to_one_dark(self) -> None:
+    def test_blank_saved_theme_falls_back_to_the_default(self) -> None:
         config = config_path(self.env)
         config.parent.mkdir(parents=True)
         config.write_text('{"theme": "  "}', encoding="utf-8")

@@ -55,7 +55,7 @@ from ..dates import format_date
 from ..db import DataStore
 from ..models import Account, Balance, SplitDraft, TransactionDraft, TransactionRow
 from ..money import money
-from ..theme import C, CLEARED, font
+from ..theme import C, font
 from .dialogs import BulkEditDialog, DateRangeDialog, TransactionDialog
 from .icons import (
     IconButton,
@@ -571,7 +571,7 @@ class LedgerDelegate(QStyledItemDelegate):
                 draw_reconciled(painter, QRectF(x, rect.top() + 7, 14, 14), QColor(C.RECONCILED))
                 x += 18
             elif row.cleared:
-                draw_check_circle(painter, QRectF(x, rect.top() + 7, 14, 14), QColor(CLEARED))
+                draw_check_circle(painter, QRectF(x, rect.top() + 7, 14, 14), QColor(C.CLEARED))
                 x += 18
             if row.remind and not row.voided:
                 draw_bell(painter, QRectF(x, rect.top() + 7, 14, 14), QColor(C.WARNING))
@@ -1265,7 +1265,7 @@ class LedgerWindow(QMainWindow):
         action_layout.addWidget(self._separator())
 
         self.clear_btn = IconButton(
-            draw_check_circle, 30, "", color=CLEARED, parent=self
+            draw_check_circle, 30, "", color=C.CLEARED, parent=self
         )
         self.reconcile_btn = IconButton(
             draw_reconciled, 30, "", parent=self

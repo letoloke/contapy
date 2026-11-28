@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..branding import APP_NAME
-from ..theme import C, font
+from ..theme import C, font, radius
 
 
 def pairing_uri(url: str, token: str) -> str:
@@ -98,14 +98,14 @@ class ConnectPhoneDialog(QDialog):
         qr_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         qr_label.setFixedSize(296, 296)
         qr_label.setStyleSheet(
-            "background:white; border-radius:8px; padding:8px;"
+            f"background:white; border-radius:{radius(8)}; padding:8px;"
         )
         if qr is None:
             qr_label.setText("QR code unavailable\nInstall the segno package.")
             qr_label.setWordWrap(True)
             qr_label.setStyleSheet(
                 f"color:{C.MUTED_DARK}; background:{C.PANEL};"
-                f" border:1px solid {C.BORDER}; border-radius:8px;"
+                f" border:1px solid {C.BORDER}; border-radius:{radius(8)};"
             )
         else:
             qr_label.setPixmap(qr)
@@ -127,7 +127,7 @@ class ConnectPhoneDialog(QDialog):
             warning.setFont(font(12, 400))
             warning.setStyleSheet(
                 f"color:{C.ORANGE}; background:{C.PANEL};"
-                f" border:1px solid {C.BORDER}; border-radius:5px;"
+                f" border:1px solid {C.BORDER}; border-radius:{radius(5)};"
                 " padding:8px;"
             )
             root.addWidget(warning)

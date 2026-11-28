@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 from ..dates import format_date
 from ..models import Account, ScheduledItem
 from ..money import money
-from ..theme import C, CLEARED, font
+from ..theme import C, font, terminal_theme
 from .icons import (
     IconButton,
     draw_bell,
@@ -34,7 +34,7 @@ from .icons import (
     draw_gear,
     draw_info,
 )
-from .rounded_frame import RADIUS, RoundedFrame
+from .rounded_frame import RoundedFrame
 
 TABS = ("Scheduled", "Future", "Remind")
 TAB_W = 100
@@ -72,6 +72,12 @@ HEADER_LABELS = [
 ]
 
 
+def _ui_font(size: int = 14, weight: int = 400):
+    if terminal_theme() and size >= 14:
+        size = 12
+    return font(size, weight)
+
+
 class _Tabs(QWidget):
     changed = Signal(str)
 
@@ -94,7 +100,7 @@ class _Tabs(QWidget):
                 p.fillRect(rect, QColor(C.ACCENT))
             elif name == self._hover:
                 p.fillRect(rect, QColor(C.ROW_HOVER))
-            p.setFont(font(14, 400))
+            p.setFont(_ui_font(14, 400))
             p.setPen(QColor(C.ON_ACCENT if name == self.active else C.TEXT_SOFT))
             p.drawText(
                 rect.adjusted(13, 0, 0, 0),
@@ -144,7 +150,9 @@ class _Header(QWidget):
     def paintEvent(self, event):  # noqa: N802
         p = QPainter(self)
         p.fillRect(self.rect(), QColor(C.PANEL))
-        p.setFont(font(14, 400))
+        p.setFont(
+            font(11 if terminal_theme() else 14, 400)
+        )
         p.setPen(QColor(C.MUTED))
         for x, label in HEADER_LABELS:
             p.drawText(
@@ -281,7 +289,7 @@ class _Canvas(QWidget):
 
         if not self.panel.visible:
             p.setPen(QColor(C.MUTED))
-            p.setFont(font(14, 400))
+            p.setFont(_ui_font(14, 400))
             p.drawText(
                 QRectF(0, 70, width, 30),
                 Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
@@ -307,7 +315,7 @@ class _Canvas(QWidget):
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawRoundedRect(QRectF(X_CHECK, y + 8, 11, 11), 2, 2)
 
-            p.setFont(font(14, 400))
+            p.setFont(_ui_font(14, 400))
             p.setPen(QColor(C.TEXT if not selected else C.ROW_SELECTED_TEXT))
             date_label = format_date(item.next_date)
             p.drawText(
@@ -315,7 +323,7 @@ class _Canvas(QWidget):
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                 date_label,
             )
-            metrics = QFontMetrics(font(14, 400))
+            metrics = QFontMetrics(_ui_font(14, 400))
             date_w = metrics.horizontalAdvance(date_label)
             draw_calendar(p, QRectF(X_DATE + date_w + 8, y + 8, 12, 12), QColor(C.GREEN_BAR), 1.0)
 
@@ -338,11 +346,11 @@ class _Canvas(QWidget):
             elif item.status == "future":
                 draw_clock(p, QRectF(X_STATUS, y + 7, 13, 13), QColor(C.FUTURE), 1.4)
             else:
-                draw_check_circle(p, QRectF(X_STATUS, y + 7, 13, 13), QColor(CLEARED), 1.5)
+                draw_check_circle(p, QRectF(X_STATUS, y + 7, 13, 13), QColor(C.CLEARED), 1.5)
 
             if item.amount < 0:
                 p.setPen(QColor(C.ORANGE))
-                p.setFont(font(14, 400))
+                p.setFont(_ui_font(14, 400))
                 p.drawText(
                     QRectF(X_EXPENSE_RIGHT - 150, y, 150, ROW_H),
                     Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
@@ -350,7 +358,7 @@ class _Canvas(QWidget):
                 )
             elif item.amount > 0:
                 p.setPen(QColor(C.GREEN))
-                p.setFont(font(14, 400))
+                p.setFont(_ui_font(14, 400))
                 p.drawText(
                     QRectF(X_INCOME_RIGHT - 150, y, 150, ROW_H),
                     Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
@@ -375,7 +383,7 @@ class _Canvas(QWidget):
         p.fillRect(QRectF(0, total_y, width, TOTAL_H), QColor(C.TOTAL_ROW))
         total_expense = sum(-i.amount for i in self.panel.visible if i.amount < 0)
         total_income = sum(i.amount for i in self.panel.visible if i.amount > 0)
-        p.setFont(font(14, 600))
+        p.setFont(_ui_font(14, 600))
         if total_expense:
             p.setPen(QColor(C.ORANGE))
             p.drawText(
@@ -495,7 +503,7 @@ class ScheduledPanel(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(C.PANEL))
-        p.drawRoundedRect(QRectF(self.rect()), RADIUS, RADIUS)
+        p.drawRoundedRect(QRectF(self.rect()), self.frame.radius, self.frame.radius)
         p.end()
 
     # ------------------------------------------------------------- data flow

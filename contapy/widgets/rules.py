@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (
 
 from ..db import DataStore
 from ..models import Rule, RuleCondition, Template, ordered_categories
-from ..theme import C, font
+from ..theme import C, font, radius, terminal_theme
 from ..xhb_rules import import_xhb_rules
 from .dialogs import SearchCombo
 
@@ -46,7 +46,7 @@ def _section(title: str, subtitle: str, parent: QWidget) -> tuple[QFrame, QVBoxL
     frame.setObjectName("ruleSection")
     frame.setStyleSheet(
         f"QFrame#ruleSection {{ background:{C.PANEL_RAISED};"
-        f" border:1px solid {C.BORDER_SOFT}; border-radius:5px; }}"
+        f" border:1px solid {C.BORDER_SOFT}; border-radius:{radius(5)}; }}"
     )
     layout = QVBoxLayout(frame)
     layout.setContentsMargins(14, 12, 14, 12)
@@ -236,7 +236,7 @@ class _ConditionEditor(QFrame):
         self.setObjectName("ruleCondition")
         self.setStyleSheet(
             f"QFrame#ruleCondition {{ background:{C.PANEL};"
-            f" border:1px solid {C.BORDER_SOFT}; border-radius:4px; }}"
+            f" border:1px solid {C.BORDER_SOFT}; border-radius:{radius(4)}; }}"
         )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 8, 10, 9)
@@ -303,7 +303,9 @@ class _ConditionEditor(QFrame):
         self.amount_op_combo.addItem("= exactly", "=")
         self.amount_op_combo.addItem("- at most", "-")
         self.amount_op_combo.addItem("+ at least", "+")
-        self.amount_op_combo.setFixedWidth(112)
+        self.amount_op_combo.setFixedWidth(
+            132 if terminal_theme() else 112
+        )
         amount_row.addWidget(self.amount_op_combo)
         self.amount_spin = QDoubleSpinBox()
         self.amount_spin.setDecimals(2)
@@ -474,7 +476,9 @@ class RuleDialog(_AssignmentFieldsMixin, QDialog):
         self.condition_mode_combo = QComboBox()
         self.condition_mode_combo.addItem("any condition (OR)", "any")
         self.condition_mode_combo.addItem("all conditions (AND)", "all")
-        self.condition_mode_combo.setFixedWidth(180)
+        self.condition_mode_combo.setFixedWidth(
+            220 if terminal_theme() else 180
+        )
         mode_row.addWidget(self.condition_mode_combo)
         mode_row.addStretch(1)
         layout.addLayout(mode_row)

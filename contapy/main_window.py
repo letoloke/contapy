@@ -38,7 +38,7 @@ from .mercadopago import transform as transform_mercadopago
 from .models import ScheduledItem
 from .activity import ActivityLog, activity_log_path, transaction_detail
 from .money import money
-from .theme import C, font, select_theme
+from .theme import C, font, radius, select_theme
 from .widgets.accounts import AccountsPanel
 from .branding import APP_NAME
 from .widgets.budgets import BudgetWindow, BudgetsPanel
@@ -344,7 +344,7 @@ class MainWindow(QMainWindow):
         self.toast.setStyleSheet(
             f"QLabel#toast {{ background:{C.TOOLTIP_BG}; color:{C.TOOLTIP_TEXT};"
             f" border:1px solid {C.TOOLTIP_BORDER};"
-            "border-radius:6px; padding:8px 16px; }"
+            f"border-radius:{radius(6)}; padding:8px 16px; }}"
         )
         self.toast.hide()
 

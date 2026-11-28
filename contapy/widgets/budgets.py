@@ -28,7 +28,7 @@ from ..branding import APP_NAME
 from ..db import DataStore
 from ..models import BudgetStatus, ordered_categories
 from ..money import money, money_short
-from ..theme import C, font
+from ..theme import C, font, radius
 from .icons import IconButton, draw_chevron
 
 
@@ -292,7 +292,7 @@ class BudgetRow(QFrame):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(
             f"QFrame#budgetRow {{ background:{C.PANEL};"
-            f" border:1px solid {C.BORDER}; border-radius:6px; }}"
+            f" border:1px solid {C.BORDER}; border-radius:{radius(6)}; }}"
         )
         self.setMinimumHeight(94)
 

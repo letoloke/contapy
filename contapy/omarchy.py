@@ -113,6 +113,7 @@ FALLBACK_TOKENS: dict[str, str] = {
     "CATEGORY_TEXT": "#b8b8b8",
     "CATEGORY_MUTED": "#7f7f7f",
     "RECONCILED": "#3f8f7a",
+    "CLEARED": "#171b18",
     "FUTURE": "#6aa2d8",
     "CALENDAR_FG": "#e8f2df",
     "AMOUNT": "#c9c9c9",
@@ -121,7 +122,9 @@ FALLBACK_TOKENS: dict[str, str] = {
 
 # One Dark's raw Omarchy colours.  Kept in the app so the default theme works
 # on machines that do not have the One Dark Omarchy package installed.
-DEFAULT_THEME = "one-dark"
+LETOBANK_CLI_THEME = "letobank-cli"
+ONE_DARK_THEME = "one-dark"
+DEFAULT_THEME = LETOBANK_CLI_THEME
 ONE_DARK_COLORS: dict[str, str] = {
     "mode": "dark",
     "accent": "#61afef",
@@ -149,6 +152,37 @@ ONE_DARK_COLORS: dict[str, str] = {
     "bright_cyan": "#66d9e8",
     "bright_blue": "#7cc3ff",
     "bright_magenta": "#d68fe8",
+}
+
+# LetoBank GO's Material 3 terminal palette.  The desktop branch builds its
+# semantic tokens from this so the two apps share the same dark TUI palette.
+LETOBANK_CLI_COLORS: dict[str, str] = {
+    "mode": "dark",
+    "background": "#0b0e12",
+    "dark_background": "#080b0f",
+    "darker_background": "#05070a",
+    "lighter_background": "#141a22",
+    "foreground": "#c9d1d9",
+    "bright_foreground": "#e6edf3",
+    "dark_foreground": "#7c8a9c",
+    "light_foreground": "#aab6c4",
+    "accent": "#4fd6e3",
+    "selection": "#123a40",
+    "muted": "#7c8a9c",
+    "red": "#f7768e",
+    "yellow": "#e0af68",
+    "orange": "#ff9e64",
+    "green": "#58c98a",
+    "cyan": "#4fd6e3",
+    "blue": "#7aa2f7",
+    "magenta": "#bb9af7",
+    "brown": "#9d7cd8",
+    "bright_red": "#ff9aab",
+    "bright_yellow": "#f5d08c",
+    "bright_green": "#8ee6b0",
+    "bright_cyan": "#8ff2ff",
+    "bright_blue": "#a8c7ff",
+    "bright_magenta": "#d7b8ff",
 }
 
 FALLBACK_CATEGORY_COLORS: dict[str, str] = {
@@ -412,7 +446,9 @@ def find_theme_dir(
 
 def theme_label(slug: str) -> str:
     """Human-readable name for a theme folder."""
-    if slug == DEFAULT_THEME:
+    if slug == LETOBANK_CLI_THEME:
+        return "LetoBank CLI"
+    if slug == ONE_DARK_THEME:
         return "One Dark"
     if slug == "builtin":
         return "Graphite (built-in)"
@@ -423,7 +459,7 @@ def theme_label(slug: str) -> str:
 
 
 def available_themes(environ: dict[str, str] | None = None) -> list[ThemeOption]:
-    """Installed themes, with One Dark first and the built-in palette last."""
+    """Installed themes, with LetoBank CLI/One Dark first and built-in last."""
     found: dict[str, Path] = {}
     for root in theme_search_dirs(environ):
         try:
@@ -436,10 +472,19 @@ def available_themes(environ: dict[str, str] | None = None) -> list[ThemeOption]
                 found.setdefault(entry.name, colors)
 
     options = [
-        ThemeOption(DEFAULT_THEME, theme_label(DEFAULT_THEME), found.get(DEFAULT_THEME))
+        ThemeOption(
+            LETOBANK_CLI_THEME,
+            theme_label(LETOBANK_CLI_THEME),
+            None,
+        ),
+        ThemeOption(
+            ONE_DARK_THEME,
+            theme_label(ONE_DARK_THEME),
+            found.get(ONE_DARK_THEME),
+        ),
     ]
     for slug in sorted(found):
-        if slug == DEFAULT_THEME:
+        if slug in (LETOBANK_CLI_THEME, ONE_DARK_THEME):
             continue
         options.append(ThemeOption(slug, theme_label(slug), found[slug]))
     options.append(ThemeOption("omarchy", theme_label("omarchy"), None))
@@ -624,6 +669,7 @@ def donut_from_categories(category_colors: dict[str, str]) -> list[str]:
 # ------------------------------------------------------------- public loading
 def _from_colors(colors: dict[str, str], source: str) -> Palette:
     tokens = tokens_from_colors(colors)
+    tokens.setdefault("CLEARED", "#171b18")
     categories = categories_from_colors(colors, tokens)
     return Palette(
         _mode(colors),
@@ -644,6 +690,100 @@ def _fallback(source: str) -> Palette:
     )
 
 
+def _letobank_cli() -> Palette:
+    palette = _from_colors(
+        dict(LETOBANK_CLI_COLORS), "built-in LetoBank CLI"
+    )
+    palette.tokens.update(
+        {
+            "PANEL": "#0f141a",
+            "PANEL_RAISED": "#141a22",
+            "HEADER": "#0f141a",
+            "BORDER": "#2a3440",
+            "BORDER_SOFT": "#1d2833",
+            "GRID": "#1b2530",
+            "GRID_ZERO": "#2a3440",
+            "TEXT": "#c9d1d9",
+            "TEXT_SOFT": "#aab6c4",
+            "MUTED": "#7c8a9c",
+            "MUTED_DARK": "#5f6d7d",
+            "TITLE": "#4fd6e3",
+            "ACCENT": "#4fd6e3",
+            "ACCENT_LIGHT": "#6fdde8",
+            "ACCENT_HOVER": "#61dae6",
+            "GREEN": "#58c98a",
+            "GREEN_BAR": "#58c98a",
+            "ORANGE": "#ff9e64",
+            "RED_BAR": "#f7768e",
+            "WARNING": "#e0af68",
+            "INFO": "#7aa2f7",
+            "ROW_HOVER": "#141a22",
+            "ROW_SELECTED": "#123a40",
+            "ROW_SELECTED_TEXT": "#d7e7ea",
+            "TOTAL_ROW": "#0d1218",
+            "ALT_ROW": "#0d1218",
+            "INPUT_BG": "#080d12",
+            "INPUT_TEXT": "#c9d1d9",
+            "INPUT_BORDER": "#2a3440",
+            "FOCUS_BORDER": "#4fd6e3",
+            "BUTTON_BG": "#0f141a",
+            "BUTTON_BG_HOVER": "#18222c",
+            "BUTTON_BG_PRESSED": "#22303c",
+            "BUTTON_TEXT": "#c9d1d9",
+            "BUTTON_BORDER": "#2a3440",
+            "BUTTON_PRIMARY_BORDER": "#4fd6e3",
+            "ACTION_BG": "#0d1218",
+            "ACTION_BG_HOVER": "#18222c",
+            "ACTION_BORDER": "#2a3440",
+            "ACTION_TEXT": "#aab6c4",
+            "MENU_BG": "#0f141a",
+            "MENU_BORDER": "#2a3440",
+            "MENU_TEXT": "#c9d1d9",
+            "MENU_SELECTED": "#4fd6e3",
+            "MENU_SELECTED_TEXT": "#04181b",
+            "MENU_SEPARATOR": "#1d2833",
+            "MENUBAR_HOVER": "#141a22",
+            "TOOLTIP_BG": "#080d12",
+            "TOOLTIP_TEXT": "#e6edf3",
+            "TOOLTIP_BORDER": "#2a3440",
+            "SELECTION": "#123a40",
+            "SELECTION_TEXT": "#d7e7ea",
+            "ON_ACCENT": "#04181b",
+            "ON_GREEN": "#04180e",
+            "ON_RECONCILED": "#04180e",
+            "SEPARATOR": "#1d2833",
+            "DISABLED": "#4f5a66",
+            "DISABLED_BG": "#0a0f14",
+            "DISABLED_BORDER": "#141a22",
+            "SCROLL_HANDLE": "#2a3440",
+            "SCROLL_HANDLE_HOVER": "#4fd6e3",
+            "CHECK_BG": "#080d12",
+            "CHECK_BORDER": "#2a3440",
+            "CHECK_HOVER": "#4fd6e3",
+            "LIST_BG": "#0a0f14",
+            "LIST_BORDER": "#2a3440",
+            "POPUP_BG": "#0f141a",
+            "POPUP_BORDER": "#2a3440",
+            "POPUP_TEXT": "#c9d1d9",
+            "TAB_HOVER": "#141a22",
+            "TAB_ACTIVE_BG": "#080d12",
+            "CATEGORY_TEXT": "#aab6c4",
+            "CATEGORY_MUTED": "#6b7887",
+            "RECONCILED": "#58c98a",
+            "CLEARED": "#58c98a",
+            "FUTURE": "#7aa2f7",
+            "CALENDAR_FG": "#04181b",
+            "AMOUNT": "#aab6c4",
+            "WARNING_TEXT": "#0b0e12",
+        }
+    )
+    return palette
+
+
+def _one_dark() -> Palette:
+    return _from_colors(dict(ONE_DARK_COLORS), "built-in One Dark")
+
+
 def _resolve(
     environ: dict[str, str], default_choice: str | None = None
 ) -> Palette:
@@ -655,6 +795,9 @@ def _resolve(
     lowered = choice.lower()
     if lowered in ("builtin", "default", "none", "off"):
         return _fallback("built-in")
+
+    if lowered == LETOBANK_CLI_THEME:
+        return _letobank_cli()
 
     if lowered in ("", "omarchy", "auto", "system"):
         path = theme_path(environ)
@@ -670,8 +813,8 @@ def _resolve(
         if colors is not None:
             return _from_colors(colors, str(path))
 
-    if lowered == DEFAULT_THEME:
-        return _from_colors(dict(ONE_DARK_COLORS), "built-in One Dark")
+    if lowered == ONE_DARK_THEME:
+        return _one_dark()
     return _fallback(f"built-in ({choice} not found)")
 
 

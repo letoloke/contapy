@@ -77,7 +77,7 @@ from ..models import (
     ordered_categories,
 )
 from ..money import friendly_date, money
-from ..theme import C, CLEARED, font, theme_options
+from ..theme import C, CLEARED, font, radius, theme_options
 from .icons import (
     IconButton,
     draw_bell,
@@ -296,7 +296,7 @@ class SplitEditorRow(QFrame):
         self.setObjectName("splitEditorRow")
         self.setStyleSheet(
             f"QFrame#splitEditorRow {{ background:{C.INPUT_BG};"
-            f" border:1px solid {C.INPUT_BORDER}; border-radius:7px; }}"
+            f" border:1px solid {C.INPUT_BORDER}; border-radius:{radius(7)}; }}"
         )
         self._category_colors = {
             category.id: category.color for category in categories
@@ -501,7 +501,7 @@ class SplitDialog(QDialog):
         add_button.setFixedHeight(36)
         add_button.setStyleSheet(
             f"QPushButton {{ background:transparent; border:1px dashed {C.INPUT_BORDER};"
-            f" border-radius:7px; color:{C.MUTED}; text-align:left; padding-left:12px; }}"
+            f" border-radius:{radius(7)}; color:{C.MUTED}; text-align:left; padding-left:12px; }}"
             f"QPushButton:hover {{ background:{C.ROW_HOVER}; color:{C.TEXT}; }}"
         )
         add_button.clicked.connect(lambda: self.add_row(focus=True))
@@ -2065,7 +2065,7 @@ class PreferencesDialog(QDialog):
         path_label.setFont(font(12, 400))
         path_label.setStyleSheet(
             f"color:{C.TEXT_SOFT}; background:{C.INPUT_BG}; border:1px solid {C.INPUT_BORDER};"
-            f"border-radius:4px; padding:8px;"
+            f"border-radius:{radius(4)}; padding:8px;"
         )
         root.addWidget(path_label)
 

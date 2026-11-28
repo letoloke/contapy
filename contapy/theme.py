@@ -13,7 +13,11 @@ from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette, QPixmap
 from PySide6.QtWidgets import QApplication
 
-from .omarchy import load_palette, set_theme_choice
+from .omarchy import (
+    LETOBANK_CLI_THEME,
+    load_palette,
+    set_theme_choice,
+)
 
 ASSETS = Path(__file__).resolve().parent / "assets"
 
@@ -37,8 +41,10 @@ CLEARED = "#171b18"
 
 def _install_palette(palette) -> None:
     """Refresh the shared colour tokens after a theme change."""
-    global _PALETTE
+    global _PALETTE, _FONT_FAMILY, _EMOJI_FAMILY
     _PALETTE = palette
+    _FONT_FAMILY = None
+    _EMOJI_FAMILY = None
     for token, value in palette.tokens.items():
         setattr(C, token, value)
     CATEGORY_COLORS.clear()
@@ -77,18 +83,42 @@ _FONT_FAMILY: str | None = None
 _EMOJI_FAMILY: str | None = None
 
 
+def terminal_theme() -> bool:
+    """Whether the active palette is the LetoBank CLI terminal theme."""
+    return (
+        selected_theme().lower() == LETOBANK_CLI_THEME
+        or _PALETTE.source == "built-in LetoBank CLI"
+    )
+
+
+def radius(pixels: int = 4) -> str:
+    """Corner radius for inline styles; terminal mode uses sharp corners."""
+    return "0px" if terminal_theme() else f"{pixels}px"
+
+
 def font_family() -> str:
     global _FONT_FAMILY
     if _FONT_FAMILY is None:
         available = set(QFontDatabase.families())
-        for candidate in (
-            "Inter",
-            "SF Pro Text",
-            "Noto Sans",
-            "Cantarell",
-            "IBM Plex Sans",
-            "DejaVu Sans",
-        ):
+        if terminal_theme():
+            candidates = (
+                "JetBrainsMono Nerd Font",
+                "JetBrainsMono NF",
+                "CaskaydiaCove Nerd Font Mono",
+                "Noto Sans Mono",
+                "Liberation Mono",
+                "DejaVu Sans Mono",
+            )
+        else:
+            candidates = (
+                "Inter",
+                "SF Pro Text",
+                "Noto Sans",
+                "Cantarell",
+                "IBM Plex Sans",
+                "DejaVu Sans",
+            )
+        for candidate in candidates:
             if candidate in available:
                 _FONT_FAMILY = candidate
                 break
@@ -168,7 +198,7 @@ def _make_painter(pixmap: QPixmap):
 def stylesheet() -> str:
     chevron = (ASSETS / "chevron-down.svg").as_posix()
     check = (ASSETS / "check.svg").as_posix()
-    return f"""
+    base = f"""
     QWidget {{
         color: {C.TEXT};
     }}
@@ -458,6 +488,45 @@ def stylesheet() -> str:
     }}
     QMessageBox QLabel {{
         color: {C.TEXT};
+    }}
+    """
+    if not terminal_theme():
+        return base
+    return base + f"""
+    QToolTip, QMenu, QMenu::item, QPushButton, QLineEdit, QDateEdit,
+    QDoubleSpinBox, QSpinBox, QComboBox, QListWidget, QTreeWidget,
+    QScrollArea, QCheckBox::indicator, QToolButton, QTabBar::tab {{
+        border-radius: 0px;
+    }}
+    QComboBox QAbstractItemView {{
+        border-radius: 0px;
+    }}
+    QMenuBar {{
+        background: {C.PANEL};
+        border-bottom: 1px solid {C.BORDER};
+    }}
+    QMenuBar::item {{
+        border-radius: 0px;
+        padding: 3px 9px;
+    }}
+    QHeaderView::section {{
+        background: {C.PANEL_RAISED};
+        color: {C.ACCENT};
+        border-right: 1px solid {C.BORDER_SOFT};
+        border-bottom: 1px solid {C.BORDER};
+        font-weight: 600;
+    }}
+    QPushButton, QPushButton[role="action"] {{
+        font-weight: 600;
+    }}
+    QPushButton[role="primary"] {{
+        font-weight: 700;
+    }}
+    QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
+        border-radius: 0px;
+    }}
+    QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover {{
+        background: {C.SCROLL_HANDLE_HOVER};
     }}
     """
 

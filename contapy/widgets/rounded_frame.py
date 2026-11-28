@@ -6,7 +6,7 @@ from PySide6.QtCore import QEvent, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
-from ..theme import C
+from ..theme import C, terminal_theme
 
 RADIUS = 8
 WIDTH = 3
@@ -24,12 +24,14 @@ class RoundedFrame(QWidget):
     def __init__(
         self,
         parent: QWidget,
-        radius: int = RADIUS,
+        radius: int | None = None,
         width: int = WIDTH,
         color: str | None = None,
     ):
         super().__init__(parent)
-        self.radius = radius
+        self.radius = (
+            (0 if terminal_theme() else RADIUS) if radius is None else radius
+        )
         self.width = width
         self.color = QColor(color or C.MUTED_DARK)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)

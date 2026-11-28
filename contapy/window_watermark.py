@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .theme import C, font
+from .theme import C, font, radius
 
 
 def _window_name(widget: QWidget) -> str:
@@ -44,7 +44,7 @@ class WindowWatermark(QLabel):
     def refresh_style(self) -> None:
         self.setStyleSheet(
             f"color:{C.MUTED}; background:{C.PANEL_RAISED}; "
-            f"border:1px solid {C.BORDER}; border-radius:4px; "
+            f"border:1px solid {C.BORDER}; border-radius:{radius(4)}; "
             f"padding:1px 5px;"
         )
 
@@ -65,7 +65,7 @@ class WindowWatermark(QLabel):
     def _flash_copied(self) -> None:
         self.setStyleSheet(
             f"color:#ffffff; background:{C.ACCENT}; "
-            f"border:1px solid {C.ACCENT}; border-radius:4px; "
+            f"border:1px solid {C.ACCENT}; border-radius:{radius(4)}; "
             f"padding:1px 5px;"
         )
         QTimer.singleShot(700, self._restore_style)

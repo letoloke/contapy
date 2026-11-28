@@ -11,6 +11,7 @@ from contapy import omarchy
 from contapy.omarchy import (
     DEFAULT_THEME,
     FALLBACK_TOKENS,
+    LETOBANK_CLI_COLORS,
     ONE_DARK_COLORS,
     available_themes,
     contrast,
@@ -181,19 +182,33 @@ class PaletteTokenTests(unittest.TestCase):
             self.assertEqual(options[-1].slug, "builtin")
             self.assertEqual(find_theme_dir("my-theme", env), theme)
 
-    def test_missing_default_theme_uses_bundled_one_dark(self) -> None:
+    def test_missing_default_theme_uses_bundled_letoBank_cli(self) -> None:
         previous = omarchy.selected_theme()
         try:
             omarchy.set_theme_choice(DEFAULT_THEME)
             with mock.patch("contapy.omarchy.theme_search_dirs", return_value=[]):
                 omarchy.reset_cache()
                 palette = load_palette()
+            self.assertEqual(palette.source, "built-in LetoBank CLI")
+            self.assertEqual(
+                palette.tokens["BG"], LETOBANK_CLI_COLORS["background"]
+            )
+            self.assertEqual(
+                palette.tokens["ACCENT"], LETOBANK_CLI_COLORS["accent"]
+            )
+        finally:
+            omarchy.set_theme_choice(previous)
+
+    def test_one_dark_remains_available_as_a_builtin(self) -> None:
+        previous = omarchy.selected_theme()
+        try:
+            omarchy.set_theme_choice("one-dark")
+            with mock.patch("contapy.omarchy.theme_search_dirs", return_value=[]):
+                omarchy.reset_cache()
+                palette = load_palette()
             self.assertEqual(palette.source, "built-in One Dark")
             self.assertEqual(
                 palette.tokens["BG"], ONE_DARK_COLORS["background"]
-            )
-            self.assertEqual(
-                palette.tokens["ACCENT"], ONE_DARK_COLORS["accent"]
             )
         finally:
             omarchy.set_theme_choice(previous)
