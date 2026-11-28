@@ -155,7 +155,13 @@ def font(size: int = 14, weight: int = 400, family: str | None = None) -> QFont:
         600: QFont.Weight.DemiBold,
         700: QFont.Weight.Bold,
     }
-    f.setWeight(weights.get(weight, QFont.Weight.Normal))
+    # The terminal look is intentionally hairline: every text role uses
+    # JetBrains Mono Thin. Size and colour still carry the hierarchy.
+    f.setWeight(
+        QFont.Weight.Thin
+        if terminal_theme()
+        else weights.get(weight, QFont.Weight.Normal)
+    )
     # Line up digits in tables where the platform font supports it.
     try:
         f.setFeature(QFont.Tag("tnum"), 1)
@@ -515,13 +521,13 @@ def stylesheet() -> str:
         color: {C.ACCENT};
         border-right: 1px solid {C.BORDER_SOFT};
         border-bottom: 1px solid {C.BORDER};
-        font-weight: 600;
+        font-weight: 100;
     }}
     QPushButton, QPushButton[role="action"] {{
-        font-weight: 600;
+        font-weight: 100;
     }}
     QPushButton[role="primary"] {{
-        font-weight: 700;
+        font-weight: 100;
     }}
     QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
         border-radius: 0px;

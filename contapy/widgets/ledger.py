@@ -55,7 +55,7 @@ from ..dates import format_date
 from ..db import DataStore
 from ..models import Account, Balance, SplitDraft, TransactionDraft, TransactionRow
 from ..money import money
-from ..theme import C, font
+from ..theme import C, font, terminal_theme
 from .dialogs import BulkEditDialog, DateRangeDialog, TransactionDialog
 from .icons import (
     IconButton,
@@ -1737,7 +1737,8 @@ class LedgerWindow(QMainWindow):
                 f"reconciles {selected_count} selected {selected_rows}"
             )
             self.keyboard_hint.setStyleSheet(
-                f"color:{C.WARNING}; font-weight:600;"
+                f"color:{C.WARNING}; font-weight:"
+                f"{100 if terminal_theme() else 600};"
             )
         else:
             hint = "↑↓ move · Enter open · Del delete"
