@@ -10,10 +10,14 @@ from contapy.config import (
     DEFAULT_LEDGER_STATUS,
     config_path,
     date_format_choice,
+    font_family_choice,
+    font_weight_choice,
     last_database,
     ledger_status_choice,
     remember_database,
     remember_date_format,
+    remember_font_family,
+    remember_font_weight,
     remember_ledger_status,
     remember_theme,
     theme_choice,
@@ -55,6 +59,26 @@ class ConfigTests(unittest.TestCase):
         remember_database(first, self.env)
         remember_database(second, self.env)
         self.assertEqual(last_database(self.env), second.resolve())
+
+    def test_font_family_and_weight_round_trip(self) -> None:
+        self.assertEqual(font_family_choice(self.env), "")
+        self.assertEqual(font_weight_choice(self.env), 0)
+        remember_font_family("JetBrains Mono", self.env)
+        remember_font_weight(300, self.env)
+        self.assertEqual(font_family_choice(self.env), "JetBrains Mono")
+        self.assertEqual(font_weight_choice(self.env), 300)
+        remember_font_family("", self.env)
+        remember_font_weight(0, self.env)
+        self.assertEqual(font_family_choice(self.env), "")
+        self.assertEqual(font_weight_choice(self.env), 0)
+
+    def test_font_weight_outside_range_falls_back_to_default(self) -> None:
+        config = config_path(self.env)
+        config.parent.mkdir(parents=True)
+        config.write_text('{"font_weight": 1200}', encoding="utf-8")
+        self.assertEqual(font_weight_choice(self.env), 0)
+        config.write_text('{"font_weight": "heavy"}', encoding="utf-8")
+        self.assertEqual(font_weight_choice(self.env), 0)
 
     def test_corrupt_config_returns_none(self) -> None:
         config = config_path(self.env)

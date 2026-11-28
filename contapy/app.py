@@ -15,6 +15,8 @@ from . import __version__
 from .branding import APP_DESCRIPTION, APP_NAME
 from .config import (
     date_format_choice,
+    font_family_choice,
+    font_weight_choice,
     last_database,
     sync_enabled,
     sync_port,
@@ -25,7 +27,13 @@ from .dates import set_date_format
 from .db import DataStore, default_db_path
 from .lansync import SyncServer
 from .main_window import MainWindow
-from .theme import C, DONUT_COLORS, apply_theme, select_theme
+from .theme import (
+    C,
+    DONUT_COLORS,
+    apply_theme,
+    select_theme,
+    set_font_override,
+)
 from .window_watermark import install_window_watermarks
 
 
@@ -99,6 +107,7 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationVersion(__version__)
     set_date_format(date_format_choice())
     select_theme(theme_choice())
+    set_font_override(font_family_choice(), font_weight_choice())
     apply_theme(app)
     app.setWindowIcon(build_app_icon())
     install_window_watermarks(app)

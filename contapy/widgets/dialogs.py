@@ -18,6 +18,8 @@ from PySide6.QtGui import (
     QBrush,
     QColor,
     QDesktopServices,
+    QFont,
+    QFontDatabase,
     QIcon,
     QKeySequence,
     QPainter,
@@ -60,8 +62,12 @@ from .. import __version__
 from ..branding import APP_NAME
 from ..config import (
     date_format_choice,
+    font_family_choice,
+    font_weight_choice,
     ledger_status_choice,
     remember_date_format,
+    remember_font_family,
+    remember_font_weight,
     remember_ledger_status,
     remember_theme,
     theme_choice,
@@ -77,7 +83,7 @@ from ..models import (
     ordered_categories,
 )
 from ..money import friendly_date, money
-from ..theme import C, CLEARED, font, radius, theme_options
+from ..theme import C, CLEARED, font, font_family, radius, theme_options
 from .icons import (
     IconButton,
     draw_bell,
@@ -2132,6 +2138,148 @@ class PreferencesDialog(QDialog):
             self.store.reset_demo_data()
             self.was_reset = True
             self.accept()
+
+
+WEIGHT_OPTIONS: list[tuple[str, int]] = [
+    ("Thin · 100", 100),
+    ("ExtraLight · 200", 200),
+    ("Light · 300", 300),
+    ("Regular · 400", 400),
+    ("Medium · 500", 500),
+    ("SemiBold · 600", 600),
+    ("Bold · 700", 700),
+    ("ExtraBold · 800", 800),
+    ("Black · 900", 900),
+]
+
+
+class VisualsDialog(QDialog):
+    """Choose the interface typeface and weight."""
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.changed = False
+        self.setWindowTitle("Visuals")
+        self.setModal(True)
+        self.setMinimumWidth(560)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(22, 20, 22, 18)
+        root.setSpacing(14)
+
+        heading = QLabel("Visuals")
+        heading.setFont(font(18, 600))
+        root.addWidget(heading)
+
+        intro = QLabel(
+            "Choose the typeface and weight used across the interface. "
+            "Changes apply to every screen and are remembered."
+        )
+        intro.setWordWrap(True)
+        intro.setFont(font(13, 400))
+        intro.setStyleSheet(f"color:{C.MUTED};")
+        root.addWidget(intro)
+
+        family_row = QHBoxLayout()
+        family_row.setSpacing(10)
+        family_label = QLabel("Font family")
+        family_label.setFont(font(13, 400))
+        family_label.setStyleSheet(f"color:{C.TEXT_SOFT};")
+        family_label.setFixedWidth(110)
+        family_row.addWidget(family_label)
+        self.family_combo = SearchCombo("Search installed fonts…")
+        self.family_combo.setFont(font(13, 400))
+        self.family_combo.set_choices(
+            [
+                (name, name)
+                for name in sorted(QFontDatabase.families(), key=str.casefold)
+            ],
+            preserve_text=False,
+            select_first=False,
+        )
+        current_family = font_family_choice() or font_family()
+        family_index = self.family_combo.findText(current_family)
+        if family_index >= 0:
+            self.family_combo.setCurrentIndex(family_index)
+        else:
+            self.family_combo.setEditText(current_family)
+        family_row.addWidget(self.family_combo, 1)
+        root.addLayout(family_row)
+
+        weight_row = QHBoxLayout()
+        weight_row.setSpacing(10)
+        weight_label = QLabel("Weight")
+        weight_label.setFont(font(13, 400))
+        weight_label.setStyleSheet(f"color:{C.TEXT_SOFT};")
+        weight_label.setFixedWidth(110)
+        weight_row.addWidget(weight_label)
+        self.weight_combo = QComboBox()
+        self.weight_combo.setFont(font(13, 400))
+        for label, value in WEIGHT_OPTIONS:
+            self.weight_combo.addItem(label, value)
+        current_weight = font_weight_choice() or int(font(14).weight())
+        weight_index = self.weight_combo.findData(current_weight)
+        if weight_index >= 0:
+            self.weight_combo.setCurrentIndex(weight_index)
+        weight_row.addWidget(self.weight_combo, 1)
+        root.addLayout(weight_row)
+
+        preview_label = QLabel("Preview")
+        preview_label.setFont(font(11, 600))
+        preview_label.setStyleSheet(f"color:{C.MUTED_DARK};")
+        root.addWidget(preview_label)
+
+        self.preview = QLabel(
+            "The quick brown fox jumps over the lazy dog\n"
+            "0123456789  ·  $ 12,345.67  ·  Budgeted   Spent   Remaining"
+        )
+        self.preview.setWordWrap(True)
+        self.preview.setMinimumHeight(96)
+        self.preview.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+        self.preview.setStyleSheet(
+            f"background:{C.INPUT_BG}; color:{C.TEXT};"
+            f"border:1px solid {C.INPUT_BORDER};"
+            f"border-radius:{radius(4)}; padding:12px;"
+        )
+        root.addWidget(self.preview)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        cancel = QPushButton("Cancel")
+        cancel.setAutoDefault(False)
+        cancel.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel.clicked.connect(self.reject)
+        buttons.addWidget(cancel)
+        apply_button = QPushButton("Apply")
+        apply_button.setAutoDefault(False)
+        apply_button.setDefault(True)
+        apply_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        apply_button.clicked.connect(self.accept)
+        buttons.addWidget(apply_button)
+        root.addLayout(buttons)
+
+        self.family_combo.currentTextChanged.connect(self._update_preview)
+        self.weight_combo.currentIndexChanged.connect(self._update_preview)
+        self._update_preview()
+
+    def _update_preview(self, *_args) -> None:
+        family = self.family_combo.currentText().strip() or font_family()
+        weight = int(self.weight_combo.currentData() or 400)
+        preview = QFont(family)
+        preview.setPixelSize(18)
+        preview.setWeight(QFont.Weight(weight))
+        self.preview.setFont(preview)
+
+    def accept(self) -> None:
+        family = self.family_combo.currentText().strip()
+        weight = int(self.weight_combo.currentData() or 0)
+        if family != font_family_choice() or weight != font_weight_choice():
+            remember_font_family(family)
+            remember_font_weight(weight)
+            self.changed = True
+        super().accept()
 
 
 class CategoryDialog(QDialog):

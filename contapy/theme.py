@@ -81,6 +81,8 @@ def palette_mode() -> str:
 
 _FONT_FAMILY: str | None = None
 _EMOJI_FAMILY: str | None = None
+_FONT_OVERRIDE_FAMILY: str | None = None
+_FONT_OVERRIDE_WEIGHT: int | None = None
 
 
 def terminal_theme() -> bool:
@@ -98,6 +100,8 @@ def radius(pixels: int = 4) -> str:
 
 def font_family() -> str:
     global _FONT_FAMILY
+    if _FONT_OVERRIDE_FAMILY:
+        return _FONT_OVERRIDE_FAMILY
     if _FONT_FAMILY is None:
         available = set(QFontDatabase.families())
         if terminal_theme():
@@ -155,19 +159,33 @@ def font(size: int = 14, weight: int = 400, family: str | None = None) -> QFont:
         600: QFont.Weight.DemiBold,
         700: QFont.Weight.Bold,
     }
-    # The terminal look is intentionally light: every text role uses
-    # JetBrains Mono ExtraLight. Size and colour still carry the hierarchy.
-    f.setWeight(
-        QFont.Weight.ExtraLight
-        if terminal_theme()
-        else weights.get(weight, QFont.Weight.Normal)
-    )
+    if _FONT_OVERRIDE_WEIGHT:
+        f.setWeight(QFont.Weight(_FONT_OVERRIDE_WEIGHT))
+    elif terminal_theme():
+        # The terminal look is intentionally light: every text role uses
+        # JetBrains Mono ExtraLight. Size and colour still carry the hierarchy.
+        f.setWeight(QFont.Weight.ExtraLight)
+    else:
+        f.setWeight(weights.get(weight, QFont.Weight.Normal))
     # Line up digits in tables where the platform font supports it.
     try:
         f.setFeature(QFont.Tag("tnum"), 1)
     except Exception:
         pass
     return f
+
+
+def set_font_override(family: str | None, weight: int | None) -> None:
+    """Pin the UI to a user-chosen family and weight (None = theme default)."""
+    global _FONT_FAMILY, _FONT_OVERRIDE_FAMILY, _FONT_OVERRIDE_WEIGHT
+    _FONT_OVERRIDE_FAMILY = (family or "").strip() or None
+    _FONT_OVERRIDE_WEIGHT = int(weight) if weight else None
+    _FONT_FAMILY = None
+
+
+def font_override() -> tuple[str | None, int | None]:
+    """The active font override, if the user chose one."""
+    return _FONT_OVERRIDE_FAMILY, _FONT_OVERRIDE_WEIGHT
 
 
 def qcolor(token: str, alpha: int | None = None) -> QColor:
@@ -521,13 +539,13 @@ def stylesheet() -> str:
         color: {C.ACCENT};
         border-right: 1px solid {C.BORDER_SOFT};
         border-bottom: 1px solid {C.BORDER};
-        font-weight: 200;
+        font-weight: {_FONT_OVERRIDE_WEIGHT or 200};
     }}
     QPushButton, QPushButton[role="action"] {{
-        font-weight: 200;
+        font-weight: {_FONT_OVERRIDE_WEIGHT or 200};
     }}
     QPushButton[role="primary"] {{
-        font-weight: 200;
+        font-weight: {_FONT_OVERRIDE_WEIGHT or 200};
     }}
     QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
         border-radius: 0px;

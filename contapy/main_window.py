@@ -32,6 +32,8 @@ from .banamex import transform as transform_banamex
 from .booking import transform as transform_booking
 from .config import (
     date_format_choice,
+    font_family_choice,
+    font_weight_choice,
     remember_database,
     sync_port,
     sync_token,
@@ -44,7 +46,7 @@ from .mercadopago import transform as transform_mercadopago
 from .models import ScheduledItem
 from .activity import ActivityLog, activity_log_path, transaction_detail
 from .money import money
-from .theme import C, font, radius, select_theme
+from .theme import C, apply_theme, font, radius, select_theme, set_font_override
 from .widgets.accounts import AccountsPanel
 from .branding import APP_NAME
 from .widgets.budgets import BudgetWindow, BudgetsPanel
@@ -62,6 +64,7 @@ from .widgets.dialogs import (
     PreferencesDialog,
     ShortcutsDialog,
     TransactionDialog,
+    VisualsDialog,
     about_text,
 )
 from .widgets.scheduled import ScheduledPanel
@@ -409,6 +412,7 @@ class MainWindow(QMainWindow):
         self.toolbar.cashflowFocus.connect(self.focus_cashflow)
         self.toolbar.reportsRequested.connect(self.open_reports)
         self.toolbar.budgetsRequested.connect(self.open_budgets)
+        self.toolbar.visualsRequested.connect(self.open_visuals)
         self.toolbar.menuToggleRequested.connect(self.toggle_menu_bar)
 
         self.accounts_panel.accountSelected.connect(lambda _id: self._update_actions())
@@ -930,11 +934,27 @@ class MainWindow(QMainWindow):
             self._record_activity("Changed theme", theme_choice())
             self._rebuild_for_theme()
 
+    def open_visuals(self) -> None:
+        dialog = VisualsDialog(self)
+        dialog.exec()
+        if not dialog.changed:
+            return
+        family = font_family_choice() or "theme default"
+        weight = font_weight_choice() or "theme default"
+        self._record_activity("Changed font", f"{family} · {weight}")
+        set_font_override(
+            font_family_choice() or None, font_weight_choice() or None
+        )
+        self._rebuild_for_theme()
+
     def _rebuild_for_theme(self) -> None:
-        """Apply the saved theme by rebuilding the window with fresh styles."""
+        """Apply the saved theme and font by rebuilding with fresh styles."""
         from PySide6.QtWidgets import QApplication
 
         select_theme(theme_choice())
+        app = QApplication.instance()
+        if app is not None:
+            apply_theme(app)
         geometry = self.geometry()
         maximized = self.isMaximized()
         self._keep_store = True

@@ -78,6 +78,48 @@ def remember_theme(choice: str, environ: dict[str, str] | None = None) -> None:
     _write(data, environ)
 
 
+def font_family_choice(environ: dict[str, str] | None = None) -> str:
+    """The saved UI font family, or an empty string for the theme default."""
+    value = _read(environ).get("font_family")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return ""
+
+
+def remember_font_family(
+    family: str, environ: dict[str, str] | None = None
+) -> None:
+    """Persist the selected UI font family."""
+    data = _read(environ)
+    if family.strip():
+        data["font_family"] = family.strip()
+    else:
+        data.pop("font_family", None)
+    _write(data, environ)
+
+
+def font_weight_choice(environ: dict[str, str] | None = None) -> int:
+    """The saved UI font weight, or 0 for the theme default."""
+    value = _read(environ).get("font_weight")
+    try:
+        weight = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return weight if 100 <= weight <= 900 else 0
+
+
+def remember_font_weight(
+    weight: int, environ: dict[str, str] | None = None
+) -> None:
+    """Persist the selected UI font weight (0 clears the override)."""
+    data = _read(environ)
+    if weight:
+        data["font_weight"] = int(weight)
+    else:
+        data.pop("font_weight", None)
+    _write(data, environ)
+
+
 def date_format_choice(environ: dict[str, str] | None = None) -> str:
     """The saved date display format, defaulting to ``yyyy/mmm/dd``."""
     value = _read(environ).get("date_format")
