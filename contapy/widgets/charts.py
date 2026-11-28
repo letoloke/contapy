@@ -114,7 +114,9 @@ class ChartCard(QWidget):
         self.content = content
         self._flash = False
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.setMinimumWidth(380)
+        # Let the splitter shrink both chart cards on narrow windows instead
+        # of keeping the right card at a fixed width and clipping it.
+        self.setMinimumWidth(0)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(3, 3, 3, 3)
