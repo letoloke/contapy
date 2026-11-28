@@ -133,7 +133,13 @@ class ChartCard(QWidget):
 
         self.footer.saveRequested.connect(self._save_image)
 
+        self.frame_color = C.MUTED_DARK
         self.frame = RoundedFrame(self)
+
+    def set_frame_color(self, color: str) -> None:
+        self.frame_color = color
+        if not self._flash:
+            self.frame.set_color(color)
 
     def set_title(self, text: str) -> None:
         self.title = text
@@ -158,7 +164,7 @@ class ChartCard(QWidget):
 
     def _clear_flash(self) -> None:
         self._flash = False
-        self.frame.set_color(C.MUTED_DARK)
+        self.frame.set_color(self.frame_color)
         self.update()
 
     def _save_image(self) -> None:

@@ -323,6 +323,13 @@ class MainWindow(QMainWindow):
         self.scheduled_panel = ScheduledPanel()
         self.budgets_panel = BudgetsPanel(self.store)
 
+        # One outline color per dashboard region (terminal theme).
+        self.accounts_panel.set_frame_color("#ba72cf")
+        self.donut_card.set_frame_color("#24292c")
+        self.bar_card.set_frame_color("#23292c")
+        self.scheduled_panel.set_frame_color("#579bd2")
+        self.budgets_panel.set_frame_color("#58c98a")
+
         self.charts_split = QSplitter(Qt.Orientation.Horizontal)
         self.charts_split.setHandleWidth(5)
         self.charts_split.setChildrenCollapsible(False)

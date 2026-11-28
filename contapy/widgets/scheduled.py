@@ -498,6 +498,9 @@ class ScheduledPanel(QWidget):
 
         self.frame = RoundedFrame(self)
 
+    def set_frame_color(self, color: str) -> None:
+        self.frame.set_color(color)
+
     def paintEvent(self, event):  # noqa: N802
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)

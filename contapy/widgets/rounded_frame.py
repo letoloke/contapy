@@ -9,7 +9,8 @@ from PySide6.QtWidgets import QWidget
 from ..theme import C, terminal_theme
 
 RADIUS = 8
-WIDTH = 3
+TERMINAL_RADIUS = 4
+WIDTH = 2
 
 
 class RoundedFrame(QWidget):
@@ -30,7 +31,9 @@ class RoundedFrame(QWidget):
     ):
         super().__init__(parent)
         self.radius = (
-            (0 if terminal_theme() else RADIUS) if radius is None else radius
+            (TERMINAL_RADIUS if terminal_theme() else RADIUS)
+            if radius is None
+            else radius
         )
         self.width = width
         self.color = QColor(color or C.MUTED_DARK)

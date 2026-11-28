@@ -30,6 +30,7 @@ from ..models import BudgetStatus, ordered_categories
 from ..money import money, money_short
 from ..theme import C, font, radius
 from .icons import IconButton, draw_chevron
+from .rounded_frame import RoundedFrame
 
 
 def _shift_month(value: date, months: int) -> date:
@@ -745,10 +746,9 @@ class BudgetsPanel(QWidget):
         self.month = self.store.current_budget_period()
         self.setObjectName("budgetsPanel")
         self.setMinimumWidth(430)
-        self.setStyleSheet(f"QWidget#budgetsPanel {{ background:{C.BG}; }}")
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(3, 3, 3, 3)
         root.setSpacing(0)
 
         header = QWidget()
@@ -837,7 +837,19 @@ class BudgetsPanel(QWidget):
         self.scroll.setWidget(self.content)
         root.addWidget(self.scroll, 1)
 
+        self.frame = RoundedFrame(self)
         self.reload()
+
+    def set_frame_color(self, color: str) -> None:
+        self.frame.set_color(color)
+
+    def paintEvent(self, event):  # noqa: N802
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(C.PANEL))
+        p.drawRoundedRect(QRectF(self.rect()), self.frame.radius, self.frame.radius)
+        p.end()
 
     # ------------------------------------------------------------------ data
     def reload(self) -> None:
