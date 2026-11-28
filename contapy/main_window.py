@@ -85,7 +85,8 @@ class MainWindow(QMainWindow):
         self._update_window_title()
         self.setMinimumSize(1400, 760)
         self.resize(1500, 870)
-        self.setContentsMargins(0, 0, 0, 0)
+        self.setContentsMargins(5, 5, 5, 5)
+        self.setStyleSheet(f"QMainWindow {{ background: {C.BORDER_SOFT}; }}")
 
         self._build_menus()
         self._build_ui()
