@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QColor, QIcon, QPainter, QPen
+from PySide6.QtGui import QColor, QIcon, QPainter
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -191,6 +191,4 @@ class AppToolbar(QWidget):
     def paintEvent(self, event):  # noqa: N802
         p = QPainter(self)
         p.fillRect(self.rect(), QColor(C.BG))
-        p.setPen(QPen(QColor(C.BORDER), 1))
-        p.drawLine(0, self.height() - 1, self.width(), self.height() - 1)
         p.end()
