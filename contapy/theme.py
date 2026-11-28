@@ -155,10 +155,10 @@ def font(size: int = 14, weight: int = 400, family: str | None = None) -> QFont:
         600: QFont.Weight.DemiBold,
         700: QFont.Weight.Bold,
     }
-    # The terminal look is intentionally hairline: every text role uses
-    # JetBrains Mono Thin. Size and colour still carry the hierarchy.
+    # The terminal look is intentionally light: every text role uses
+    # JetBrains Mono ExtraLight. Size and colour still carry the hierarchy.
     f.setWeight(
-        QFont.Weight.Thin
+        QFont.Weight.ExtraLight
         if terminal_theme()
         else weights.get(weight, QFont.Weight.Normal)
     )
@@ -521,13 +521,13 @@ def stylesheet() -> str:
         color: {C.ACCENT};
         border-right: 1px solid {C.BORDER_SOFT};
         border-bottom: 1px solid {C.BORDER};
-        font-weight: 100;
+        font-weight: 200;
     }}
     QPushButton, QPushButton[role="action"] {{
-        font-weight: 100;
+        font-weight: 200;
     }}
     QPushButton[role="primary"] {{
-        font-weight: 100;
+        font-weight: 200;
     }}
     QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
         border-radius: 0px;

@@ -1738,7 +1738,7 @@ class LedgerWindow(QMainWindow):
             )
             self.keyboard_hint.setStyleSheet(
                 f"color:{C.WARNING}; font-weight:"
-                f"{100 if terminal_theme() else 600};"
+                f"{200 if terminal_theme() else 600};"
             )
         else:
             hint = "↑↓ move · Enter open · Del delete"
