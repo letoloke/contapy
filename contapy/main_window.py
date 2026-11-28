@@ -8,7 +8,13 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from PySide6.QtCore import QTimer, Qt, QUrl
-from PySide6.QtGui import QAction, QCursor, QDesktopServices, QKeySequence
+from PySide6.QtGui import (
+    QAction,
+    QCursor,
+    QDesktopServices,
+    QKeyEvent,
+    QKeySequence,
+)
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -246,6 +252,32 @@ class MainWindow(QMainWindow):
         help_menu.addAction(self.act_shortcuts)
         help_menu.addAction(self._action(f"About {APP_NAME}", self.show_about))
 
+        # The menu bar stays hidden for the terminal look; Alt (or the
+        # toolbar button) brings it back.
+        bar.setVisible(False)
+
+    def toggle_menu_bar(self) -> None:
+        bar = self.menuBar()
+        show = not bar.isVisible()
+        bar.setVisible(show)
+        if show:
+            bar.setFocus(Qt.FocusReason.ShortcutFocusReason)
+        toolbar = getattr(self, "toolbar", None)
+        if toolbar is not None:
+            toolbar.menu_button.setChecked(show)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+        if (
+            event.key() == Qt.Key.Key_Alt
+            and not event.isAutoRepeat()
+            and event.modifiers()
+            in (Qt.KeyboardModifier.NoModifier, Qt.KeyboardModifier.AltModifier)
+        ):
+            self.toggle_menu_bar()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
     def _action(self, text: str, slot, shortcut: str | None = None) -> QAction:
         action = QAction(text, self)
         if shortcut:
@@ -369,6 +401,7 @@ class MainWindow(QMainWindow):
         self.toolbar.cashflowFocus.connect(self.focus_cashflow)
         self.toolbar.reportsRequested.connect(self.open_reports)
         self.toolbar.budgetsRequested.connect(self.open_budgets)
+        self.toolbar.menuToggleRequested.connect(self.toggle_menu_bar)
 
         self.accounts_panel.accountSelected.connect(lambda _id: self._update_actions())
         self.accounts_panel.openRequested.connect(self.open_ledger)

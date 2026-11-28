@@ -37,6 +37,7 @@ class AppToolbar(QWidget):
     cashflowFocus = Signal()
     reportsRequested = Signal()
     budgetsRequested = Signal()
+    menuToggleRequested = Signal()
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -105,6 +106,11 @@ class AppToolbar(QWidget):
         self._button(
             "keyboard", "📖", "Keyboard shortcuts", self.helpRequested.emit, layout
         )
+        self.menu_button = self._button(
+            "bars", "☰", "Menu bar  (Alt)",
+            self.menuToggleRequested.emit, layout,
+        )
+        self.menu_button.setCheckable(True)
 
         add_button = QToolButton(self)
         add_button.setText("Add")

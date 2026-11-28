@@ -3292,6 +3292,7 @@ SHORTCUT_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
         "Global",
         [
             ("Ctrl+K", "Show this shortcut list"),
+            ("Alt", "Show or hide the menu bar"),
             ("Ctrl+N", "New transaction"),
             ("Ctrl+Shift+N", "New account"),
             ("Ctrl+I", "Open the import transactions menu"),
