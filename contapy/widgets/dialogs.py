@@ -67,6 +67,7 @@ from ..branding import APP_NAME
 from ..config import (
     DEFAULT_FRAME_COLORS,
     FRAME_PANEL_KEYS,
+    STRIP_TABS,
     category_color_overrides,
     date_format_choice,
     font_family_choice,
@@ -79,7 +80,9 @@ from ..config import (
     remember_font_weights,
     remember_frame_colors,
     remember_ledger_status,
+    remember_strip_tab_order,
     remember_theme,
+    strip_tab_order,
     theme_choice,
 )
 from ..omarchy import base_category_color
@@ -1994,6 +1997,7 @@ class PreferencesDialog(QDialog):
         self.was_reset = False
         self.changed_theme = False
         self.changed_date_format = False
+        self.changed_strip_order = False
         self.setWindowTitle("Preferences")
         self.setModal(True)
         self.setMinimumWidth(520)
@@ -2084,6 +2088,36 @@ class PreferencesDialog(QDialog):
         display_help.setStyleSheet(f"color:{C.MUTED_DARK};")
         root.addWidget(display_help)
 
+        strip_row = QHBoxLayout()
+        strip_row.setSpacing(8)
+        strip_label = QLabel("Tabs")
+        strip_label.setFont(font(13, 400))
+        strip_label.setStyleSheet(f"color:{C.TEXT_SOFT};")
+        strip_row.addWidget(strip_label)
+        self._strip_order = strip_tab_order()
+        self.strip_combos: list[QComboBox] = []
+        for position in range(3):
+            combo = QComboBox()
+            combo.setFont(font(13, 400))
+            for name in STRIP_TABS:
+                combo.addItem(name, name)
+            combo.setCurrentText(self._strip_order[position])
+            combo.currentIndexChanged.connect(
+                lambda _index, index=position: self._strip_order_changed(index)
+            )
+            strip_row.addWidget(combo, 1)
+            self.strip_combos.append(combo)
+        root.addLayout(strip_row)
+
+        strip_help = QLabel(
+            "Order of the Scheduled / Future / Remind tabs. The first tab "
+            "is shown by default."
+        )
+        strip_help.setWordWrap(True)
+        strip_help.setFont(font(12, 400))
+        strip_help.setStyleSheet(f"color:{C.MUTED_DARK};")
+        root.addWidget(strip_help)
+
         path_label = QLabel(str(store.path))
         path_label.setWordWrap(True)
         path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -2127,6 +2161,23 @@ class PreferencesDialog(QDialog):
         footer.setStyleSheet(f"color:{C.MUTED_DARK};")
         root.addWidget(footer)
 
+    def _strip_order_changed(self, position: int) -> None:
+        combo = self.strip_combos[position]
+        chosen = combo.currentText()
+        previous = self._strip_order[position]
+        if chosen == previous:
+            return
+        self._strip_order[position] = chosen
+        for other, other_combo in enumerate(self.strip_combos):
+            if other == position:
+                continue
+            if other_combo.currentText() == chosen:
+                other_combo.blockSignals(True)
+                other_combo.setCurrentText(previous)
+                other_combo.blockSignals(False)
+                self._strip_order[other] = previous
+                break
+
     def accept(self) -> None:
         choice = self.theme_combo.currentData()
         if choice and choice != theme_choice():
@@ -2139,6 +2190,10 @@ class PreferencesDialog(QDialog):
         status = self.ledger_status_combo.currentData()
         if status and status != ledger_status_choice():
             remember_ledger_status(status)
+        order = [combo.currentText() for combo in self.strip_combos]
+        if order != strip_tab_order():
+            remember_strip_tab_order(order)
+            self.changed_strip_order = True
         super().accept()
 
     def _open_folder(self) -> None:

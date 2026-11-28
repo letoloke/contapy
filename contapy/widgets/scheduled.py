@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..config import strip_tab_order
 from ..dates import format_date
 from ..models import Account, ScheduledItem
 from ..money import money
@@ -81,20 +82,36 @@ def _ui_font(size: int = 14, weight: int = 400):
 class _Tabs(QWidget):
     changed = Signal(str)
 
-    def __init__(self, parent: QWidget | None = None):
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        order: list[str] | None = None,
+    ):
         super().__init__(parent)
         self.setFixedWidth(TAB_W)
-        self.active = "Scheduled"
+        self.set_tab_order(order)
         self._hover = ""
         self.setMouseTracking(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def set_tab_order(self, order: list[str] | None) -> None:
+        ordered: list[str] = []
+        for name in order or []:
+            if name in TABS and name not in ordered:
+                ordered.append(name)
+        for name in TABS:
+            if name not in ordered:
+                ordered.append(name)
+        self.order = ordered
+        active = getattr(self, "active", "")
+        self.active = active if active in ordered else ordered[0]
 
     def paintEvent(self, event):  # noqa: N802
         p = QPainter(self)
         p.fillRect(self.rect(), QColor(C.PANEL))
         p.setPen(QPen(QColor(C.BORDER), 1))
         p.drawLine(TAB_W - 1, 0, TAB_W - 1, self.height())
-        for index, name in enumerate(TABS):
+        for index, name in enumerate(self.order):
             rect = QRectF(0, index * TAB_H, TAB_W - 1, TAB_H)
             if name == self.active:
                 p.fillRect(rect, QColor(C.ACCENT))
@@ -111,8 +128,8 @@ class _Tabs(QWidget):
 
     def mousePressEvent(self, event):  # noqa: N802
         index = int(event.position().y()) // TAB_H
-        if 0 <= index < len(TABS):
-            name = TABS[index]
+        if 0 <= index < len(self.order):
+            name = self.order[index]
             if name != self.active:
                 self.active = name
                 self.update()
@@ -121,7 +138,7 @@ class _Tabs(QWidget):
 
     def mouseMoveEvent(self, event):  # noqa: N802
         index = int(event.position().y()) // TAB_H
-        name = TABS[index] if 0 <= index < len(TABS) else ""
+        name = self.order[index] if 0 <= index < len(self.order) else ""
         if name != self._hover:
             self._hover = name
             self.update()
@@ -415,7 +432,11 @@ class ScheduledPanel(QWidget):
     openLedgerRequested = Signal(int)
     settingsRequested = Signal()
 
-    def __init__(self, parent: QWidget | None = None):
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        tab_order: list[str] | None = None,
+    ):
         super().__init__(parent)
         self.items: list[ScheduledItem] = []
         self.future: list[ScheduledItem] = []
@@ -431,7 +452,7 @@ class ScheduledPanel(QWidget):
         outer.setContentsMargins(3, 3, 3, 3)
         outer.setSpacing(0)
 
-        self.tabs = _Tabs(self)
+        self.tabs = _Tabs(self, order=tab_order or strip_tab_order())
         self.tabs.changed.connect(self._on_tab_changed)
         outer.addWidget(self.tabs)
 

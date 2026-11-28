@@ -956,6 +956,9 @@ class MainWindow(QMainWindow):
                 self.reports_window.reload()
         if dialog.changed_theme:
             self._record_activity("Changed theme", theme_choice())
+        if dialog.changed_strip_order:
+            self._record_activity("Reordered transaction tabs")
+        if dialog.changed_theme or dialog.changed_strip_order:
             self._rebuild_for_theme()
 
     def open_visuals(self) -> None:

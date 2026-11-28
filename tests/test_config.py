@@ -10,7 +10,9 @@ from contapy.config import (
     CHART_STYLES,
     DEFAULT_FRAME_COLORS,
     DEFAULT_LEDGER_STATUS,
+    DEFAULT_STRIP_ORDER,
     FRAME_PANEL_KEYS,
+    STRIP_TABS,
     category_color_overrides,
     chart_style_choice,
     config_path,
@@ -30,8 +32,10 @@ from contapy.config import (
     remember_font_weights,
     remember_frame_colors,
     remember_ledger_status,
+    remember_strip_tab_order,
     remember_theme,
     resolved_frame_colors,
+    strip_tab_order,
     theme_choice,
 )
 from contapy.dates import DEFAULT_DATE_FORMAT
@@ -172,6 +176,19 @@ class ConfigTests(unittest.TestCase):
         )
         remember_category_colors({}, self.env)
         self.assertEqual(category_color_overrides(self.env), {})
+
+    def test_strip_tab_order_defaults_to_remind_first(self) -> None:
+        self.assertEqual(strip_tab_order(self.env), list(DEFAULT_STRIP_ORDER))
+        remember_strip_tab_order(
+            ["Future", "Remind", "Scheduled"], self.env
+        )
+        self.assertEqual(
+            strip_tab_order(self.env), ["Future", "Remind", "Scheduled"]
+        )
+        remember_strip_tab_order(["Remind", "Remind", "Bogus"], self.env)
+        order = strip_tab_order(self.env)
+        self.assertEqual(order[0], "Remind")
+        self.assertEqual(set(order), set(STRIP_TABS))
 
     def test_corrupt_config_returns_none(self) -> None:
         config = config_path(self.env)

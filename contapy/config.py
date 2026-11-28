@@ -391,6 +391,43 @@ def remember_category_colors(
     _write(data, environ)
 
 
+# ------------------------------------------------------- transaction strip
+STRIP_TABS = ("Scheduled", "Future", "Remind")
+DEFAULT_STRIP_ORDER = ("Remind", "Scheduled", "Future")
+
+
+def strip_tab_order(
+    environ: dict[str, str] | None = None,
+) -> list[str]:
+    """The saved order of the Scheduled / Future / Remind tabs."""
+    raw = _read(environ).get("strip_tab_order")
+    order: list[str] = []
+    if isinstance(raw, list):
+        for name in raw:
+            if name in STRIP_TABS and name not in order:
+                order.append(name)
+    for name in DEFAULT_STRIP_ORDER:
+        if name not in order:
+            order.append(name)
+    return order
+
+
+def remember_strip_tab_order(
+    order: list[str], environ: dict[str, str] | None = None
+) -> None:
+    """Persist the tab order; missing names fall back to the default order."""
+    cleaned: list[str] = []
+    for name in order:
+        if name in STRIP_TABS and name not in cleaned:
+            cleaned.append(name)
+    for name in DEFAULT_STRIP_ORDER:
+        if name not in cleaned:
+            cleaned.append(name)
+    data = _read(environ)
+    data["strip_tab_order"] = cleaned
+    _write(data, environ)
+
+
 def _write(data: dict, environ: dict[str, str] | None = None) -> None:
     config = config_path(environ)
     config.parent.mkdir(parents=True, exist_ok=True)
