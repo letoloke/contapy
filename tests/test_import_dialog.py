@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest

@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import unittest
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 from PySide6.QtWidgets import QApplication
 
