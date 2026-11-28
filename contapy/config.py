@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 from pathlib import Path
 
@@ -248,6 +249,89 @@ def remember_sync_token(token: str, environ: dict[str, str] | None = None) -> No
     data = _read(environ)
     data["sync_token"] = token.strip()
     _write(data, environ)
+
+
+# ---------------------------------------------------------------- frame colors
+FRAME_PANEL_KEYS = ("accounts", "spending", "revenue", "scheduled", "budgets")
+FRAME_MODES = ("theme", "single", "custom")
+
+# Built-in per-panel outline colors ("theme" mode).
+DEFAULT_FRAME_COLORS: dict[str, str] = {
+    "accounts": "#ba72cf",
+    "spending": "#d2666e",
+    "revenue": "#d2666e",
+    "scheduled": "#579bd2",
+    "budgets": "#58c98a",
+}
+
+_HEX_COLOR = re.compile(r"^#(?:[0-9a-fA-F]{6})$")
+
+
+def _valid_color(value) -> str:
+    if isinstance(value, str):
+        text = value.strip()
+        if _HEX_COLOR.fullmatch(text):
+            return text.lower()
+    return ""
+
+
+def frame_color_settings(
+    environ: dict[str, str] | None = None,
+) -> dict[str, object]:
+    """The saved panel-frame color preference."""
+    raw = _read(environ).get("frame_colors")
+    mode = "theme"
+    single = ""
+    panels: dict[str, str] = {}
+    if isinstance(raw, dict):
+        candidate = raw.get("mode")
+        if candidate in FRAME_MODES:
+            mode = candidate
+        single = _valid_color(raw.get("single"))
+        stored = raw.get("panels")
+        if isinstance(stored, dict):
+            for key in FRAME_PANEL_KEYS:
+                color = _valid_color(stored.get(key))
+                if color:
+                    panels[key] = color
+    return {"mode": mode, "single": single, "panels": panels}
+
+
+def remember_frame_colors(
+    settings: dict[str, object], environ: dict[str, str] | None = None
+) -> None:
+    """Persist the panel-frame color preference."""
+    mode = settings.get("mode")
+    if mode not in FRAME_MODES:
+        mode = "theme"
+    stored_panels: dict[str, str] = {}
+    raw_panels = settings.get("panels")
+    if isinstance(raw_panels, dict):
+        for key in FRAME_PANEL_KEYS:
+            color = _valid_color(raw_panels.get(key))
+            if color:
+                stored_panels[key] = color
+    data = _read(environ)
+    data["frame_colors"] = {
+        "mode": mode,
+        "single": _valid_color(settings.get("single")),
+        "panels": stored_panels,
+    }
+    _write(data, environ)
+
+
+def resolved_frame_colors(
+    environ: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """The effective outline color for every dashboard panel."""
+    settings = frame_color_settings(environ)
+    if settings["mode"] == "single" and settings["single"]:
+        return {key: settings["single"] for key in FRAME_PANEL_KEYS}
+    if settings["mode"] == "custom":
+        merged = dict(DEFAULT_FRAME_COLORS)
+        merged.update(settings["panels"])
+        return merged
+    return dict(DEFAULT_FRAME_COLORS)
 
 
 def _write(data: dict, environ: dict[str, str] | None = None) -> None:

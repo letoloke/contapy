@@ -7,12 +7,15 @@ import unittest
 from pathlib import Path
 
 from contapy.config import (
+    DEFAULT_FRAME_COLORS,
     DEFAULT_LEDGER_STATUS,
+    FRAME_PANEL_KEYS,
     config_path,
     date_format_choice,
     font_family_choice,
     font_weight_choice,
     font_weights_choice,
+    frame_color_settings,
     last_database,
     ledger_status_choice,
     remember_database,
@@ -20,8 +23,10 @@ from contapy.config import (
     remember_font_family,
     remember_font_weight,
     remember_font_weights,
+    remember_frame_colors,
     remember_ledger_status,
     remember_theme,
+    resolved_frame_colors,
     theme_choice,
 )
 from contapy.dates import DEFAULT_DATE_FORMAT
@@ -102,6 +107,46 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(
             font_weights_choice(self.env),
             {"body": 300, "heading": 300, "emphasis": 300},
+        )
+
+    def test_frame_colors_default_to_theme_colors(self) -> None:
+        self.assertEqual(resolved_frame_colors(self.env), DEFAULT_FRAME_COLORS)
+        self.assertEqual(DEFAULT_FRAME_COLORS["spending"], "#d2666e")
+        self.assertEqual(DEFAULT_FRAME_COLORS["revenue"], "#d2666e")
+
+    def test_single_frame_color_applies_to_every_panel(self) -> None:
+        remember_frame_colors(
+            {"mode": "single", "single": "#123456", "panels": {}}, self.env
+        )
+        expected = {key: "#123456" for key in FRAME_PANEL_KEYS}
+        self.assertEqual(resolved_frame_colors(self.env), expected)
+
+    def test_custom_frame_colors_merge_with_defaults(self) -> None:
+        remember_frame_colors(
+            {
+                "mode": "custom",
+                "single": "",
+                "panels": {"accounts": "#ABCDEF"},
+            },
+            self.env,
+        )
+        colors = resolved_frame_colors(self.env)
+        self.assertEqual(colors["accounts"], "#abcdef")
+        self.assertEqual(colors["budgets"], DEFAULT_FRAME_COLORS["budgets"])
+
+    def test_invalid_frame_colors_are_ignored(self) -> None:
+        remember_frame_colors(
+            {
+                "mode": "custom",
+                "single": "red",
+                "panels": {"accounts": "nope"},
+            },
+            self.env,
+        )
+        self.assertEqual(frame_color_settings(self.env)["mode"], "custom")
+        self.assertEqual(
+            resolved_frame_colors(self.env)["accounts"],
+            DEFAULT_FRAME_COLORS["accounts"],
         )
 
     def test_corrupt_config_returns_none(self) -> None:

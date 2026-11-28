@@ -13,6 +13,7 @@ from PySide6.QtCore import (
     Qt,
     QTimer,
     QUrl,
+    Signal,
 )
 from PySide6.QtGui import (
     QBrush,
@@ -23,6 +24,7 @@ from PySide6.QtGui import (
     QIcon,
     QKeySequence,
     QPainter,
+    QPen,
     QPixmap,
     QShortcut,
 )
@@ -31,6 +33,7 @@ from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QButtonGroup,
     QCheckBox,
+    QColorDialog,
     QComboBox,
     QCompleter,
     QDateEdit,
@@ -48,6 +51,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QStackedWidget,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -61,13 +65,17 @@ from PySide6.QtWidgets import (
 from .. import __version__
 from ..branding import APP_NAME
 from ..config import (
+    DEFAULT_FRAME_COLORS,
+    FRAME_PANEL_KEYS,
     date_format_choice,
     font_family_choice,
     font_weights_choice,
+    frame_color_settings,
     ledger_status_choice,
     remember_date_format,
     remember_font_family,
     remember_font_weights,
+    remember_frame_colors,
     remember_ledger_status,
     remember_theme,
     theme_choice,
@@ -2180,32 +2188,103 @@ FONT_ROLE_ROWS: tuple[tuple[str, str, str], ...] = (
 )
 
 
+FRAME_PANEL_LABELS: tuple[tuple[str, str], ...] = (
+    ("accounts", "Accounts"),
+    ("spending", "Top spending"),
+    ("revenue", "Spending & revenue"),
+    ("scheduled", "Scheduled / future / remind"),
+    ("budgets", "Budgets"),
+)
+
+
+def _swatch_icon(color: str) -> QIcon:
+    pixmap = QPixmap(18, 18)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setBrush(QColor(color))
+    painter.setPen(QPen(QColor(C.BORDER), 1))
+    painter.drawRoundedRect(QRectF(1, 1, 16, 16), 3, 3)
+    painter.end()
+    return QIcon(pixmap)
+
+
+class ColorChoiceButton(QPushButton):
+    """A button showing a colour swatch that opens the colour picker."""
+
+    colorChanged = Signal(str)
+
+    def __init__(self, color: str, parent: QWidget | None = None):
+        super().__init__(parent)
+        self._color = color
+        self.setAutoDefault(False)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setIconSize(QSize(18, 18))
+        self._refresh()
+        self.clicked.connect(self._choose)
+
+    def color(self) -> str:
+        return self._color
+
+    def set_color(self, color: str) -> None:
+        self._color = color
+        self._refresh()
+
+    def _refresh(self) -> None:
+        self.setIcon(_swatch_icon(self._color))
+        self.setText(self._color.upper())
+
+    def _choose(self) -> None:
+        chosen = QColorDialog.getColor(
+            QColor(self._color), self, "Panel frame color"
+        )
+        if chosen.isValid():
+            self.set_color(chosen.name())
+            self.colorChanged.emit(self._color)
+
+
 class VisualsDialog(QDialog):
-    """Choose the interface typeface and the weight used for each role."""
+    """Choose the interface typeface, weights and panel frame colors."""
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.changed = False
         self.setWindowTitle("Visuals")
         self.setModal(True)
-        self.setMinimumWidth(620)
+        self.setMinimumSize(560, 480)
+        self.resize(660, 760)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(22, 20, 22, 18)
-        root.setSpacing(12)
+        root.setSpacing(10)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        body = QWidget()
+        body.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        scroll.setWidget(body)
+        root.addWidget(scroll, 1)
 
         heading = QLabel("Visuals")
         heading.setFont(font(18, 600))
-        root.addWidget(heading)
+        layout.addWidget(heading)
 
         intro = QLabel(
-            "Choose a typeface and the weight used by each part of the "
-            "interface. Changes apply to every screen and are remembered."
+            "Choose a typeface, the weight used by each role, and the "
+            "color of every panel frame. Changes apply immediately."
         )
         intro.setWordWrap(True)
         intro.setFont(font(13, 400))
         intro.setStyleSheet(f"color:{C.MUTED};")
-        root.addWidget(intro)
+        layout.addWidget(intro)
 
         family_row = QHBoxLayout()
         family_row.setSpacing(10)
@@ -2231,12 +2310,12 @@ class VisualsDialog(QDialog):
         else:
             self.family_combo.setEditText(current_family)
         family_row.addWidget(self.family_combo, 1)
-        root.addLayout(family_row)
+        layout.addLayout(family_row)
 
         scale_heading = QLabel("TYPE SCALE")
         scale_heading.setFont(font(11, 600))
         scale_heading.setStyleSheet(f"color:{C.TITLE}; letter-spacing:1px;")
-        root.addWidget(scale_heading)
+        layout.addWidget(scale_heading)
 
         saved_weights = font_weights_choice()
         self.weight_combos: dict[str, QComboBox] = {}
@@ -2258,21 +2337,57 @@ class VisualsDialog(QDialog):
             if index >= 0:
                 combo.setCurrentIndex(index)
             row.addWidget(combo, 1)
-            root.addLayout(row)
+            layout.addLayout(row)
 
             hint = QLabel(description)
             hint.setWordWrap(True)
             hint.setFont(font(11, 400))
             hint.setStyleSheet(f"color:{C.MUTED_DARK};")
             hint.setContentsMargins(120, 0, 0, 4)
-            root.addWidget(hint)
+            layout.addWidget(hint)
 
             self.weight_combos[role] = combo
+
+        frames_heading = QLabel("PANEL FRAMES")
+        frames_heading.setFont(font(11, 600))
+        frames_heading.setStyleSheet(f"color:{C.TITLE}; letter-spacing:1px;")
+        layout.addWidget(frames_heading)
+
+        saved_frames = frame_color_settings()
+        self._initial_frame_colors = self._normalized_frame_colors(saved_frames)
+
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(10)
+        mode_label = QLabel("Color mode")
+        mode_label.setFont(font(13, 400))
+        mode_label.setStyleSheet(f"color:{C.TEXT_SOFT};")
+        mode_label.setFixedWidth(110)
+        mode_row.addWidget(mode_label)
+        self.frame_mode_combo = QComboBox()
+        self.frame_mode_combo.setFont(font(13, 400))
+        self.frame_mode_combo.addItem("Use theme colors", "theme")
+        self.frame_mode_combo.addItem("One color for all", "single")
+        self.frame_mode_combo.addItem("Custom per panel", "custom")
+        mode_index = self.frame_mode_combo.findData(saved_frames["mode"])
+        if mode_index >= 0:
+            self.frame_mode_combo.setCurrentIndex(mode_index)
+        mode_row.addWidget(self.frame_mode_combo, 1)
+        layout.addLayout(mode_row)
+
+        self.frame_stack = QStackedWidget()
+        self.frame_stack.addWidget(self._theme_frames_page())
+        self.frame_stack.addWidget(self._single_frame_page(saved_frames))
+        self.frame_stack.addWidget(self._custom_frames_page(saved_frames))
+        self.frame_stack.setCurrentIndex(max(0, mode_index))
+        layout.addWidget(self.frame_stack)
+        self.frame_mode_combo.currentIndexChanged.connect(
+            self.frame_stack.setCurrentIndex
+        )
 
         preview_label = QLabel("Preview")
         preview_label.setFont(font(11, 600))
         preview_label.setStyleSheet(f"color:{C.MUTED_DARK};")
-        root.addWidget(preview_label)
+        layout.addWidget(preview_label)
 
         preview_box = QFrame()
         preview_box.setStyleSheet(
@@ -2299,7 +2414,7 @@ class VisualsDialog(QDialog):
             preview.setWordWrap(True)
             preview.setStyleSheet(f"color:{C.TEXT};")
             preview_layout.addWidget(preview)
-        root.addWidget(preview_box)
+        layout.addWidget(preview_box)
 
         buttons = QHBoxLayout()
         buttons.addStretch(1)
@@ -2321,6 +2436,83 @@ class VisualsDialog(QDialog):
             combo.currentIndexChanged.connect(self._update_preview)
         self._update_preview()
 
+    def _theme_frames_page(self) -> QWidget:
+        page = QWidget()
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(5)
+        for key, label in FRAME_PANEL_LABELS:
+            row = QHBoxLayout()
+            row.setSpacing(10)
+            name = QLabel(label)
+            name.setFont(font(12, 400))
+            name.setStyleSheet(f"color:{C.MUTED};")
+            name.setFixedWidth(215)
+            row.addWidget(name)
+            swatch = QLabel()
+            swatch.setPixmap(_swatch_icon(DEFAULT_FRAME_COLORS[key]).pixmap(16, 16))
+            row.addWidget(swatch)
+            value = QLabel(DEFAULT_FRAME_COLORS[key].upper())
+            value.setFont(font(11, 400))
+            value.setStyleSheet(f"color:{C.MUTED_DARK};")
+            row.addWidget(value)
+            row.addStretch(1)
+            page_layout.addLayout(row)
+        return page
+
+    def _single_frame_page(self, saved: dict) -> QWidget:
+        page = QWidget()
+        page_layout = QHBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(10)
+        label = QLabel("Color")
+        label.setFont(font(13, 400))
+        label.setStyleSheet(f"color:{C.TEXT_SOFT};")
+        label.setFixedWidth(110)
+        page_layout.addWidget(label)
+        self.single_frame_color = ColorChoiceButton(
+            saved["single"] or DEFAULT_FRAME_COLORS["spending"]
+        )
+        self.single_frame_color.setFont(font(12, 400))
+        page_layout.addWidget(self.single_frame_color)
+        page_layout.addStretch(1)
+        return page
+
+    def _custom_frames_page(self, saved: dict) -> QWidget:
+        page = QWidget()
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(5)
+        self.frame_color_buttons: dict[str, ColorChoiceButton] = {}
+        for key, label in FRAME_PANEL_LABELS:
+            row = QHBoxLayout()
+            row.setSpacing(10)
+            name = QLabel(label)
+            name.setFont(font(12, 400))
+            name.setStyleSheet(f"color:{C.TEXT_SOFT};")
+            name.setFixedWidth(215)
+            row.addWidget(name)
+            color = saved["panels"].get(key, DEFAULT_FRAME_COLORS[key])
+            button = ColorChoiceButton(color)
+            button.setFont(font(12, 400))
+            row.addWidget(button)
+            row.addStretch(1)
+            page_layout.addLayout(row)
+            self.frame_color_buttons[key] = button
+        return page
+
+    @staticmethod
+    def _normalized_frame_colors(settings: dict) -> dict:
+        panels = {key: DEFAULT_FRAME_COLORS[key] for key in FRAME_PANEL_KEYS}
+        panels.update(settings.get("panels") or {})
+        single = settings.get("single") or DEFAULT_FRAME_COLORS["spending"]
+        mode = settings.get("mode") if settings.get("mode") in (
+            "theme",
+            "single",
+            "custom",
+        ) else "theme"
+        return {"mode": mode, "single": single, "panels": panels}
+
     def _update_preview(self, *_args) -> None:
         family = self.family_combo.currentText().strip() or font_family()
         for role, preview in (
@@ -2340,9 +2532,31 @@ class VisualsDialog(QDialog):
             role: int(combo.currentData() or 0)
             for role, combo in self.weight_combos.items()
         }
-        if family != font_family_choice() or weights != font_weights_choice():
+        panels = {
+            key: button.color()
+            for key, button in self.frame_color_buttons.items()
+        }
+        frames = self._normalized_frame_colors(
+            {
+                "mode": self.frame_mode_combo.currentData(),
+                "single": self.single_frame_color.color(),
+                "panels": panels,
+            }
+        )
+        if (
+            family != font_family_choice()
+            or weights != font_weights_choice()
+            or frames != self._initial_frame_colors
+        ):
             remember_font_family(family)
             remember_font_weights(weights)
+            remember_frame_colors(
+                {
+                    "mode": frames["mode"],
+                    "single": self.single_frame_color.color(),
+                    "panels": panels,
+                }
+            )
             self.changed = True
         super().accept()
 

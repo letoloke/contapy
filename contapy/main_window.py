@@ -34,7 +34,9 @@ from .config import (
     date_format_choice,
     font_family_choice,
     font_weights_choice,
+    frame_color_settings,
     remember_database,
+    resolved_frame_colors,
     sync_port,
     sync_token,
     theme_choice,
@@ -327,12 +329,13 @@ class MainWindow(QMainWindow):
         self.scheduled_panel = ScheduledPanel()
         self.budgets_panel = BudgetsPanel(self.store)
 
-        # One outline color per dashboard region (terminal theme).
-        self.accounts_panel.set_frame_color("#ba72cf")
-        self.donut_card.set_frame_color("#24292c")
-        self.bar_card.set_frame_color("#23292c")
-        self.scheduled_panel.set_frame_color("#579bd2")
-        self.budgets_panel.set_frame_color("#58c98a")
+        # One outline color per dashboard region, from the Visuals settings.
+        frame_colors = resolved_frame_colors()
+        self.accounts_panel.set_frame_color(frame_colors["accounts"])
+        self.donut_card.set_frame_color(frame_colors["spending"])
+        self.bar_card.set_frame_color(frame_colors["revenue"])
+        self.scheduled_panel.set_frame_color(frame_colors["scheduled"])
+        self.budgets_panel.set_frame_color(frame_colors["budgets"])
 
         self.charts_split = QSplitter(Qt.Orientation.Horizontal)
         self.charts_split.setHandleWidth(5)
@@ -949,7 +952,10 @@ class MainWindow(QMainWindow):
                 ("emphasis", 700),
             )
         )
-        self._record_activity("Changed font", f"{family} · {detail}")
+        self._record_activity(
+            "Changed visuals",
+            f"{family} · {detail} · frames: {frame_color_settings()['mode']}",
+        )
         set_font_override(font_family_choice() or None, weights)
         self._rebuild_for_theme()
 
