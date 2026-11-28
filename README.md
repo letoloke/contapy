@@ -502,7 +502,9 @@ location gets its own `dailylbaka` folder.
 
 LetoBank defaults to **LetoBank CLI** on this branch: a terminal-style theme shared
 with LetoBank GO, using near-black panels, cyan/green/red accents, monospace type
-and square borders inspired by btop++, cliamp and superfile. Open **Preferences**
+and square borders inspired by btop++, cliamp and superfile. It prefers **JetBrains
+Mono** and falls back to the Nerd Font variant when the plain family is not
+installed. Open **Preferences**
 (`Ctrl+,`) and use the **Theme** selector to switch to any theme installed under
 `~/.config/omarchy/themes`, `~/.local/share/omarchy/themes` or
 `/usr/share/omarchy/themes`. The choice is remembered in

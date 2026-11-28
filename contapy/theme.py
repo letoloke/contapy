@@ -102,6 +102,7 @@ def font_family() -> str:
         available = set(QFontDatabase.families())
         if terminal_theme():
             candidates = (
+                "JetBrains Mono",
                 "JetBrainsMono Nerd Font",
                 "JetBrainsMono NF",
                 "CaskaydiaCove Nerd Font Mono",
